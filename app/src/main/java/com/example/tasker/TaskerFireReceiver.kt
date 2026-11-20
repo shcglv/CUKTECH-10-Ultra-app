@@ -3,12 +3,18 @@ package com.example.tasker
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import com.example.BleBridgeService
+import com.example.cuktech.automation.ChargerCommand
+import com.example.cuktech.automation.CommandSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Tasker / Locale Action Plugin background receiver.
  * Fires when Tasker executes a configured CUKTECH 10 Ultra Action Plugin step.
+ * Enforces opt-in Tasker channel activation and constant-time per-install secret token validation
+ * through [CommandDispatcher].
  */
 class TaskerFireReceiver : BroadcastReceiver() {
 
@@ -18,68 +24,62 @@ class TaskerFireReceiver : BroadcastReceiver() {
 
         val bundle = intent.getBundleExtra("com.twofortyfouram.locale.intent.extra.BUNDLE") ?: return
         val taskAction = bundle.getString("ACTION") ?: return
+        val authToken = bundle.getString("AUTH_TOKEN")
 
-        val mgr = BleBridgeService.cuktechManager ?: BleBridgeService.ensureCuktechManagersInitialized(context.applicationContext)
+        val mgr = BleBridgeService.ensureCuktechManagersInitialized(context.applicationContext)
 
-        Log.d("TaskerFireReceiver", "Firing Tasker setting: action=$taskAction")
+        val mappedCommand: ChargerCommand = when (taskAction) {
+            "CONNECT" -> ChargerCommand.ConnectCharger(bundle.getString("MAC"))
+            "DISCONNECT" -> ChargerCommand.DisconnectCharger(isManual = true)
+            "SET_PORT" -> ChargerCommand.SetPortEnabled(
+                portId = bundle.getInt("PORT", 1),
+                enabled = bundle.getBoolean("STATE", true)
+            )
+            "SET_MODE" -> ChargerCommand.SetSceneMode(bundle.getInt("MODE", 1))
+            "SET_TIMEOUT" -> ChargerCommand.SetScreenTimeout(bundle.getInt("TIMEOUT", 4))
+            "SET_IDLE_SCREEN_OFF" -> ChargerCommand.SetIdleScreenOff(bundle.getBoolean("STATE", true))
+            "SET_LOW_CURRENT" -> ChargerCommand.SetUsbALowCurrent(bundle.getBoolean("STATE", true))
+            "SET_PORT_TIMER" -> ChargerCommand.SetPortCountdown(
+                portId = bundle.getInt("PORT", 1),
+                minutes = bundle.getInt("TIMER_MINS", 0)
+            )
+            "SET_CHARGE_LIMIT" -> ChargerCommand.SetPortChargeLimit(
+                portId = bundle.getInt("PORT", 1),
+                whTarget = bundle.getDouble("WH_TARGET", bundle.getFloat("wh_target", 0f).toDouble()),
+                mode = bundle.getString("LIMIT_MODE", "once"),
+                enabled = bundle.getBoolean("STATE", true)
+            )
+            "SOFT_RESET" -> ChargerCommand.SoftReset
+            "MASTER_KILLSWITCH" -> ChargerCommand.MasterKillswitch
+            "UNDO_LAST_COMMAND" -> ChargerCommand.UndoLastCommand
+            "SET_AUTO_CONNECT" -> ChargerCommand.SetAutoReconnect(bundle.getBoolean("STATE", true))
+            "SET_PORT_LOGGING" -> ChargerCommand.SetPortLogging(
+                portId = bundle.getInt("PORT", 1),
+                enabled = bundle.getBoolean("STATE", true)
+            )
+            "SET_TELEMETRY" -> ChargerCommand.SetTelemetryEnabled(bundle.getBoolean("STATE", true))
+            "SET_LOG_WHEN_CHARGING" -> ChargerCommand.SetLogOnlyWhenPhoneCharging(bundle.getBoolean("STATE", false))
+            "SET_PAUSE_WHEN_LOCKED" -> ChargerCommand.SetPausePollingWhenLocked(bundle.getBoolean("STATE", false))
+            else -> return
+        }
 
-        when (taskAction) {
-            "CONNECT" -> {
-                val mac = bundle.getString("MAC")
-                mgr.connectToCharger(mac)
-            }
-            "DISCONNECT" -> {
-                mgr.disconnectCharger()
-            }
-            "SET_PORT" -> {
-                val port = bundle.getInt("PORT", 1)
-                val state = bundle.getBoolean("STATE", true)
-                mgr.setPortEnabled(port, state)
-            }
-            "SET_MODE" -> {
-                val mode = bundle.getInt("MODE", 1)
-                mgr.setSceneMode(mode)
-            }
-            "SET_TIMEOUT" -> {
-                val timeout = bundle.getInt("TIMEOUT", 4)
-                mgr.setScreenTimeout(timeout)
-            }
-            "SET_IDLE_SCREEN_OFF" -> {
-                val state = bundle.getBoolean("STATE", true)
-                mgr.setIdleScreenOff(state)
-            }
-            "SET_LOW_CURRENT" -> {
-                val state = bundle.getBoolean("STATE", true)
-                mgr.setUsbALowCurrent(state)
-            }
-            "SET_PORT_TIMER" -> {
-                val port = bundle.getInt("PORT", 1)
-                val mins = bundle.getInt("TIMER_MINS", 0)
-                mgr.setPortCountdown(port, mins)
-            }
-            "SOFT_RESET" -> {
-                mgr.forceSoftRestart {}
-            }
-            "SET_AUTO_CONNECT" -> {
-                val state = bundle.getBoolean("STATE", true)
-                mgr.setAutoReconnectConfigured(state)
-            }
-            "SET_PORT_LOGGING" -> {
-                val port = bundle.getInt("PORT", 1)
-                val state = bundle.getBoolean("STATE", true)
-                mgr.setPortLoggingEnabled(port, state)
-            }
-            "SET_TELEMETRY" -> {
-                val state = bundle.getBoolean("STATE", true)
-                mgr.setTelemetryMasterEnabled(state)
-            }
-            "SET_LOG_WHEN_CHARGING" -> {
-                val state = bundle.getBoolean("STATE", false)
-                mgr.setLogOnlyWhenPhoneCharging(state)
-            }
-            "SET_PAUSE_WHEN_LOCKED" -> {
-                val state = bundle.getBoolean("STATE", false)
-                mgr.setPausePollingWhenScreenLocked(state)
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.Default).launch {
+            try {
+                val res = mgr.commandDispatcher.dispatch(
+                    source = CommandSource.TASKER,
+                    command = mappedCommand,
+                    authToken = authToken,
+                    clientKey = "tasker:$taskAction"
+                )
+                if (!res.accepted) {
+                    BleBridgeService.addLogMessage(
+                        BleBridgeService.Companion.LogLevel.LEVEL1,
+                        "[Tasker] $taskAction rejected: ${res.message}"
+                    )
+                }
+            } finally {
+                pending.finish()
             }
         }
     }

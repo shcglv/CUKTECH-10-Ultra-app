@@ -1,106 +1,117 @@
 package com.example.ui.theme
 
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-// Light Theme Palette (Sleek Brushed Titanium & CUKTECH Hardware - White & Cyan)
-val LightBackground = Color(0xFFF8FAFC)
-val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFEDF2F7)
-val LightBorder = Color(0xFFCBD5E1)
-val LightTextPrimary = Color(0xFF0F172A)
-val LightTextSecondary = Color(0xFF475569)
-val LightPrimary = Color(0xFF007A87) // Refined Deep High-Contrast Cyan for Light Mode readability
-val LightPrimaryContainer = Color(0xFFE0F7FA)
-val LightOnPrimaryContainer = Color(0xFF004D56)
+// Light M3 Fallback Palette (Crisp CUKTECH Teal & Slate on clean off-white canvas)
+val MdLightPrimary = Color(0xFF00677D)
+val MdLightOnPrimary = Color(0xFFFFFFFF)
+val MdLightPrimaryContainer = Color(0xFFB3EBFF)
+val MdLightOnPrimaryContainer = Color(0xFF001F27)
 
-// =============================================================================
-// DARK THEME PALETTES (Dark Mode Only)
-// =============================================================================
+val MdLightSecondary = Color(0xFF4B626B)
+val MdLightOnSecondary = Color(0xFFFFFFFF)
+val MdLightSecondaryContainer = Color(0xFFCEE7F1)
+val MdLightOnSecondaryContainer = Color(0xFF061E26)
 
-enum class DarkThemePalette(
-    val label: String,
-    val description: String,
-    val primaryColor: Color
+val MdLightTertiary = Color(0xFF565D7E)
+val MdLightOnTertiary = Color(0xFFFFFFFF)
+val MdLightTertiaryContainer = Color(0xFFDDE1FF)
+val MdLightOnTertiaryContainer = Color(0xFF131937)
+
+val MdLightBackground = Color(0xFFF6FAFC)
+val MdLightOnBackground = Color(0xFF171C1E)
+val MdLightSurface = Color(0xFFF6FAFC)
+val MdLightOnSurface = Color(0xFF171C1E)
+val MdLightSurfaceVariant = Color(0xFFDBE4E8)
+val MdLightOnSurfaceVariant = Color(0xFF40484C)
+val MdLightSurfaceContainerLowest = Color(0xFFFFFFFF)
+val MdLightSurfaceContainerLow = Color(0xFFF0F4F6)
+val MdLightSurfaceContainer = Color(0xFFEAEFF1)
+val MdLightSurfaceContainerHigh = Color(0xFFE4E9EC)
+val MdLightSurfaceContainerHighest = Color(0xFFDFE3E6)
+val MdLightOutline = Color(0xFF70787C)
+val MdLightOutlineVariant = Color(0xFFBFC8CC)
+val MdLightError = Color(0xFFBA1A1A)
+val MdLightOnError = Color(0xFFFFFFFF)
+val MdLightErrorContainer = Color(0xFFFFDAD6)
+val MdLightOnErrorContainer = Color(0xFF410002)
+
+// Dark M3 Fallback Palette (Google Pixel slate-teal tones)
+val MdDarkPrimary = Color(0xFF5DD5F4)
+val MdDarkOnPrimary = Color(0xFF003642)
+val MdDarkPrimaryContainer = Color(0xFF004E5F)
+val MdDarkOnPrimaryContainer = Color(0xFFB3EBFF)
+
+val MdDarkSecondary = Color(0xFFB2CBD4)
+val MdDarkOnSecondary = Color(0xFF1D343B)
+val MdDarkSecondaryContainer = Color(0xFF344A52)
+val MdDarkOnSecondaryContainer = Color(0xFFCEE7F1)
+
+val MdDarkTertiary = Color(0xFFBEC5EB)
+val MdDarkOnTertiary = Color(0xFF282F4D)
+val MdDarkTertiaryContainer = Color(0xFF3F4565)
+val MdDarkOnTertiaryContainer = Color(0xFFDDE1FF)
+
+val MdDarkBackground = Color(0xFF0F1417)
+val MdDarkOnBackground = Color(0xFFDFE3E6)
+val MdDarkSurface = Color(0xFF0F1417)
+val MdDarkOnSurface = Color(0xFFDFE3E6)
+val MdDarkSurfaceVariant = Color(0xFF40484C)
+val MdDarkOnSurfaceVariant = Color(0xFFBFC8CC)
+val MdDarkSurfaceContainerLowest = Color(0xFF0A0F12)
+val MdDarkSurfaceContainerLow = Color(0xFF171C1F)
+val MdDarkSurfaceContainer = Color(0xFF1B2023)
+val MdDarkSurfaceContainerHigh = Color(0xFF252B2E)
+val MdDarkSurfaceContainerHighest = Color(0xFF303639)
+val MdDarkOutline = Color(0xFF899296)
+val MdDarkOutlineVariant = Color(0xFF40484C)
+val MdDarkError = Color(0xFFFFB4AB)
+val MdDarkOnError = Color(0xFF690005)
+val MdDarkErrorContainer = Color(0xFF93000A)
+val MdDarkOnErrorContainer = Color(0xFFFFDAD6)
+
+@Immutable
+data class CuktechSemanticColors(
+    val success: Color = Color(0xFF15803D),
+    val onSuccess: Color = Color(0xFFFFFFFF),
+    val successContainer: Color = Color(0xFFDCFCE7),
+    val onSuccessContainer: Color = Color(0xFF052E16),
+    val warning: Color = Color(0xFFB45309),
+    val warningContainer: Color = Color(0xFFFEF3C7),
+    val onWarningContainer: Color = Color(0xFF451A03),
+    val portC1: Color = Color(0xFF0284C7),
+    val portC2: Color = Color(0xFF0D9488),
+    val portC3: Color = Color(0xFF6366F1),
+    val portA: Color = Color(0xFFD97706),
+    val chargerAccent: Color = Color(0xFF00B8D9),
+    val isDark: Boolean = false
 ) {
-    CUKTECH_CYAN(
-        "CUKTECH Gunmetal",
-        "Classic charger look: deep navy gunmetal with balanced cyan accents",
-        Color(0xFF00ADB5)
-    ),
-    AMOLED_BLACK(
-        "AMOLED Pure Black",
-        "True #000000 black background with soothing soft electric cyan",
-        Color(0xFF00C4CC)
-    ),
-    CYBERPUNK_NEON(
-        "Cyberpunk Neon",
-        "High-tech midnight obsidian with neon emerald green accents",
-        Color(0xFF00E676)
-    ),
-    TITANIUM_AMBER(
-        "Titanium Amber",
-        "Warm dark titanium with industrial hazard amber/gold accents",
-        Color(0xFFFFB300)
-    ),
-    DEEP_OCEAN_BLUE(
-        "Deep Ocean Blue",
-        "Subtle midnight navy with cool sapphire blue accents",
-        Color(0xFF38BDF8)
-    )
+    fun colorForPort(portId: Int): Color = when (portId) {
+        1 -> portC1
+        2 -> portC2
+        3 -> portC3
+        else -> portA
+    }
 }
 
-// CUKTECH Gunmetal Default (Balanced, pleasant, not blinding)
-val CuktechGunmetalBackground = Color(0xFF0B0E14)
-val CuktechGunmetalSurface = Color(0xFF131722)
-val CuktechGunmetalSurfaceVariant = Color(0xFF1C2232)
-val CuktechGunmetalBorder = Color(0xFF283246)
-val CuktechGunmetalPrimary = Color(0xFF00ADB5) // Balanced, pleasant CUKTECH cyan
-val CuktechGunmetalPrimaryContainer = Color(0xFF0A333A)
-val CuktechGunmetalOnPrimaryContainer = Color(0xFF8CEFF5)
+val LightSemanticColors = CuktechSemanticColors(isDark = false)
 
-// AMOLED Pure Black
-val AmoledBackground = Color(0xFF000000)
-val AmoledSurface = Color(0xFF0A0A0E)
-val AmoledSurfaceVariant = Color(0xFF14141A)
-val AmoledBorder = Color(0xFF22222C)
-val AmoledPrimary = Color(0xFF00C4CC)
-val AmoledPrimaryContainer = Color(0xFF072B2E)
-val AmoledOnPrimaryContainer = Color(0xFF90F7FC)
+val DarkSemanticColors = CuktechSemanticColors(
+    success = Color(0xFF4ADE80),
+    onSuccess = Color(0xFF052E16),
+    successContainer = Color(0xFF0D3822),
+    onSuccessContainer = Color(0xFFA7F3D0),
+    warning = Color(0xFFFBBF24),
+    warningContainer = Color(0xFF3A2807),
+    onWarningContainer = Color(0xFFFDE68A),
+    portC1 = Color(0xFF38BDF8),
+    portC2 = Color(0xFF2DD4BF),
+    portC3 = Color(0xFFA5B4FC),
+    portA = Color(0xFFFBBF24),
+    chargerAccent = Color(0xFF00E5FF),
+    isDark = true
+)
 
-// Cyberpunk Neon
-val CyberpunkBackground = Color(0xFF080C0A)
-val CyberpunkSurface = Color(0xFF0F1713)
-val CyberpunkSurfaceVariant = Color(0xFF17241D)
-val CyberpunkBorder = Color(0xFF22362A)
-val CyberpunkPrimary = Color(0xFF00E676)
-val CyberpunkPrimaryContainer = Color(0xFF0A331E)
-val CyberpunkOnPrimaryContainer = Color(0xFFA7FCD0)
-
-// Titanium Amber
-val TitaniumBackground = Color(0xFF0E0D0C)
-val TitaniumSurface = Color(0xFF181614)
-val TitaniumSurfaceVariant = Color(0xFF24201D)
-val TitaniumBorder = Color(0xFF38322D)
-val TitaniumPrimary = Color(0xFFFFB300)
-val TitaniumPrimaryContainer = Color(0xFF3B2A05)
-val TitaniumOnPrimaryContainer = Color(0xFFFFE082)
-
-// Deep Ocean Blue
-val OceanBackground = Color(0xFF080E18)
-val OceanSurface = Color(0xFF0E1726)
-val OceanSurfaceVariant = Color(0xFF17253B)
-val OceanBorder = Color(0xFF233654)
-val OceanPrimary = Color(0xFF38BDF8)
-val OceanPrimaryContainer = Color(0xFF0C2C45)
-val OceanOnPrimaryContainer = Color(0xFFBAE6FD)
-
-// Base Dark Text Colors
-val DarkTextPrimary = Color(0xFFF1F5F9)
-val DarkTextSecondary = Color(0xFF94A3B8)
-
-// Status Colors
-val StatusSuccess = Color(0xFF22C55E)
-val StatusWarning = Color(0xFFF59E0B)
-val StatusError = Color(0xFFEF4444)
-val StatusErrorContainer = Color(0xFF450A0A)
-val StatusOnErrorContainer = Color(0xFFFCA5A5)
+val LocalSemanticColors = staticCompositionLocalOf { LightSemanticColors }

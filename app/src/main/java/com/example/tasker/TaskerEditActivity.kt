@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,12 +23,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BleBridgeService
 import com.example.ui.theme.MyApplicationTheme
 
 class TaskerEditActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        val mgr = BleBridgeService.ensureCuktechManagersInitialized(applicationContext)
+        val authMgr = mgr.authManager
+        val isTaskerOptInEnabled = authMgr.config.value.taskerEnabled
+        val installToken = authMgr.getOrCreateToken()
 
         // Read previously saved bundle if editing existing Tasker action
         val existingBundle = intent.getBundleExtra("com.twofortyfouram.locale.intent.extra.BUNDLE")
@@ -36,6 +45,8 @@ class TaskerEditActivity : ComponentActivity() {
         val initialMode = existingBundle?.getInt("MODE", 1) ?: 1
         val initialTimeout = existingBundle?.getInt("TIMEOUT", 4) ?: 4
         val initialTimerMins = existingBundle?.getInt("TIMER_MINS", 60) ?: 60
+        val initialWhTarget = existingBundle?.getDouble("WH_TARGET", 20.0) ?: 20.0
+        val initialLimitMode = existingBundle?.getString("LIMIT_MODE") ?: "once"
 
         setContent {
             MyApplicationTheme {
@@ -44,24 +55,30 @@ class TaskerEditActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     TaskerEditScreen(
+                        isTaskerOptInEnabled = isTaskerOptInEnabled,
                         initialAction = initialAction,
                         initialPort = initialPort,
                         initialState = initialState,
                         initialMode = initialMode,
                         initialTimeout = initialTimeout,
                         initialTimerMins = initialTimerMins,
+                        initialWhTarget = initialWhTarget,
+                        initialLimitMode = initialLimitMode,
                         onCancel = {
                             setResult(Activity.RESULT_CANCELED)
                             finish()
                         },
-                        onSave = { action, port, state, mode, timeout, timerMins, blurb ->
+                        onSave = { action, port, state, mode, timeout, timerMins, whTarget, limitMode, blurb ->
                             val resultBundle = Bundle().apply {
                                 putString("ACTION", action)
+                                putString("AUTH_TOKEN", installToken)
                                 putInt("PORT", port)
                                 putBoolean("STATE", state)
                                 putInt("MODE", mode)
                                 putInt("TIMEOUT", timeout)
                                 putInt("TIMER_MINS", timerMins)
+                                putDouble("WH_TARGET", whTarget)
+                                putString("LIMIT_MODE", limitMode)
                             }
                             val resultIntent = Intent().apply {
                                 putExtra("com.twofortyfouram.locale.intent.extra.BUNDLE", resultBundle)
@@ -80,14 +97,17 @@ class TaskerEditActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskerEditScreen(
+    isTaskerOptInEnabled: Boolean = true,
     initialAction: String,
     initialPort: Int,
     initialState: Boolean,
     initialMode: Int,
     initialTimeout: Int,
     initialTimerMins: Int,
+    initialWhTarget: Double = 20.0,
+    initialLimitMode: String = "once",
     onCancel: () -> Unit,
-    onSave: (action: String, port: Int, state: Boolean, mode: Int, timeout: Int, timerMins: Int, blurb: String) -> Unit
+    onSave: (action: String, port: Int, state: Boolean, mode: Int, timeout: Int, timerMins: Int, whTarget: Double, limitMode: String, blurb: String) -> Unit
 ) {
     var selectedAction by remember { mutableStateOf(initialAction) }
     var selectedPort by remember { mutableIntStateOf(initialPort) }
@@ -95,6 +115,8 @@ fun TaskerEditScreen(
     var selectedMode by remember { mutableIntStateOf(initialMode) }
     var selectedTimeout by remember { mutableIntStateOf(initialTimeout) }
     var selectedTimerMins by remember { mutableIntStateOf(initialTimerMins) }
+    var selectedWhText by remember { mutableStateOf(initialWhTarget.toString()) }
+    var selectedLimitMode by remember { mutableStateOf(initialLimitMode) }
 
     val portNames = listOf(1 to "USB-C1", 2 to "USB-C2", 3 to "USB-C3", 4 to "USB-A")
     val modeNames = mapOf(
@@ -112,6 +134,7 @@ fun TaskerEditScreen(
     )
 
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("Tasker: CUKTECH 10 Ultra") },
@@ -123,6 +146,7 @@ fun TaskerEditScreen(
                 actions = {
                     IconButton(onClick = {
                         val portLabel = portNames.firstOrNull { it.first == selectedPort }?.second ?: "Port $selectedPort"
+                        val parsedWh = selectedWhText.toDoubleOrNull()?.coerceIn(0.0, 10000.0) ?: 20.0
                         val blurb = when (selectedAction) {
                             "CONNECT" -> "CUKTECH 10: Connect BLE"
                             "DISCONNECT" -> "CUKTECH 10: Disconnect BLE"
@@ -134,7 +158,10 @@ fun TaskerEditScreen(
                                 val tLabel = if (selectedTimerMins == 0) "Always On" else "${selectedTimerMins}m"
                                 "CUKTECH 10: $portLabel Timer ($tLabel)"
                             }
+                            "SET_CHARGE_LIMIT" -> "CUKTECH 10: $portLabel Wh Limit ${if (selectedPortState) "${parsedWh}Wh ($selectedLimitMode)" else "OFF"}"
                             "SOFT_RESET" -> "CUKTECH 10: Force Soft Port Reset"
+                            "MASTER_KILLSWITCH" -> "CUKTECH 10: Master Killswitch (All Ports OFF)"
+                            "UNDO_LAST_COMMAND" -> "CUKTECH 10: Undo Last Command"
                             "SET_IDLE_SCREEN_OFF" -> "CUKTECH 10: Idle Screen-Off ${if (selectedPortState) "ON" else "OFF"}"
                             "SET_AUTO_CONNECT" -> "CUKTECH 10: Auto-Connect ${if (selectedPortState) "ON" else "OFF"}"
                             "SET_PORT_LOGGING" -> "CUKTECH 10: $portLabel History Logging ${if (selectedPortState) "ON" else "OFF"}"
@@ -143,7 +170,17 @@ fun TaskerEditScreen(
                             "SET_PAUSE_WHEN_LOCKED" -> "CUKTECH 10: Pause Polling When Screen Locked ${if (selectedPortState) "ON" else "OFF"}"
                             else -> "CUKTECH 10: Action"
                         }
-                        onSave(selectedAction, selectedPort, selectedPortState, selectedMode, selectedTimeout, selectedTimerMins, blurb)
+                        onSave(
+                            selectedAction,
+                            selectedPort,
+                            selectedPortState,
+                            selectedMode,
+                            selectedTimeout,
+                            selectedTimerMins,
+                            parsedWh,
+                            selectedLimitMode,
+                            blurb
+                        )
                     }) {
                         Icon(Icons.Default.Check, contentDescription = "Save", tint = MaterialTheme.colorScheme.primary)
                     }
@@ -159,6 +196,25 @@ fun TaskerEditScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (!isTaskerOptInEnabled) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Tasker integration is disabled in BLEBridge Security settings. Enable opt-in Tasker automation in the app so this action can execute.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+
             Text("Select Action", fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
             val actions = listOf(
@@ -171,7 +227,10 @@ fun TaskerEditScreen(
                 "SET_IDLE_SCREEN_OFF" to "Idle Screen-Off (Sleep LCD when idle)",
                 "SET_LOW_CURRENT" to "USB-A Low Current Mode (4h)",
                 "SET_PORT_TIMER" to "Set Port Delay Poweroff Timer",
+                "SET_CHARGE_LIMIT" to "Set Port Wh Auto-Cutoff Limit",
                 "SOFT_RESET" to "Force Soft Port Reset (Renegotiate PD)",
+                "MASTER_KILLSWITCH" to "Master Killswitch (Turn All 4 Ports OFF)",
+                "UNDO_LAST_COMMAND" to "Undo Last Hardware Command (within 20s)",
                 "SET_PORT_LOGGING" to "Port History Logging (On/Off)",
                 "SET_TELEMETRY" to "Master Telemetry (On/Paused)",
                 "SET_LOG_WHEN_CHARGING" to "Log Only When Phone Charging (On/Off)",
@@ -458,6 +517,50 @@ fun TaskerEditScreen(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
                         label = { Text("Disable Condition") }
+                    )
+                }
+            }
+
+            if (selectedAction == "SET_CHARGE_LIMIT") {
+                Text("Select Port", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    portNames.forEach { (pId, name) ->
+                        FilterChip(
+                            selected = (selectedPort == pId),
+                            onClick = { selectedPort = pId },
+                            label = { Text(name) }
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = selectedWhText,
+                    onValueChange = { selectedWhText = it },
+                    label = { Text("Energy Limit Target (Wh)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = selectedLimitMode == "once",
+                        onClick = { selectedLimitMode = "once" },
+                        label = { Text("Once") }
+                    )
+                    FilterChip(
+                        selected = selectedLimitMode == "always",
+                        onClick = { selectedLimitMode = "always" },
+                        label = { Text("Always") }
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FilterChip(
+                        selected = selectedPortState,
+                        onClick = { selectedPortState = true },
+                        label = { Text("Enable Limit") }
+                    )
+                    FilterChip(
+                        selected = !selectedPortState,
+                        onClick = { selectedPortState = false },
+                        label = { Text("Disable Limit") }
                     )
                 }
             }

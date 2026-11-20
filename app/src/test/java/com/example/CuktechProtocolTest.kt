@@ -154,7 +154,7 @@ class CuktechProtocolTest {
 
     @Test
     fun `test AdaptiveEnergyIntegrator and ChargeSessionDetector`() {
-        val integrator = AdaptiveEnergyIntegrator(maxDtSec = 60.0)
+        val integrator = AdaptiveEnergyIntegrator(maxValidGapSec = 60.0)
         integrator.update(60.0, 1000.0)
         val deltaWh = integrator.update(60.0, 1060.0) // 60W for 60s = 1.0 Wh
         assertEquals(1.0, deltaWh, 0.001)

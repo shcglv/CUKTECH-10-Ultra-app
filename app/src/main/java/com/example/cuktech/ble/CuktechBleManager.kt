@@ -7,6 +7,13 @@ import android.content.Context
 import android.os.ParcelUuid
 import android.os.SystemClock
 import com.example.BleBridgeService
+import com.example.cuktech.automation.ChargerCommand
+import com.example.cuktech.automation.CommandDispatcher
+import com.example.cuktech.automation.CommandResult
+import com.example.cuktech.automation.CommandSource
+import com.example.cuktech.automation.HardwareCommandAdapter
+import com.example.cuktech.automation.KillswitchSnapshot
+import com.example.cuktech.automation.UndoAvailability
 import com.example.cuktech.cloud.XiaomiCloudClient
 import com.example.cuktech.db.CuktechPersistence
 import com.example.cuktech.db.PowerChartPoint
@@ -14,13 +21,21 @@ import com.example.cuktech.energy.AdaptiveEnergyIntegrator
 import com.example.cuktech.energy.ChargeSessionDetector
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.energy.PortChargeLimit
+import com.example.cuktech.notifications.AnomalyAlert
+import com.example.cuktech.notifications.CableAnomalyDetector
+import com.example.cuktech.notifications.ChargingCompletionDetector
+import com.example.cuktech.notifications.ChargingNotificationManager
+import com.example.cuktech.notifications.PersistedTimerStore
+import com.example.cuktech.prefs.AppPreferencesRepository
 import com.example.cuktech.protocol.ChargerSettingsState
 import com.example.cuktech.protocol.CuktechProtocol
 import com.example.cuktech.protocol.DecodedMiotFrame
 import com.example.cuktech.protocol.PortTelemetry
 import com.example.cuktech.protocol.PortTelemetryDecoder
 import com.example.cuktech.protocol.SessionKeys
+import com.example.cuktech.security.AutomationAuthManager
 import com.example.cuktech.security.CuktechDeviceCredentials
+import com.example.cuktech.security.LogSanitizer
 import com.example.cuktech.security.SecureCredentialStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -88,10 +103,12 @@ data class ChargerDeviceInfo(
  * `BleBridgeService`'s single `BluetoothGatt` and sequential hardware command queue.
  * Ports `controller.py` and `ble_manager.py` from `cuktech-ble-server`.
  */
-class CuktechBleManager(
+class CuktechBleManager @JvmOverloads constructor(
     private val context: Context,
     val credentialStore: SecureCredentialStore,
-    val persistence: CuktechPersistence
+    val persistence: CuktechPersistence,
+    val preferencesRepository: AppPreferencesRepository = AppPreferencesRepository(context),
+    val authManager: AutomationAuthManager = AutomationAuthManager(context, credentialStore)
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val random = SecureRandom()
@@ -221,6 +238,10 @@ class CuktechBleManager(
     val usbALowCurrentRemainingSeconds: StateFlow<Long?> = _usbALowCurrentRemainingSeconds.asStateFlow()
     private var targetUsbALowCurrentEpochSec: Long? = null
 
+    val completionDetector = ChargingCompletionDetector()
+    val anomalyDetector = CableAnomalyDetector()
+    val anomalyAlerts: StateFlow<List<AnomalyAlert>> = anomalyDetector.alerts
+
     // Telemetry & Sleep Policy StateFlows
     private val _telemetryMasterEnabled = MutableStateFlow(true)
     val telemetryMasterEnabled: StateFlow<Boolean> = _telemetryMasterEnabled.asStateFlow()
@@ -238,8 +259,81 @@ class CuktechBleManager(
     val isPhoneCharging = MutableStateFlow(false)
     val isScreenOn = MutableStateFlow(true)
 
-    // Callback invoked on telemetry update so Tasker / MQTT / Bemfa can broadcast
+    // Callback invoked on telemetry update so Tasker / Home Assistant / Widget can broadcast
     var onTelemetryUpdated: ((Map<Int, PortTelemetry>, Double, ChargerDeviceInfo) -> Unit)? = null
+
+    private val hardwareAdapter = object : HardwareCommandAdapter {
+        override fun isAuthenticated(): Boolean = _authState.value == CuktechAuthState.AUTHENTICATED
+        override fun currentSettings(): ChargerSettingsState = _settings.value
+        override fun currentPorts(): Map<Int, PortTelemetry> = _ports.value
+        override fun currentChargeLimits(): Map<Int, PortChargeLimit> = _chargeLimits.value
+        override fun activeSessionsSnapshot(): Map<Int, ChargeSessionRecord> = _activeSessions.value
+
+        override suspend fun writePortBitmap(newBitmap: Int): Boolean = writePortBitmapInternal(newBitmap)
+        override suspend fun writeSceneMode(mode: Int): Boolean = writeSceneModeInternal(mode)
+        override suspend fun writeScreenTimeout(timeoutCode: Int): Boolean = writeScreenTimeoutInternal(timeoutCode)
+        override suspend fun writePortCountdown(portId: Int, minutes: Int): Boolean =
+            writePortCountdownInternal(portId, minutes)
+        override suspend fun writeUsbALowCurrent(enabled: Boolean): Boolean = writeUsbALowCurrentInternal(enabled)
+        override suspend fun writeIdleScreenOff(enabled: Boolean): Boolean = writeIdleScreenOffInternal(enabled)
+        override suspend fun writeLanguage(langCode: Int): Boolean = writeLanguageInternal(langCode)
+        override suspend fun writeOrientationLock(locked: Boolean): Boolean = writeOrientationLockInternal(locked)
+        override suspend fun writeGotoScreen(pageIndex: Int): Boolean = writeGotoScreenInternal(pageIndex)
+        override suspend fun writeRotateScreen180(): Boolean = writeRotateScreen180Internal()
+        override suspend fun writePortProtocol(portId: Int, protocol: String, enabled: Boolean): Boolean =
+            writePortProtocolInternal(portId, protocol, enabled)
+        override suspend fun writeFastChargeProtocols(pd: Boolean, pps: Boolean, ufcs: Boolean, scp: Boolean): Boolean =
+            writeFastChargeProtocolsInternal(pd, pps, ufcs, scp)
+        override suspend fun executeSoftReset(): Boolean = executeSoftResetInternal()
+
+        override fun applyPortChargeLimit(portId: Int, whTarget: Double, mode: String, enabled: Boolean) {
+            applyPortChargeLimitInternal(portId, whTarget, mode, enabled)
+        }
+        override fun requestConnect(mac: String?) {
+            connectToCharger(mac)
+        }
+        override fun requestDisconnect(isManual: Boolean) {
+            disconnectCharger(isManual)
+        }
+        override fun requestScan(durationMs: Long) {
+            startSearchForCuktechChargers(durationMs)
+        }
+        override fun applyAutoReconnect(enabled: Boolean) {
+            setAutoReconnectConfigured(enabled)
+        }
+        override fun applyPortLogging(portId: Int, enabled: Boolean) {
+            setPortLoggingEnabled(portId, enabled)
+        }
+        override fun applyTelemetryMaster(enabled: Boolean) {
+            setTelemetryMasterEnabled(enabled)
+        }
+        override fun applyLogOnlyWhenPhoneCharging(enabled: Boolean) {
+            setLogOnlyWhenPhoneCharging(enabled)
+        }
+        override fun applyPausePollingWhenLocked(enabled: Boolean) {
+            setPausePollingWhenScreenLocked(enabled)
+        }
+        override fun requestRefreshTelemetry() {
+            refreshAllTelemetryNow()
+        }
+        override fun finalizeSessionForPortWithReason(portId: Int, reason: String) {
+            finalizeActiveSessionForPort(portId, reason)
+        }
+    }
+
+    val commandDispatcher: CommandDispatcher = CommandDispatcher(
+        authManager = authManager,
+        adapter = hardwareAdapter,
+        logger = { isError, msg ->
+            BleBridgeService.addLogMessage(
+                if (isError) BleBridgeService.Companion.LogLevel.LEVEL1 else BleBridgeService.Companion.LogLevel.LEVEL2,
+                LogSanitizer.sanitize(msg)
+            )
+        }
+    )
+
+    val undoAvailability: StateFlow<UndoAvailability?> = commandDispatcher.undoAvailability
+    val lastKillswitchSnapshot: StateFlow<KillswitchSnapshot?> = commandDispatcher.lastKillswitchSnapshot
 
     init {
         val prefs = context.getSharedPreferences("ble_cuktech_prefs", Context.MODE_PRIVATE)
@@ -258,9 +352,55 @@ class CuktechBleManager(
             4 to prefs.getBoolean("port_logging_4", true)
         )
 
-        credentialStore.tryAutoImportLocalCredentialsFile()
+        val prefsSnapshot = preferencesRepository.preferences.value
+        val activeRestored = mutableMapOf<Int, ChargeSessionRecord>()
+        val nowSec = System.currentTimeMillis() / 1000.0
+        for (savedActive in persistence.loadActiveSessions()) {
+            val pid = savedActive.portId
+            if (pid !in 1..4) continue
+            if ((nowSec - savedActive.lastSampleTimeSec) <= prefsSnapshot.sessionStitchGraceSec.toDouble()) {
+                val paused = savedActive.copy(
+                    isPaused = true,
+                    pauseReason = savedActive.pauseReason ?: "APP_RESTART"
+                )
+                sessionDetectors[pid]?.restoreActiveSession(paused)
+                energyIntegrators[pid]?.restoreState(
+                    initialWh = paused.whAccumulated,
+                    lastTimestampSec = paused.lastSampleTimeSec,
+                    lastWatts = 0.0
+                )
+                activeRestored[pid] = paused
+            } else {
+                val expired = savedActive.copy(
+                    endTimeSec = savedActive.lastSampleTimeSec,
+                    isActive = false,
+                    isPaused = false,
+                    pauseReason = null,
+                    endReason = "BLE_DROP_TIMEOUT"
+                )
+                persistence.insertCompletedSession(expired)
+            }
+        }
+        _activeSessions.value = activeRestored
+
+        persistence.archiveOldSessions(retentionDays = prefsSnapshot.retentionDays)
         _completedSessions.value = persistence.getRecentSessions(300)
         _chargeLimits.value = persistence.loadPortChargeLimits()
+
+        // Restore persisted port countdown and USB-A 4h trickle end timestamps
+        val nowEpochSec = System.currentTimeMillis() / 1000L
+        val restoredCountdowns = PersistedTimerStore.loadActivePortCountdowns(context, nowEpochSec)
+        if (restoredCountdowns.isNotEmpty()) {
+            targetCountdownEpochSec.putAll(restoredCountdowns)
+            _countdownRemainingSeconds.value = restoredCountdowns.mapValues { (_, endSec) ->
+                (endSec - nowEpochSec).coerceAtLeast(1L)
+            }
+        }
+        PersistedTimerStore.loadUsbALowCurrentEndSec(context, nowEpochSec)?.let { endSec ->
+            targetUsbALowCurrentEpochSec = endSec
+            _usbALowCurrentRemainingSeconds.value = (endSec - nowEpochSec).coerceAtLeast(1L)
+        }
+
         credentialStore.activeDevice.value?.let { cred ->
             _deviceInfo.value = _deviceInfo.value.copy(
                 name = cred.name,
@@ -269,11 +409,21 @@ class CuktechBleManager(
             )
         }
 
-        // Realtime 1-second ticker for second-by-second countdown and rich notification telemetry
+        // Smart adaptive ticker: 1Hz when connected, connecting, or countdowns/paused sessions active; 5s when idle
         scope.launch {
             while (isActive) {
-                delay(1000L)
-                updateCountdownTickAndNotification()
+                val isBusy = _authState.value != CuktechAuthState.DISCONNECTED ||
+                    targetCountdownEpochSec.isNotEmpty() ||
+                    targetUsbALowCurrentEpochSec != null ||
+                    _activeSessions.value.isNotEmpty()
+                delay(if (isBusy) 1000L else 5000L)
+                val shouldTick = _authState.value != CuktechAuthState.DISCONNECTED ||
+                    targetCountdownEpochSec.isNotEmpty() ||
+                    targetUsbALowCurrentEpochSec != null ||
+                    _activeSessions.value.isNotEmpty()
+                if (shouldTick) {
+                    updateCountdownTickAndNotification()
+                }
             }
         }
     }
@@ -282,21 +432,49 @@ class CuktechBleManager(
         return _portLoggingMap.value[portId] ?: true
     }
 
-    fun finalizeActiveSessionForPort(portId: Int) {
+    fun dismissAnomalyAlert(id: String) {
+        anomalyDetector.dismissAlert(id)
+    }
+
+    fun finalizeActiveSessionForPort(portId: Int, reason: String = "USER_STOP") {
+        when (reason) {
+            "WH_LIMIT", "COUNTDOWN_EXPIRED" -> completionDetector.notifySafetyCutoff(portId)
+            "SOFT_RESET" -> completionDetector.notifySoftResetAll()
+            else -> completionDetector.notifyManualStop(portId)
+        }
         val detector = sessionDetectors[portId] ?: return
-        val finished = detector.forceFinalizeActiveSession()
+        val finished = detector.forceFinalizeActiveSession(endReason = reason)
         if (finished != null) {
             persistence.insertCompletedSession(finished)
             _completedSessions.value = persistence.getRecentSessions(300)
+        } else {
+            persistence.clearActiveSessionForPort(portId)
         }
         val updated = _activeSessions.value.toMutableMap()
         updated.remove(portId)
         _activeSessions.value = updated
     }
 
-    fun finalizeAllActiveSessions() {
+    fun finalizeAllActiveSessions(reason: String = "USER_STOP") {
         for (portId in 1..4) {
-            finalizeActiveSessionForPort(portId)
+            finalizeActiveSessionForPort(portId, reason)
+        }
+    }
+
+    private fun pauseAllActiveSessions(reason: String) {
+        val nowSec = System.currentTimeMillis() / 1000.0
+        val updated = _activeSessions.value.toMutableMap()
+        var changed = false
+        for (portId in 1..4) {
+            val paused = sessionDetectors[portId]?.pauseForGap(reason, nowSec)
+            if (paused != null) {
+                persistence.upsertActiveSession(paused)
+                updated[portId] = paused
+                changed = true
+            }
+        }
+        if (changed) {
+            _activeSessions.value = updated
         }
     }
 
@@ -656,7 +834,9 @@ class CuktechBleManager(
         if (isManual) {
             userManuallyDisconnected = true
             autoReconnectEnabled = false
+            finalizeAllActiveSessions("USER_DISCONNECT")
         }
+        completionDetector.notifyBleDisconnected()
         lastDisconnectMs = SystemClock.elapsedRealtime()
         switchDeviceJob?.cancel()
         if (wasConnectedOrConnecting) {
@@ -704,6 +884,23 @@ class CuktechBleManager(
                 deferred.cancel()
             }
             pendingMiotResponses.clear()
+            completionDetector.notifyBleDisconnected()
+
+            if (wasAuthenticated && !userManuallyDisconnected) {
+                // Pause active sessions instead of fabricating Wh across BLE gaps; stitches if reconnect within grace window
+                pauseAllActiveSessions("BLE_DISCONNECT")
+                anomalyDetector.recordUnplannedBleDisconnect()?.let { alert ->
+                    BleBridgeService.addLogMessage(
+                        BleBridgeService.Companion.LogLevel.LEVEL1,
+                        "[Anomaly] ${alert.summary}"
+                    )
+                    ChargingNotificationManager.postAnomalyNotification(
+                        context = context,
+                        alert = alert,
+                        inQuietHours = preferencesRepository.preferences.value.isWithinQuietHours()
+                    )
+                }
+            }
 
             _authState.value = CuktechAuthState.DISCONNECTED
             val isError = (status != BluetoothGatt.GATT_SUCCESS && status != 0)
@@ -1692,19 +1889,31 @@ class CuktechBleManager(
 
     private fun updatePortTelemetry(portId: Int, decoded: PortTelemetry) {
         val curPorts = _ports.value.toMutableMap()
-        val nowSec = System.currentTimeMillis() / 1000.0
+        val nowMs = System.currentTimeMillis()
+        val nowSec = nowMs / 1000.0
+        val prefs = preferencesRepository.preferences.value
         val isLoggingActiveForPort = isPortLoggingEnabled(portId) && (_telemetryMasterEnabled.value) &&
             (!_logOnlyWhenPhoneCharging.value || isPhoneCharging.value)
 
         var cumulativeWh = curPorts[portId]?.cumulativeWh ?: 0.0
+        val detector = sessionDetectors[portId]!!
 
         if (isLoggingActiveForPort) {
             val integrator = energyIntegrators[portId]!!
-            val deltaWh = integrator.update(decoded.powerW, nowSec)
+            val step = integrator.updateWithDetail(decoded.powerW, nowSec)
             cumulativeWh = integrator.totalWh
 
-            val detector = sessionDetectors[portId]!!
-            val finishedSession = detector.onSample(decoded.powerW, deltaWh, decoded.protocolName, nowSec)
+            val effectiveTariff = prefs.resolveEffectiveTariffPerKwh()
+            val finishedSession = detector.onSample(
+                watts = decoded.powerW,
+                step = step,
+                protocolName = decoded.protocolName,
+                timestampSec = nowSec,
+                deviceMac = _deviceInfo.value.macAddress,
+                stitchGraceWindowSec = prefs.sessionStitchGraceSec,
+                tariffPerKwh = effectiveTariff,
+                currencyCode = prefs.currencyCode
+            )
             if (finishedSession != null) {
                 persistence.insertCompletedSession(finishedSession)
                 _completedSessions.value = persistence.getRecentSessions(300)
@@ -1713,7 +1922,11 @@ class CuktechBleManager(
             val updatedActive = _activeSessions.value.toMutableMap()
             val curActive = detector.activeSession
             if (curActive != null) {
+                val wasAbsent = !updatedActive.containsKey(portId)
                 updatedActive[portId] = curActive
+                if (wasAbsent) {
+                    persistence.upsertActiveSession(curActive)
+                }
             } else {
                 updatedActive.remove(portId)
             }
@@ -1723,6 +1936,47 @@ class CuktechBleManager(
         val updatedPort = decoded.copy(cumulativeWh = cumulativeWh)
         curPorts[portId] = updatedPort
         _ports.value = curPorts
+
+        // Feed cable/negotiation anomaly detector
+        anomalyDetector.onPortSample(
+            portId = portId,
+            portLabel = updatedPort.portLabel,
+            voltageV = updatedPort.voltageV,
+            powerW = updatedPort.powerW,
+            protocolName = updatedPort.protocolName,
+            enabled = updatedPort.enabled,
+            nowMs = nowMs
+        )?.let { alert ->
+            BleBridgeService.addLogMessage(
+                BleBridgeService.Companion.LogLevel.LEVEL1,
+                "[Anomaly] ${alert.summary}"
+            )
+            ChargingNotificationManager.postAnomalyNotification(
+                context = context,
+                alert = alert,
+                inQuietHours = prefs.isWithinQuietHours()
+            )
+        }
+
+        // Feed charging completion detector (trickle hysteresis vs quick unplug / dips)
+        val currentSessionWh = detector.activeSession?.whAccumulated ?: updatedPort.cumulativeWh
+        completionDetector.onTelemetrySample(
+            portId = portId,
+            portLabel = updatedPort.portLabel,
+            powerW = updatedPort.powerW,
+            enabled = updatedPort.enabled,
+            sessionWh = currentSessionWh,
+            nowMs = nowMs,
+            prefs = prefs
+        )?.let { completionEvent ->
+            ChargingNotificationManager.postCompletionNotification(
+                context = context,
+                event = completionEvent,
+                portDisplayName = PortTelemetryDecoder.PORT_NAMES[portId] ?: updatedPort.portLabel,
+                soundEnabled = prefs.completionSoundEnabled,
+                vibrationEnabled = prefs.completionVibrationEnabled
+            )
+        }
 
         val totalW = curPorts.values.sumOf { it.powerW }
         val roundedTotalW = (totalW * 100.0).roundToInt() / 100.0
@@ -1745,7 +1999,7 @@ class CuktechBleManager(
         // Check per-port charge limit auto-cutoff
         checkAndEnforcePortChargeLimit(portId, cumulativeWh)
 
-        // Record chart point & periodic SQLite history
+        // Record chart point & periodic Room history
         recordChartAndHistory(curPorts, roundedTotalW)
 
         onTelemetryUpdated?.invoke(curPorts, roundedTotalW, _deviceInfo.value)
@@ -1777,11 +2031,8 @@ class CuktechBleManager(
             CuktechProtocol.PIID_PORT_C2,
             CuktechProtocol.PIID_PORT_C3,
             CuktechProtocol.PIID_PORT_A -> {
-                val portId = frame.piid
-                val curPorts = _ports.value
-                val existing = curPorts[portId]
-                val decoded = PortTelemetryDecoder.decodePortV2(portId, frame.payload, existing) ?: return
-                updatePortTelemetry(portId, decoded)
+                // Already decoded & integrated directly in processDecryptedFrame when b4 is 0x03 or 0x04
+                return
             }
 
             CuktechProtocol.PIID_PORT_C1_PROTOCOL,
@@ -1848,10 +2099,13 @@ class CuktechBleManager(
 
                     if (minutes > 0) {
                         if (!targetCountdownEpochSec.containsKey(portId)) {
-                            targetCountdownEpochSec[portId] = (System.currentTimeMillis() / 1000L) + (minutes * 60L)
+                            val endEpoch = (System.currentTimeMillis() / 1000L) + (minutes * 60L)
+                            targetCountdownEpochSec[portId] = endEpoch
+                            PersistedTimerStore.savePortCountdownEndSec(context, portId, endEpoch)
                         }
                     } else {
                         targetCountdownEpochSec.remove(portId)
+                        PersistedTimerStore.clearPortCountdown(context, portId)
                         _countdownRemainingSeconds.value = _countdownRemainingSeconds.value - portId
                     }
                 }
@@ -1872,10 +2126,13 @@ class CuktechBleManager(
                     _settings.value = _settings.value.copy(usbALowCurrent = isEnabled)
                     if (isEnabled) {
                         if (targetUsbALowCurrentEpochSec == null) {
-                            targetUsbALowCurrentEpochSec = (System.currentTimeMillis() / 1000L) + (4L * 3600L)
+                            val endEpoch = (System.currentTimeMillis() / 1000L) + (4L * 3600L)
+                            targetUsbALowCurrentEpochSec = endEpoch
+                            PersistedTimerStore.saveUsbALowCurrentEndSec(context, endEpoch)
                         }
                     } else {
                         targetUsbALowCurrentEpochSec = null
+                        PersistedTimerStore.saveUsbALowCurrentEndSec(context, null)
                         _usbALowCurrentRemainingSeconds.value = null
                     }
                 }
@@ -1953,9 +2210,18 @@ class CuktechBleManager(
 
         if (now - lastHistoryWriteMs >= 5000L) {
             lastHistoryWriteMs = now
+            val prefs = preferencesRepository.preferences.value
             val activeLoggingPorts = portsMap.values.filter { isPortLoggingEnabled(it.portId) }
             if (activeLoggingPorts.isNotEmpty() && _telemetryMasterEnabled.value && (!_logOnlyWhenPhoneCharging.value || isPhoneCharging.value)) {
-                persistence.recordPortSnapshot(activeLoggingPorts, now)
+                persistence.recordPortSnapshot(
+                    ports = activeLoggingPorts,
+                    timestampMs = now,
+                    deviceMac = _deviceInfo.value.macAddress,
+                    retentionDays = prefs.retentionDays
+                )
+            }
+            _activeSessions.value.values.forEach { session ->
+                persistence.upsertActiveSession(session)
             }
         }
     }
@@ -2186,138 +2452,167 @@ class CuktechBleManager(
     }
 
     // =========================================================================
-    // 6. SUPPORTED CHARGER & PORT CONTROLS (PIID 5, 6, 9..12, 13, 15, 16, 19, 20, 21)
+    // 6. SUPPORTED CHARGER & PORT CONTROLS VIA COMMAND DISPATCHER
     // =========================================================================
+
+    fun executeMasterKillswitch(onResult: ((CommandResult) -> Unit)? = null) {
+        scope.launch {
+            val res = commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.MasterKillswitch)
+            onResult?.invoke(res)
+        }
+    }
+
+    fun restoreKillswitch(onResult: ((CommandResult) -> Unit)? = null) {
+        scope.launch {
+            val res = commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.RestoreKillswitch)
+            onResult?.invoke(res)
+        }
+    }
+
+    fun undoLastCommand(onResult: ((CommandResult) -> Unit)? = null) {
+        scope.launch {
+            val res = commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.UndoLastCommand)
+            onResult?.invoke(res)
+        }
+    }
 
     fun setPortEnabled(portId: Int, enabled: Boolean) {
         if (portId !in 1..4) return
         scope.launch {
-            val currentBitmap = _settings.value.portSwitchBitmap
-            val bit = 1 shl (portId - 1)
-            val newBitmap = if (enabled) (currentBitmap or bit) else (currentBitmap and bit.inv())
-            val cleanBitmap = newBitmap and 0x0F
-            // Optimistically update UI
-            _settings.value = _settings.value.copy(portSwitchBitmap = cleanBitmap)
-            val curPorts = _ports.value.toMutableMap()
-            curPorts[portId]?.let { curPorts[portId] = it.copy(enabled = enabled) }
-            _ports.value = curPorts
-
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_PORT_SW_BITMAP,
-                isSet = true,
-                valueBytes = byteArrayOf(cleanBitmap.toByte())
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetPortEnabled(portId, enabled))
         }
     }
 
-    /**
-     * Executes a non-destructive soft port reset by toggling all port switches
-     * (0x00 -> 0x0F). This discharges the DC-DC stages and triggers fresh USB-PD / PPS / UFCS
-     * negotiation for all connected devices without unplugging from AC mains.
-     */
+    private suspend fun writePortBitmapInternal(cleanBitmapIn: Int): Boolean {
+        val cleanBitmap = cleanBitmapIn and 0x0F
+        _settings.value = _settings.value.copy(portSwitchBitmap = cleanBitmap)
+        val curPorts = _ports.value.toMutableMap()
+        for (pid in 1..4) {
+            val enabled = (cleanBitmap and (1 shl (pid - 1))) != 0
+            curPorts[pid]?.let { curPorts[pid] = it.copy(enabled = enabled) }
+        }
+        _ports.value = curPorts
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_PORT_SW_BITMAP,
+            isSet = true,
+            valueBytes = byteArrayOf(cleanBitmap.toByte())
+        )
+        return resp != null
+    }
+
     fun forceSoftRestart(onComplete: (() -> Unit)? = null) {
         scope.launch {
-            _statusMessage.value = "Executing soft port reset..."
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_PORT_SW_BITMAP,
-                isSet = true,
-                valueBytes = byteArrayOf(0x00.toByte())
-            )
-            delay(1500L)
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_PORT_SW_BITMAP,
-                isSet = true,
-                valueBytes = byteArrayOf(0x0F.toByte())
-            )
-            _settings.value = _settings.value.copy(portSwitchBitmap = 0x0F)
-            val curPorts = _ports.value.toMutableMap()
-            (1..4).forEach { pId ->
-                curPorts[pId]?.let { curPorts[pId] = it.copy(enabled = true) }
-            }
-            _ports.value = curPorts
-            _statusMessage.value = "Soft port reset complete. USB-PD re-negotiated."
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SoftReset)
             onComplete?.invoke()
         }
+    }
+
+    private suspend fun executeSoftResetInternal(): Boolean {
+        _statusMessage.value = "Executing soft port reset..."
+        val offOk = writePortBitmapInternal(0x00)
+        finalizeAllActiveSessions("SOFT_RESET")
+        delay(1500L)
+        val onOk = writePortBitmapInternal(0x0F)
+        _statusMessage.value = "Soft port reset complete. USB-PD re-negotiated."
+        return offOk && onOk
     }
 
     fun setSceneMode(mode: Int) {
         if (mode !in CuktechProtocol.SCENE_MODES.keys) return
         scope.launch {
-            _settings.value = _settings.value.copy(sceneMode = mode)
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_SCENE_MODE,
-                isSet = true,
-                valueBytes = byteArrayOf(mode.toByte())
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetSceneMode(mode))
         }
+    }
+
+    private suspend fun writeSceneModeInternal(mode: Int): Boolean {
+        _settings.value = _settings.value.copy(sceneMode = mode)
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_SCENE_MODE,
+            isSet = true,
+            valueBytes = byteArrayOf(mode.toByte())
+        )
+        return resp != null
     }
 
     fun setScreenTimeout(timeoutCode: Int) {
         if (timeoutCode !in CuktechProtocol.SCREEN_TIMEOUTS.keys) return
         scope.launch {
-            _settings.value = _settings.value.copy(screenTimeout = timeoutCode)
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_SCREEN_TIMEOUT,
-                isSet = true,
-                valueBytes = byteArrayOf(timeoutCode.toByte())
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetScreenTimeout(timeoutCode))
         }
+    }
+
+    private suspend fun writeScreenTimeoutInternal(timeoutCode: Int): Boolean {
+        _settings.value = _settings.value.copy(screenTimeout = timeoutCode)
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_SCREEN_TIMEOUT,
+            isSet = true,
+            valueBytes = byteArrayOf(timeoutCode.toByte())
+        )
+        return resp != null
     }
 
     fun forceScreenPower(turnOn: Boolean, timeoutCode: Int = 4) {
         scope.launch {
             if (turnOn) {
-                setIdleScreenOff(false)
-                setScreenTimeout(timeoutCode)
-                gotoScreen(1)
+                commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetIdleScreenOff(false))
+                commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetScreenTimeout(timeoutCode))
+                commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.GotoScreen(1))
             } else {
-                setIdleScreenOff(true)
-                setScreenTimeout(5) // 1 min timeout
+                commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetIdleScreenOff(true))
+                commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetScreenTimeout(5))
             }
         }
     }
 
     fun setPortCountdown(portId: Int, countdownMinutes: Int) {
         if (portId !in 1..4 || countdownMinutes !in 0..1440) return
-        val piid = CuktechProtocol.PIID_COUNTDOWN_C1 + (portId - 1)
         scope.launch {
-            val curPorts = _ports.value.toMutableMap()
-            curPorts[portId]?.let { curPorts[portId] = it.copy(countdownCode = countdownMinutes) }
-            _ports.value = curPorts
-
-            if (countdownMinutes > 0) {
-                targetCountdownEpochSec[portId] = (System.currentTimeMillis() / 1000L) + (countdownMinutes * 60L)
-                val remMap = _countdownRemainingSeconds.value.toMutableMap()
-                remMap[portId] = countdownMinutes * 60L
-                _countdownRemainingSeconds.value = remMap
-            } else {
-                targetCountdownEpochSec.remove(portId)
-                val remMap = _countdownRemainingSeconds.value.toMutableMap()
-                remMap.remove(portId)
-                _countdownRemainingSeconds.value = remMap
-            }
-
-            val valBytes = if (countdownMinutes <= 0xFF) {
-                byteArrayOf((countdownMinutes and 0xFF).toByte())
-            } else {
-                byteArrayOf((countdownMinutes and 0xFF).toByte(), ((countdownMinutes shr 8) and 0xFF).toByte())
-            }
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = piid,
-                isSet = true,
-                valueBytes = valBytes
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetPortCountdown(portId, countdownMinutes))
         }
     }
 
+    private suspend fun writePortCountdownInternal(portId: Int, countdownMinutes: Int): Boolean {
+        val piid = CuktechProtocol.PIID_COUNTDOWN_C1 + (portId - 1)
+        val curPorts = _ports.value.toMutableMap()
+        curPorts[portId]?.let { curPorts[portId] = it.copy(countdownCode = countdownMinutes) }
+        _ports.value = curPorts
+
+        if (countdownMinutes > 0) {
+            val endEpoch = (System.currentTimeMillis() / 1000L) + (countdownMinutes * 60L)
+            targetCountdownEpochSec[portId] = endEpoch
+            PersistedTimerStore.savePortCountdownEndSec(context, portId, endEpoch)
+            val remMap = _countdownRemainingSeconds.value.toMutableMap()
+            remMap[portId] = countdownMinutes * 60L
+            _countdownRemainingSeconds.value = remMap
+        } else {
+            targetCountdownEpochSec.remove(portId)
+            PersistedTimerStore.clearPortCountdown(context, portId)
+            val remMap = _countdownRemainingSeconds.value.toMutableMap()
+            remMap.remove(portId)
+            _countdownRemainingSeconds.value = remMap
+        }
+
+        val valBytes = if (countdownMinutes <= 0xFF) {
+            byteArrayOf((countdownMinutes and 0xFF).toByte())
+        } else {
+            byteArrayOf((countdownMinutes and 0xFF).toByte(), ((countdownMinutes shr 8) and 0xFF).toByte())
+        }
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = piid,
+            isSet = true,
+            valueBytes = valBytes
+        )
+        return resp != null
+    }
+
     private fun updateCountdownTickAndNotification() {
-        val nowSec = System.currentTimeMillis() / 1000L
+        val nowMs = System.currentTimeMillis()
+        val nowSec = nowMs / 1000L
+        val prefs = preferencesRepository.preferences.value
         val remMap = mutableMapOf<Int, Long>()
         for ((pId, targetEpoch) in targetCountdownEpochSec) {
             val rem = targetEpoch - nowSec
@@ -2325,12 +2620,40 @@ class CuktechBleManager(
                 remMap[pId] = rem
             } else {
                 targetCountdownEpochSec.remove(pId)
+                PersistedTimerStore.clearPortCountdown(context, pId)
                 val curPorts = _ports.value.toMutableMap()
                 curPorts[pId]?.let { curPorts[pId] = it.copy(countdownCode = 0) }
                 _ports.value = curPorts
+                commandDispatcher.notifySafetyCutoffTriggered(pId, "COUNTDOWN_EXPIRED")
+                finalizeActiveSessionForPort(pId, "COUNTDOWN_EXPIRED")
             }
         }
         _countdownRemainingSeconds.value = remMap
+
+        // Check pause expiry for any stitched/paused charging sessions on unexpected BLE drops
+        val graceSec = prefs.sessionStitchGraceSec
+        val nowSecDouble = nowMs / 1000.0
+        var activeUpdated: MutableMap<Int, ChargeSessionRecord>? = null
+        var completedAdded = false
+        for (pId in 1..4) {
+            val expired = sessionDetectors[pId]?.checkPauseExpiry(graceSec, nowSecDouble)
+            if (expired != null) {
+                persistence.insertCompletedSession(expired)
+                completedAdded = true
+                if (activeUpdated == null) activeUpdated = _activeSessions.value.toMutableMap()
+                activeUpdated.remove(pId)
+            } else if (_activeSessions.value[pId]?.isPaused == true && sessionDetectors[pId]?.activeSession == null) {
+                persistence.clearActiveSessionForPort(pId)
+                if (activeUpdated == null) activeUpdated = _activeSessions.value.toMutableMap()
+                activeUpdated.remove(pId)
+            }
+        }
+        if (activeUpdated != null) {
+            _activeSessions.value = activeUpdated
+        }
+        if (completedAdded) {
+            _completedSessions.value = persistence.getRecentSessions(300)
+        }
 
         // Update USB-A Low Current (4 Hours) countdown
         targetUsbALowCurrentEpochSec?.let { targetEpoch ->
@@ -2339,10 +2662,41 @@ class CuktechBleManager(
                 _usbALowCurrentRemainingSeconds.value = remUsbA
             } else {
                 targetUsbALowCurrentEpochSec = null
+                PersistedTimerStore.saveUsbALowCurrentEndSec(context, null)
                 _usbALowCurrentRemainingSeconds.value = null
                 _settings.value = _settings.value.copy(usbALowCurrent = false)
             }
         }
+
+        // Also advance completion hysteresis ticks while connected
+        if (_authState.value == CuktechAuthState.AUTHENTICATED) {
+            val portsNow = _ports.value
+            for (pId in 1..4) {
+                val p = portsNow[pId] ?: continue
+                val wh = sessionDetectors[pId]?.activeSession?.whAccumulated ?: p.cumulativeWh
+                completionDetector.onTick(
+                    portId = pId,
+                    portLabel = p.portLabel,
+                    sessionWh = wh,
+                    nowMs = nowMs,
+                    prefs = prefs
+                )?.let { completionEvent ->
+                    ChargingNotificationManager.postCompletionNotification(
+                        context = context,
+                        event = completionEvent,
+                        portDisplayName = PortTelemetryDecoder.PORT_NAMES[pId] ?: p.portLabel,
+                        soundEnabled = prefs.completionSoundEnabled,
+                        vibrationEnabled = prefs.completionVibrationEnabled
+                    )
+                }
+            }
+        }
+
+        val nearestEndEpochSec = listOfNotNull(
+            targetCountdownEpochSec.values.minOrNull(),
+            targetUsbALowCurrentEpochSec
+        ).minOrNull()
+        val nearestCountdownEndMs = nearestEndEpochSec?.let { it * 1000L }
 
         if (_authState.value == CuktechAuthState.AUTHENTICATED) {
             val totalW = _totalPowerWatts.value
@@ -2456,7 +2810,21 @@ class CuktechBleManager(
                 }
             }
 
-            BleBridgeService.getInstance()?.updateNotificationTelemetry(title, content, bigText, totalW)
+            val activeLimitPct = activeLimits.maxOfOrNull { limit ->
+                val cumWh = ports[limit.portId]?.cumulativeWh ?: 0.0
+                val used = limit.currentUsedWh(cumWh)
+                if (limit.whTarget > 0.0) ((used / limit.whTarget) * 100.0).toInt().coerceIn(0, 100) else 0
+            }
+
+            BleBridgeService.getInstance()?.updateNotificationTelemetry(
+                title = title,
+                content = content,
+                bigText = bigText,
+                totalWatts = totalW,
+                nearestCountdownEndMs = nearestCountdownEndMs,
+                activeLimitProgressPct = activeLimitPct,
+                liveUpdatesEnabled = prefs.liveUpdatesEnabled
+            )
         } else {
             if (_authState.value == CuktechAuthState.DISCONNECTED) {
                 BleBridgeService.getInstance()?.dismissForegroundNotificationIfIdle()
@@ -2469,114 +2837,152 @@ class CuktechBleManager(
                 CuktechAuthState.AUTH_FAILED -> "Auth failed · Check credentials"
                 else -> "Ready"
             }
-            BleBridgeService.getInstance()?.updateNotificationTelemetry(title = title, content = content, totalWatts = -1.0)
+            BleBridgeService.getInstance()?.updateNotificationTelemetry(
+                title = title,
+                content = content,
+                totalWatts = -1.0,
+                nearestCountdownEndMs = nearestCountdownEndMs,
+                activeLimitProgressPct = null,
+                liveUpdatesEnabled = prefs.liveUpdatesEnabled
+            )
         }
     }
 
     fun setLanguage(langCode: Int) {
         if (langCode !in 0..1) return
         scope.launch {
-            _settings.value = _settings.value.copy(language = langCode)
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_LANGUAGE,
-                isSet = true,
-                valueBytes = byteArrayOf(langCode.toByte())
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetLanguage(langCode))
         }
+    }
+
+    private suspend fun writeLanguageInternal(langCode: Int): Boolean {
+        _settings.value = _settings.value.copy(language = langCode)
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_LANGUAGE,
+            isSet = true,
+            valueBytes = byteArrayOf(langCode.toByte())
+        )
+        return resp != null
     }
 
     fun gotoScreen(screenIndex: Int) {
         if (screenIndex !in 1..5) return
         scope.launch {
-            _settings.value = _settings.value.copy(activeLcdPage = screenIndex)
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_GOTO_SCREEN,
-                isSet = true,
-                valueBytes = byteArrayOf(screenIndex.toByte())
-            )
-            BleBridgeService.addLogMessage(
-                BleBridgeService.Companion.LogLevel.LEVEL1,
-                "[Cuktech] Sent LCD Goto Page $screenIndex (PIID 14)"
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.GotoScreen(screenIndex))
         }
+    }
+
+    private suspend fun writeGotoScreenInternal(screenIndex: Int): Boolean {
+        _settings.value = _settings.value.copy(activeLcdPage = screenIndex)
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_GOTO_SCREEN,
+            isSet = true,
+            valueBytes = byteArrayOf(screenIndex.toByte())
+        )
+        BleBridgeService.addLogMessage(
+            BleBridgeService.Companion.LogLevel.LEVEL1,
+            "[Cuktech] Sent LCD Goto Page $screenIndex (PIID 14)"
+        )
+        return resp != null
     }
 
     fun rotateScreen180() {
         scope.launch {
-            val curDeg = _settings.value.orientationDegrees
-            val targetDeg = if (curDeg == 180) 0 else 180
-            _settings.value = _settings.value.copy(
-                orientationLock = true,
-                orientationDegrees = targetDeg
-            )
-            // 1. Lock orientation (PIID 20)
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_ORIENTATION_LOCK,
-                isSet = true,
-                valueBytes = byteArrayOf(1.toByte())
-            )
-            // 2. Direct inverted screen direction command (PIID 14: 2 for 180° inverted, 1 for normal)
-            val dirCode = if (targetDeg == 180) 2 else 1
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_GOTO_SCREEN,
-                isSet = true,
-                valueBytes = byteArrayOf(dirCode.toByte())
-            )
-            BleBridgeService.addLogMessage(
-                BleBridgeService.Companion.LogLevel.LEVEL1,
-                "[Cuktech] Rotated screen to ${targetDeg}° (PIID 20=1, PIID 14=$dirCode)"
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.RotateScreen180)
         }
+    }
+
+    private suspend fun writeRotateScreen180Internal(): Boolean {
+        val curDeg = _settings.value.orientationDegrees
+        val targetDeg = if (curDeg == 180) 0 else 180
+        _settings.value = _settings.value.copy(
+            orientationLock = true,
+            orientationDegrees = targetDeg
+        )
+        val okLock = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_ORIENTATION_LOCK,
+            isSet = true,
+            valueBytes = byteArrayOf(1.toByte())
+        ) != null
+        val dirCode = if (targetDeg == 180) 2 else 1
+        val okDir = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_GOTO_SCREEN,
+            isSet = true,
+            valueBytes = byteArrayOf(dirCode.toByte())
+        ) != null
+        BleBridgeService.addLogMessage(
+            BleBridgeService.Companion.LogLevel.LEVEL1,
+            "[Cuktech] Rotated screen to ${targetDeg}° (PIID 20=1, PIID 14=$dirCode)"
+        )
+        return okLock && okDir
     }
 
     fun setUsbALowCurrent(enabled: Boolean) {
         scope.launch {
-            _settings.value = _settings.value.copy(usbALowCurrent = enabled)
-            if (enabled) {
-                targetUsbALowCurrentEpochSec = (System.currentTimeMillis() / 1000L) + (4L * 3600L)
-                _usbALowCurrentRemainingSeconds.value = 4L * 3600L
-            } else {
-                targetUsbALowCurrentEpochSec = null
-                _usbALowCurrentRemainingSeconds.value = null
-            }
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_USB_A_LOW_CURRENT,
-                isSet = true,
-                valueBytes = byteArrayOf(if (enabled) 1 else 0)
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetUsbALowCurrent(enabled))
         }
+    }
+
+    private suspend fun writeUsbALowCurrentInternal(enabled: Boolean): Boolean {
+        _settings.value = _settings.value.copy(usbALowCurrent = enabled)
+        if (enabled) {
+            val endEpoch = (System.currentTimeMillis() / 1000L) + (4L * 3600L)
+            targetUsbALowCurrentEpochSec = endEpoch
+            PersistedTimerStore.saveUsbALowCurrentEndSec(context, endEpoch)
+            _usbALowCurrentRemainingSeconds.value = 4L * 3600L
+        } else {
+            targetUsbALowCurrentEpochSec = null
+            PersistedTimerStore.saveUsbALowCurrentEndSec(context, null)
+            _usbALowCurrentRemainingSeconds.value = null
+        }
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_USB_A_LOW_CURRENT,
+            isSet = true,
+            valueBytes = byteArrayOf(if (enabled) 1 else 0)
+        )
+        return resp != null
     }
 
     fun setIdleScreenOff(enabled: Boolean) {
         scope.launch {
-            _settings.value = _settings.value.copy(idleScreenOff = enabled)
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_IDLE_SCREEN_OFF,
-                isSet = true,
-                valueBytes = byteArrayOf(if (enabled) 1 else 0)
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetIdleScreenOff(enabled))
         }
+    }
+
+    private suspend fun writeIdleScreenOffInternal(enabled: Boolean): Boolean {
+        _settings.value = _settings.value.copy(idleScreenOff = enabled)
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_IDLE_SCREEN_OFF,
+            isSet = true,
+            valueBytes = byteArrayOf(if (enabled) 1 else 0)
+        )
+        return resp != null
     }
 
     fun setOrientationLock(locked: Boolean) {
         scope.launch {
-            _settings.value = _settings.value.copy(
-                orientationLock = locked,
-                orientationDegrees = if (locked) 0 else -1
-            )
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_ORIENTATION_LOCK,
-                isSet = true,
-                valueBytes = byteArrayOf(if (locked) 1.toByte() else 0.toByte())
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetOrientationLock(locked))
         }
+    }
+
+    private suspend fun writeOrientationLockInternal(locked: Boolean): Boolean {
+        _settings.value = _settings.value.copy(
+            orientationLock = locked,
+            orientationDegrees = if (locked) 0 else -1
+        )
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_ORIENTATION_LOCK,
+            isSet = true,
+            valueBytes = byteArrayOf(if (locked) 1.toByte() else 0.toByte())
+        )
+        return resp != null
     }
 
     fun setOrientation(degrees: Int) {
@@ -2586,95 +2992,59 @@ class CuktechBleManager(
     fun setPortProtocol(portId: Int, protocol: String, enabled: Boolean) {
         if (portId !in 1..4) return
         scope.launch {
-            var c1Pd = _settings.value.c1Pd
-            var c1Pps = _settings.value.c1Pps
-            var c1Ufcs = _settings.value.c1Ufcs
-
-            var c2Pd = _settings.value.c2Pd
-            var c2Pps = _settings.value.c2Pps
-            var c2Ufcs = _settings.value.c2Ufcs
-
-            var c3Ufcs = _settings.value.c3Ufcs
-            var c3Scp = _settings.value.c3Scp
-
-            var aUfcs = _settings.value.aUfcs
-            var aScp = _settings.value.aScp
-
-            when (portId) {
-                1 -> {
-                    when (protocol.lowercase()) {
-                        "pd" -> {
-                            c1Pd = enabled
-                            if (!enabled) c1Pps = false // Disabling PD also disables PPS
-                        }
-                        "pps" -> {
-                            c1Pps = enabled
-                            if (enabled) c1Pd = true // Enabling PPS requires PD
-                        }
-                        "ufcs" -> c1Ufcs = enabled
-                    }
-                }
-                2 -> {
-                    when (protocol.lowercase()) {
-                        "pd" -> {
-                            c2Pd = enabled
-                            if (!enabled) c2Pps = false
-                        }
-                        "pps" -> {
-                            c2Pps = enabled
-                            if (enabled) c2Pd = true
-                        }
-                        "ufcs" -> c2Ufcs = enabled
-                    }
-                }
-                3 -> {
-                    when (protocol.lowercase()) {
-                        "ufcs" -> c3Ufcs = enabled
-                        "scp" -> c3Scp = enabled
-                    }
-                }
-                4 -> {
-                    when (protocol.lowercase()) {
-                        "ufcs" -> aUfcs = enabled
-                        "scp" -> aScp = enabled
-                    }
-                }
-            }
-
-            val c1Byte = (if (c1Pd) 1 else 0) or ((if (c1Pps) 1 else 0) shl 1) or ((if (c1Ufcs) 1 else 0) shl 2) or (1 shl 3)
-            val c2Byte = (if (c2Pd) 1 else 0) or ((if (c2Pps) 1 else 0) shl 1) or ((if (c2Ufcs) 1 else 0) shl 2) or (1 shl 3)
-            val c3Byte = (if (c3Ufcs) 1 else 0) or ((if (c3Scp) 1 else 0) shl 1)
-            val aByte = (if (aUfcs) 1 else 0) or ((if (aScp) 1 else 0) shl 1)
-
-            val val32 = (c1Byte.toLong() and 0xFF) or
-                ((c2Byte.toLong() and 0xFF) shl 8) or
-                ((c3Byte.toLong() and 0xFF) shl 16) or
-                ((aByte.toLong() and 0xFF) shl 24)
-
-            _settings.value = _settings.value.copy(
-                rawProtocolExtendVal = val32,
-                c1Pd = c1Pd, c1Pps = c1Pps, c1Ufcs = c1Ufcs,
-                c2Pd = c2Pd, c2Pps = c2Pps, c2Ufcs = c2Ufcs,
-                c3Ufcs = c3Ufcs, c3Scp = c3Scp,
-                aUfcs = aUfcs, aScp = aScp
-            )
-
-            sendMiotCommand(
-                siid = CuktechProtocol.SIID_CHARGER,
-                piid = CuktechProtocol.PIID_PROTOCOL_EXTEND,
-                isSet = true,
-                valueBytes = byteArrayOf(
-                    (val32 and 0xFF).toByte(),
-                    ((val32 shr 8) and 0xFF).toByte(),
-                    ((val32 shr 16) and 0xFF).toByte(),
-                    ((val32 shr 24) and 0xFF).toByte()
-                )
-            )
-            BleBridgeService.addLogMessage(
-                BleBridgeService.Companion.LogLevel.LEVEL1,
-                "[Cuktech] Set Port $portId Protocol $protocol = $enabled (val32=0x${val32.toString(16)})"
-            )
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetPortProtocol(portId, protocol, enabled))
         }
+    }
+
+    private suspend fun writePortProtocolInternal(portId: Int, protocol: String, enabled: Boolean): Boolean {
+        var c1Pd = _settings.value.c1Pd
+        var c1Pps = _settings.value.c1Pps
+        var c1Ufcs = _settings.value.c1Ufcs
+
+        var c2Pd = _settings.value.c2Pd
+        var c2Pps = _settings.value.c2Pps
+        var c2Ufcs = _settings.value.c2Ufcs
+
+        var c3Ufcs = _settings.value.c3Ufcs
+        var c3Scp = _settings.value.c3Scp
+
+        var aUfcs = _settings.value.aUfcs
+        var aScp = _settings.value.aScp
+
+        when (portId) {
+            1 -> when (protocol.lowercase()) {
+                "pd" -> {
+                    c1Pd = enabled
+                    if (!enabled) c1Pps = false
+                }
+                "pps" -> {
+                    c1Pps = enabled
+                    if (enabled) c1Pd = true
+                }
+                "ufcs" -> c1Ufcs = enabled
+            }
+            2 -> when (protocol.lowercase()) {
+                "pd" -> {
+                    c2Pd = enabled
+                    if (!enabled) c2Pps = false
+                }
+                "pps" -> {
+                    c2Pps = enabled
+                    if (enabled) c2Pd = true
+                }
+                "ufcs" -> c2Ufcs = enabled
+            }
+            3 -> when (protocol.lowercase()) {
+                "ufcs" -> c3Ufcs = enabled
+                "scp" -> c3Scp = enabled
+            }
+            4 -> when (protocol.lowercase()) {
+                "ufcs" -> aUfcs = enabled
+                "scp" -> aScp = enabled
+            }
+        }
+
+        return commitProtocolExtendBitmap(c1Pd, c1Pps, c1Ufcs, c2Pd, c2Pps, c2Ufcs, c3Ufcs, c3Scp, aUfcs, aScp, "[Cuktech] Set Port $portId Protocol $protocol = $enabled")
     }
 
     fun setFastChargeProtocols(
@@ -2684,17 +3054,67 @@ class CuktechBleManager(
         scp: Boolean = _settings.value.scpEnabled
     ) {
         scope.launch {
-            setPortProtocol(1, "pd", pd)
-            setPortProtocol(1, "pps", pps)
-            setPortProtocol(1, "ufcs", ufcs)
-            setPortProtocol(2, "pd", pd)
-            setPortProtocol(2, "pps", pps)
-            setPortProtocol(2, "ufcs", ufcs)
-            setPortProtocol(3, "ufcs", ufcs)
-            setPortProtocol(3, "scp", scp)
-            setPortProtocol(4, "ufcs", ufcs)
-            setPortProtocol(4, "scp", scp)
+            commandDispatcher.dispatch(CommandSource.UI, ChargerCommand.SetFastChargeProtocols(pd, pps, ufcs, scp))
         }
+    }
+
+    private suspend fun writeFastChargeProtocolsInternal(
+        pd: Boolean,
+        pps: Boolean,
+        ufcs: Boolean,
+        scp: Boolean
+    ): Boolean {
+        val effPps = if (pd) pps else false
+        return commitProtocolExtendBitmap(
+            c1Pd = pd, c1Pps = effPps, c1Ufcs = ufcs,
+            c2Pd = pd, c2Pps = effPps, c2Ufcs = ufcs,
+            c3Ufcs = ufcs, c3Scp = scp,
+            aUfcs = ufcs, aScp = scp,
+            logLabel = "[Cuktech] Updated fast-charge bitmap (PD=$pd, PPS=$effPps, UFCS=$ufcs, SCP=$scp)"
+        )
+    }
+
+    private suspend fun commitProtocolExtendBitmap(
+        c1Pd: Boolean, c1Pps: Boolean, c1Ufcs: Boolean,
+        c2Pd: Boolean, c2Pps: Boolean, c2Ufcs: Boolean,
+        c3Ufcs: Boolean, c3Scp: Boolean,
+        aUfcs: Boolean, aScp: Boolean,
+        logLabel: String
+    ): Boolean {
+        val c1Byte = (if (c1Pd) 1 else 0) or ((if (c1Pps) 1 else 0) shl 1) or ((if (c1Ufcs) 1 else 0) shl 2) or (1 shl 3)
+        val c2Byte = (if (c2Pd) 1 else 0) or ((if (c2Pps) 1 else 0) shl 1) or ((if (c2Ufcs) 1 else 0) shl 2) or (1 shl 3)
+        val c3Byte = (if (c3Ufcs) 1 else 0) or ((if (c3Scp) 1 else 0) shl 1)
+        val aByte = (if (aUfcs) 1 else 0) or ((if (aScp) 1 else 0) shl 1)
+
+        val val32 = (c1Byte.toLong() and 0xFF) or
+            ((c2Byte.toLong() and 0xFF) shl 8) or
+            ((c3Byte.toLong() and 0xFF) shl 16) or
+            ((aByte.toLong() and 0xFF) shl 24)
+
+        _settings.value = _settings.value.copy(
+            rawProtocolExtendVal = val32,
+            c1Pd = c1Pd, c1Pps = c1Pps, c1Ufcs = c1Ufcs,
+            c2Pd = c2Pd, c2Pps = c2Pps, c2Ufcs = c2Ufcs,
+            c3Ufcs = c3Ufcs, c3Scp = c3Scp,
+            aUfcs = aUfcs, aScp = aScp
+        )
+
+        val resp = sendMiotCommand(
+            siid = CuktechProtocol.SIID_CHARGER,
+            piid = CuktechProtocol.PIID_PROTOCOL_EXTEND,
+            isSet = true,
+            valueBytes = byteArrayOf(
+                (val32 and 0xFF).toByte(),
+                ((val32 shr 8) and 0xFF).toByte(),
+                ((val32 shr 16) and 0xFF).toByte(),
+                ((val32 shr 24) and 0xFF).toByte()
+            )
+        )
+        BleBridgeService.addLogMessage(
+            BleBridgeService.Companion.LogLevel.LEVEL1,
+            "$logLabel (val32=0x${val32.toString(16)})"
+        )
+        return resp != null
     }
 
     // =========================================================================
@@ -2702,6 +3122,16 @@ class CuktechBleManager(
     // =========================================================================
 
     fun setPortChargeLimit(portId: Int, whTarget: Double, mode: String = "once", enabled: Boolean = true) {
+        if (portId !in 1..4) return
+        scope.launch {
+            commandDispatcher.dispatch(
+                CommandSource.UI,
+                ChargerCommand.SetPortChargeLimit(portId, whTarget, mode, enabled)
+            )
+        }
+    }
+
+    private fun applyPortChargeLimitInternal(portId: Int, whTarget: Double, mode: String, enabled: Boolean) {
         if (portId !in 1..4) return
         if (!enabled || whTarget <= 0.0) {
             persistence.removePortChargeLimit(portId)
@@ -2730,10 +3160,7 @@ class CuktechBleManager(
         if (!limit.enabled || limit.triggered) return
         val usedWh = limit.currentUsedWh(cumulativeWh)
         if (usedWh >= limit.whTarget) {
-            // Cut off port power automatically via PIID 16
-            setPortEnabled(portId, false)
-            _statusMessage.value = "Port ${PortTelemetryDecoder.PORT_NAMES[portId]} reached limit (${"%.1f".format(limit.whTarget)} Wh) - auto cut off"
-
+            commandDispatcher.notifySafetyCutoffTriggered(portId, "WH_LIMIT")
             val updatedLimit = if (limit.mode == "always") {
                 limit.copy(baselineWh = cumulativeWh, triggered = false)
             } else {
@@ -2743,12 +3170,24 @@ class CuktechBleManager(
             val map = _chargeLimits.value.toMutableMap()
             map[portId] = updatedLimit
             _chargeLimits.value = map
+
+            _statusMessage.value = "Port ${PortTelemetryDecoder.PORT_NAMES[portId]} reached limit (${"%.1f".format(limit.whTarget)} Wh) - auto cut off"
+            scope.launch {
+                commandDispatcher.dispatch(
+                    CommandSource.INTERNAL_SAFETY,
+                    ChargerCommand.SetPortEnabled(portId, false)
+                )
+            }
         }
+    }
+
+    fun reloadSessionsFromDb() {
+        _completedSessions.value = persistence.getRecentSessions(300)
     }
 
     fun clearHistory(option: com.example.cuktech.db.CuktechPersistence.ClearHistoryOption) {
         persistence.clearHistory(option)
-        _completedSessions.value = persistence.getRecentSessions(300)
+        reloadSessionsFromDb()
         when (option) {
             com.example.cuktech.db.CuktechPersistence.ClearHistoryOption.CLEAR_ALL -> {
                 sessionDetectors.values.forEach { it.reset() }

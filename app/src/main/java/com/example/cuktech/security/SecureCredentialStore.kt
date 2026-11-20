@@ -2,18 +2,13 @@ package com.example.cuktech.security
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.util.Base64
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
-import java.security.KeyStore
 import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -83,9 +78,16 @@ data class CuktechDeviceCredentials(
 /**
  * Android Keystore-backed encrypted credential storage for Xiaomi Cloud sessions
  * and CUKTECH 10 Ultra BLE credentials (MAC, MiOT token, BLE beaconkey).
- * Never logs sensitive tokens, passwords, or keys.
+ *
+ * Security hardening:
+ * - Fail-closed AndroidKeyStore encryption (zero plaintext key fallback in production).
+ * - One-time safe migration removing any legacy `test_fallback_k` if present from old versions.
+ * - Never auto-reads arbitrary files from shared external storage.
  */
-class SecureCredentialStore(context: Context) {
+class SecureCredentialStore @JvmOverloads constructor(
+    context: Context,
+    private val keyProvider: KeystoreKeyProvider = AndroidKeyStoreKeyProvider()
+) {
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -99,8 +101,41 @@ class SecureCredentialStore(context: Context) {
     private val _activeDevice = MutableStateFlow<CuktechDeviceCredentials?>(null)
     val activeDevice: StateFlow<CuktechDeviceCredentials?> = _activeDevice.asStateFlow()
 
+    private val _keystoreHealthy = MutableStateFlow(true)
+    val keystoreHealthy: StateFlow<Boolean> = _keystoreHealthy.asStateFlow()
+
+    private val _keystoreError = MutableStateFlow<String?>(null)
+    val keystoreError: StateFlow<String?> = _keystoreError.asStateFlow()
+
     init {
+        migrateLegacyFallbackIfPresent()
         reloadFromDisk()
+    }
+
+    private fun migrateLegacyFallbackIfPresent() {
+        val legacyFallbackB64 = prefs.getString(LEGACY_KEY_FALLBACK_RAW, null) ?: return
+        runCatching {
+            val legacyKey = SecretKeySpec(Base64.decode(legacyFallbackB64, Base64.NO_WRAP), "AES")
+            val encSession = prefs.getString(KEY_SESSION_ENC, null)
+            val encDevices = prefs.getString(KEY_DEVICES_ENC, null)
+            val plainSession = encSession?.let { decryptWithKey(it, legacyKey) }
+            val plainDevices = encDevices?.let { decryptWithKey(it, legacyKey) }
+
+            val keystoreKey = keyProvider.getOrCreateKey(KEYSTORE_ALIAS)
+            val editor = prefs.edit()
+            if (plainSession != null) {
+                editor.putString(KEY_SESSION_ENC, encryptWithKey(plainSession, keystoreKey))
+            }
+            if (plainDevices != null) {
+                editor.putString(KEY_DEVICES_ENC, encryptWithKey(plainDevices, keystoreKey))
+            }
+            editor.remove(LEGACY_KEY_FALLBACK_RAW).apply()
+        }.onFailure { err ->
+            // Even if migration fails, remove weak legacy key so plaintext key never persists on disk
+            prefs.edit().remove(LEGACY_KEY_FALLBACK_RAW).apply()
+            _keystoreHealthy.value = false
+            _keystoreError.value = "Legacy credential migration failed; please sign in again (${err.message})"
+        }
     }
 
     fun reloadFromDisk() {
@@ -113,7 +148,7 @@ class SecureCredentialStore(context: Context) {
             ?: devList.firstOrNull()
     }
 
-    fun saveSession(newSession: XiaomiAccountSession) {
+    fun saveSession(newSession: XiaomiAccountSession): Boolean {
         val json = JSONObject().apply {
             put("userId", newSession.userId)
             put("ssecurity", newSession.ssecurity)
@@ -121,13 +156,15 @@ class SecureCredentialStore(context: Context) {
             put("region", newSession.region)
             put("loginTimestamp", newSession.loginTimestamp)
         }.toString()
-        prefs.edit().putString(KEY_SESSION_ENC, encrypt(json)).apply()
+        val enc = encrypt(json) ?: return false
+        prefs.edit().putString(KEY_SESSION_ENC, enc).apply()
         _session.value = newSession
+        return true
     }
 
-    fun saveDevices(deviceList: List<CuktechDeviceCredentials>) {
+    fun saveDevices(deviceList: List<CuktechDeviceCredentials>): Boolean {
         if (deviceList.isEmpty() && _devices.value.isNotEmpty()) {
-            return
+            return true
         }
         val mergedMap = _devices.value.associateBy { it.mac.uppercase().trim() }.toMutableMap()
         for (dev in deviceList) {
@@ -157,7 +194,8 @@ class SecureCredentialStore(context: Context) {
                 put("region", dev.region)
             })
         }
-        prefs.edit().putString(KEY_DEVICES_ENC, encrypt(arr.toString())).apply()
+        val enc = encrypt(arr.toString()) ?: return false
+        prefs.edit().putString(KEY_DEVICES_ENC, enc).apply()
         _devices.value = mergedList
         val currentActive = _activeDevice.value
         val nextActive = if (currentActive != null) {
@@ -172,9 +210,10 @@ class SecureCredentialStore(context: Context) {
         } else {
             _activeDevice.value = null
         }
+        return true
     }
 
-    fun addOrUpdateDevice(device: CuktechDeviceCredentials) {
+    fun addOrUpdateDevice(device: CuktechDeviceCredentials): Boolean {
         val current = _devices.value.toMutableList()
         val idx = current.indexOfFirst {
             (it.mac.isNotBlank() && it.mac.equals(device.mac, ignoreCase = true)) ||
@@ -185,8 +224,11 @@ class SecureCredentialStore(context: Context) {
         } else {
             current.add(0, device)
         }
-        saveDevices(current)
-        selectActiveDevice(device.mac)
+        val ok = saveDevices(current)
+        if (ok) {
+            selectActiveDevice(device.mac)
+        }
+        return ok
     }
 
     fun selectActiveDevice(mac: String) {
@@ -195,7 +237,7 @@ class SecureCredentialStore(context: Context) {
     }
 
     /**
-     * Imports a JSON credentials file (e.g. cuktech_credentials.json) if requested by user.
+     * Explicit user-initiated JSON credentials import (passed from SAF picker).
      */
     fun importFromJsonString(jsonStr: String): CuktechDeviceCredentials? {
         return try {
@@ -215,27 +257,29 @@ class SecureCredentialStore(context: Context) {
                     tokenHex = token,
                     bleKeyHex = bleKey
                 )
-                addOrUpdateDevice(cred)
-                cred
+                if (addOrUpdateDevice(cred)) cred else null
             } else null
         } catch (_: Exception) {
             null
         }
     }
 
-    fun tryAutoImportLocalCredentialsFile(): Boolean {
-        if (_devices.value.isNotEmpty()) return false
-        val candidates = listOf(
-            File("/storage/emulated/0/Development/cuktech10/cuktech_credentials.json"),
-            File("/storage/emulated/0/Download/cuktech_credentials.json")
-        )
-        for (file in candidates) {
-            if (file.exists() && file.canRead()) {
-                val imported = runCatching { importFromJsonString(file.readText()) }.getOrNull()
-                if (imported != null) return true
-            }
-        }
-        return false
+    /**
+     * Encrypts and stores an arbitrary secret string under a custom key in the vault.
+     */
+    fun putEncryptedSecret(key: String, plaintext: String): Boolean {
+        val enc = encrypt(plaintext) ?: return false
+        prefs.edit().putString("sec_$key", enc).apply()
+        return true
+    }
+
+    fun getEncryptedSecret(key: String): String? {
+        val enc = prefs.getString("sec_$key", null) ?: return null
+        return decrypt(enc)
+    }
+
+    fun removeEncryptedSecret(key: String) {
+        prefs.edit().remove("sec_$key").apply()
     }
 
     fun logoutSessionOnly() {
@@ -248,6 +292,7 @@ class SecureCredentialStore(context: Context) {
             .remove(KEY_SESSION_ENC)
             .remove(KEY_DEVICES_ENC)
             .remove(KEY_ACTIVE_MAC)
+            .remove(LEGACY_KEY_FALLBACK_RAW)
             .apply()
         _session.value = null
         _devices.value = emptyList()
@@ -298,40 +343,37 @@ class SecureCredentialStore(context: Context) {
     }
 
     private fun getOrCreateSecretKey(): SecretKey {
+        val key = keyProvider.getOrCreateKey(KEYSTORE_ALIAS)
+        _keystoreHealthy.value = true
+        _keystoreError.value = null
+        return key
+    }
+
+    private fun encrypt(plaintext: String): String? {
         return try {
-            val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            val existing = keyStore.getEntry(KEYSTORE_ALIAS, null) as? KeyStore.SecretKeyEntry
-            if (existing != null) {
-                existing.secretKey
-            } else {
-                val keyGen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-                val spec = KeyGenParameterSpec.Builder(
-                    KEYSTORE_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                )
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setKeySize(256)
-                    .build()
-                keyGen.init(spec)
-                keyGen.generateKey()
-            }
-        } catch (_: Exception) {
-            // Fallback for Robolectric unit test environments without AndroidKeyStore provider
-            val fallbackB64 = prefs.getString(KEY_FALLBACK_RAW, null)
-            if (fallbackB64 != null) {
-                SecretKeySpec(Base64.decode(fallbackB64, Base64.NO_WRAP), "AES")
-            } else {
-                val raw = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
-                prefs.edit().putString(KEY_FALLBACK_RAW, Base64.encodeToString(raw, Base64.NO_WRAP)).apply()
-                SecretKeySpec(raw, "AES")
-            }
+            val key = getOrCreateSecretKey()
+            encryptWithKey(plaintext, key)
+        } catch (e: Exception) {
+            _keystoreHealthy.value = false
+            _keystoreError.value = "Keystore encryption error: ${e.message}"
+            null
         }
     }
 
-    private fun encrypt(plaintext: String): String {
+    private fun decrypt(encoded: String): String? {
+        return try {
+            val key = getOrCreateSecretKey()
+            decryptWithKey(encoded, key)
+        } catch (e: Exception) {
+            _keystoreHealthy.value = false
+            _keystoreError.value = "Keystore decryption error: ${e.message}"
+            null
+        }
+    }
+
+    private fun encryptWithKey(plaintext: String, key: SecretKey): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey())
+        cipher.init(Cipher.ENCRYPT_MODE, key)
         val iv = cipher.iv
         val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
         val combined = ByteArray(1 + iv.size + ciphertext.size)
@@ -341,18 +383,16 @@ class SecureCredentialStore(context: Context) {
         return Base64.encodeToString(combined, Base64.NO_WRAP)
     }
 
-    private fun decrypt(encoded: String): String? {
-        return try {
-            val combined = Base64.decode(encoded, Base64.NO_WRAP)
-            val ivLen = combined[0].toInt() and 0xFF
-            val iv = combined.copyOfRange(1, 1 + ivLen)
-            val ciphertext = combined.copyOfRange(1 + ivLen, combined.size)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), GCMParameterSpec(128, iv))
-            String(cipher.doFinal(ciphertext), Charsets.UTF_8)
-        } catch (_: Exception) {
-            null
-        }
+    private fun decryptWithKey(encoded: String, key: SecretKey): String? {
+        val combined = Base64.decode(encoded, Base64.NO_WRAP)
+        if (combined.size < 14) return null
+        val ivLen = combined[0].toInt() and 0xFF
+        if (ivLen <= 0 || 1 + ivLen >= combined.size) return null
+        val iv = combined.copyOfRange(1, 1 + ivLen)
+        val ciphertext = combined.copyOfRange(1 + ivLen, combined.size)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
+        return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
     }
 
     companion object {
@@ -361,6 +401,6 @@ class SecureCredentialStore(context: Context) {
         private const val KEY_SESSION_ENC = "xiaomi_session_enc"
         private const val KEY_DEVICES_ENC = "cuktech_devices_enc"
         private const val KEY_ACTIVE_MAC = "active_device_mac"
-        private const val KEY_FALLBACK_RAW = "test_fallback_k"
+        private const val LEGACY_KEY_FALLBACK_RAW = "test_fallback_k"
     }
 }

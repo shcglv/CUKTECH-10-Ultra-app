@@ -10,6 +10,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.content.Context
 import android.bluetooth.BluetoothManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -127,12 +129,22 @@ fun XiaomiAccountLoginDialog(
             res.onSuccess { session ->
                 qrSession = session
                 qrStatusText = "Scan with Mi Home or Xiaomi account to confirm login"
-                // Download QR image bitmap
+                // Download QR image bitmap with bounded timeouts
                 withContext(Dispatchers.IO) {
                     runCatching {
-                        val bytes = URL(session.qrImageUrl).openStream().use { it.readBytes() }
-                        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        qrBitmap = bmp?.asImageBitmap()
+                        val conn = (URL(session.qrImageUrl).openConnection() as java.net.HttpURLConnection).apply {
+                            connectTimeout = 10000
+                            readTimeout = 10000
+                        }
+                        try {
+                            if (conn.responseCode in 200..299) {
+                                val bytes = conn.inputStream.use { it.readBytes() }
+                                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                qrBitmap = bmp?.asImageBitmap()
+                            }
+                        } finally {
+                            conn.disconnect()
+                        }
                     }
                 }
                 // Start polling loop
@@ -495,26 +507,43 @@ fun XiaomiAccountLoginDialog(
                         }
 
                         3 -> {
-                            // Manual / JSON Import Tab
+                            // Manual / SAF JSON Import Tab
+                            val importContext = LocalContext.current
+                            val importJsonLauncher = rememberLauncherForActivityResult(
+                                contract = ActivityResultContracts.OpenDocument()
+                            ) { uri ->
+                                if (uri != null) {
+                                    scope.launch {
+                                        val content = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                importContext.contentResolver.openInputStream(uri)?.use { stream ->
+                                                    stream.bufferedReader().readText()
+                                                }
+                                            }.getOrNull()
+                                        }
+                                        val imported = content?.let { credentialStore.importFromJsonString(it) }
+                                        if (imported != null) {
+                                            onDevicesSynced(credentialStore.devices.value)
+                                            onDismiss()
+                                        } else {
+                                            loginStatusText = "Invalid or unsupported JSON credentials file"
+                                        }
+                                    }
+                                }
+                            }
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 OutlinedButton(
                                     onClick = {
-                                        val ok = credentialStore.tryAutoImportLocalCredentialsFile()
-                                        if (ok) {
-                                            onDevicesSynced(credentialStore.devices.value)
-                                            onDismiss()
-                                        } else {
-                                            loginStatusText = "Local cuktech_credentials.json not found or already imported"
-                                        }
+                                        importJsonLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Import Local cuktech_credentials.json")
+                                    Text("Import Credentials JSON (File Picker)")
                                 }
 
                                 OutlinedTextField(
@@ -671,6 +700,15 @@ private fun TwoFactorChallengeSection(
         }
 
         if (showWebView) {
+            DisposableEffect(Unit) {
+                onDispose {
+                    runCatching {
+                        val cm = CookieManager.getInstance()
+                        cm.removeAllCookies(null)
+                        cm.flush()
+                    }
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -686,7 +724,10 @@ private fun TwoFactorChallengeSection(
                             cm.setAcceptThirdPartyCookies(this, true)
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
-                            settings.databaseEnabled = true
+                            settings.databaseEnabled = false
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                             settings.userAgentString =
                                 "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
                             for ((k, v) in challenge.identitySessionCookies) {
@@ -697,7 +738,20 @@ private fun TwoFactorChallengeSection(
                                     view: WebView?,
                                     request: WebResourceRequest?
                                 ): Boolean {
-                                    val url = request?.url?.toString() ?: return false
+                                    val uri = request?.url ?: return false
+                                    val scheme = uri.scheme?.lowercase().orEmpty()
+                                    if (scheme != "https") {
+                                        return true // Block non-HTTPS schemes (file://, content://, javascript:, http://)
+                                    }
+                                    val host = uri.host?.lowercase().orEmpty()
+                                    val isAllowedHost = host.endsWith(".xiaomi.com") || host == "xiaomi.com" ||
+                                        host.endsWith(".mi.com") || host == "mi.com" ||
+                                        host.endsWith(".miui.com") ||
+                                        host.endsWith(".google.com") || host.endsWith(".facebook.com")
+                                    if (!isAllowedHost) {
+                                        return true
+                                    }
+                                    val url = uri.toString()
                                     if (url.contains("sts.api.io.mi.com/sts") || url.contains("serviceToken=")) {
                                         val rawCookie = cm.getCookie("https://account.xiaomi.com").orEmpty() +
                                             "; " + cm.getCookie(url).orEmpty()
@@ -719,7 +773,9 @@ private fun TwoFactorChallengeSection(
                                     }
                                 }
                             }
-                            loadUrl(challenge.notificationUrl)
+                            if (challenge.notificationUrl.startsWith("https://")) {
+                                loadUrl(challenge.notificationUrl)
+                            }
                         }
                     }
                 )

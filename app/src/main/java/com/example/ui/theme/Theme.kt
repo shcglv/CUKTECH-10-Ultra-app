@@ -1,124 +1,142 @@
 package com.example.ui.theme
 
+import android.app.Activity
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
-data class AppColors(
-    val background: Color,
-    val surface: Color,
-    val surfaceVariant: Color,
-    val border: Color,
-    val textPrimary: Color,
-    val textSecondary: Color,
-    val primary: Color,
-    val primaryContainer: Color,
-    val onPrimaryContainer: Color,
-    val isDark: Boolean = true
+private val CuktechLightColorScheme = lightColorScheme(
+    primary = MdLightPrimary,
+    onPrimary = MdLightOnPrimary,
+    primaryContainer = MdLightPrimaryContainer,
+    onPrimaryContainer = MdLightOnPrimaryContainer,
+    secondary = MdLightSecondary,
+    onSecondary = MdLightOnSecondary,
+    secondaryContainer = MdLightSecondaryContainer,
+    onSecondaryContainer = MdLightOnSecondaryContainer,
+    tertiary = MdLightTertiary,
+    onTertiary = MdLightOnTertiary,
+    tertiaryContainer = MdLightTertiaryContainer,
+    onTertiaryContainer = MdLightOnTertiaryContainer,
+    background = MdLightBackground,
+    onBackground = MdLightOnBackground,
+    surface = MdLightSurface,
+    onSurface = MdLightOnSurface,
+    surfaceVariant = MdLightSurfaceVariant,
+    onSurfaceVariant = MdLightOnSurfaceVariant,
+    surfaceContainerLowest = MdLightSurfaceContainerLowest,
+    surfaceContainerLow = MdLightSurfaceContainerLow,
+    surfaceContainer = MdLightSurfaceContainer,
+    surfaceContainerHigh = MdLightSurfaceContainerHigh,
+    surfaceContainerHighest = MdLightSurfaceContainerHighest,
+    outline = MdLightOutline,
+    outlineVariant = MdLightOutlineVariant,
+    error = MdLightError,
+    onError = MdLightOnError,
+    errorContainer = MdLightErrorContainer,
+    onErrorContainer = MdLightOnErrorContainer
 )
 
-val LocalAppColors = staticCompositionLocalOf {
-    AppColors(
-        background = CuktechGunmetalBackground,
-        surface = CuktechGunmetalSurface,
-        surfaceVariant = CuktechGunmetalSurfaceVariant,
-        border = CuktechGunmetalBorder,
-        textPrimary = DarkTextPrimary,
-        textSecondary = DarkTextSecondary,
-        primary = CuktechGunmetalPrimary,
-        primaryContainer = CuktechGunmetalPrimaryContainer,
-        onPrimaryContainer = CuktechGunmetalOnPrimaryContainer,
-        isDark = true
-    )
-}
+private val CuktechDarkColorScheme = darkColorScheme(
+    primary = MdDarkPrimary,
+    onPrimary = MdDarkOnPrimary,
+    primaryContainer = MdDarkPrimaryContainer,
+    onPrimaryContainer = MdDarkOnPrimaryContainer,
+    secondary = MdDarkSecondary,
+    onSecondary = MdDarkOnSecondary,
+    secondaryContainer = MdDarkSecondaryContainer,
+    onSecondaryContainer = MdDarkOnSecondaryContainer,
+    tertiary = MdDarkTertiary,
+    onTertiary = MdDarkOnTertiary,
+    tertiaryContainer = MdDarkTertiaryContainer,
+    onTertiaryContainer = MdDarkOnTertiaryContainer,
+    background = MdDarkBackground,
+    onBackground = MdDarkOnBackground,
+    surface = MdDarkSurface,
+    onSurface = MdDarkOnSurface,
+    surfaceVariant = MdDarkSurfaceVariant,
+    onSurfaceVariant = MdDarkOnSurfaceVariant,
+    surfaceContainerLowest = MdDarkSurfaceContainerLowest,
+    surfaceContainerLow = MdDarkSurfaceContainerLow,
+    surfaceContainer = MdDarkSurfaceContainer,
+    surfaceContainerHigh = MdDarkSurfaceContainerHigh,
+    surfaceContainerHighest = MdDarkSurfaceContainerHighest,
+    outline = MdDarkOutline,
+    outlineVariant = MdDarkOutlineVariant,
+    error = MdDarkError,
+    onError = MdDarkOnError,
+    errorContainer = MdDarkErrorContainer,
+    onErrorContainer = MdDarkOnErrorContainer
+)
 
+/**
+ * Pixel-native Material 3 theme supporting System/Light/Dark mode,
+ * Android 12+ Material You Dynamic Color, and optional Pure Black AMOLED surface override.
+ */
 @Composable
 fun MyApplicationTheme(
-    palette: DarkThemePalette = DarkThemePalette.CUKTECH_CYAN,
+    themeMode: String = "system", // "system" | "light" | "dark"
+    useDynamicColor: Boolean = true,
+    useAmoledBlack: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val customColors = when (palette) {
-        DarkThemePalette.CUKTECH_CYAN -> AppColors(
-            background = CuktechGunmetalBackground,
-            surface = CuktechGunmetalSurface,
-            surfaceVariant = CuktechGunmetalSurfaceVariant,
-            border = CuktechGunmetalBorder,
-            textPrimary = DarkTextPrimary,
-            textSecondary = DarkTextSecondary,
-            primary = CuktechGunmetalPrimary,
-            primaryContainer = CuktechGunmetalPrimaryContainer,
-            onPrimaryContainer = CuktechGunmetalOnPrimaryContainer,
-            isDark = true
-        )
-        DarkThemePalette.AMOLED_BLACK -> AppColors(
-            background = AmoledBackground,
-            surface = AmoledSurface,
-            surfaceVariant = AmoledSurfaceVariant,
-            border = AmoledBorder,
-            textPrimary = DarkTextPrimary,
-            textSecondary = DarkTextSecondary,
-            primary = AmoledPrimary,
-            primaryContainer = AmoledPrimaryContainer,
-            onPrimaryContainer = AmoledOnPrimaryContainer,
-            isDark = true
-        )
-        DarkThemePalette.CYBERPUNK_NEON -> AppColors(
-            background = CyberpunkBackground,
-            surface = CyberpunkSurface,
-            surfaceVariant = CyberpunkSurfaceVariant,
-            border = CyberpunkBorder,
-            textPrimary = DarkTextPrimary,
-            textSecondary = DarkTextSecondary,
-            primary = CyberpunkPrimary,
-            primaryContainer = CyberpunkPrimaryContainer,
-            onPrimaryContainer = CyberpunkOnPrimaryContainer,
-            isDark = true
-        )
-        DarkThemePalette.TITANIUM_AMBER -> AppColors(
-            background = TitaniumBackground,
-            surface = TitaniumSurface,
-            surfaceVariant = TitaniumSurfaceVariant,
-            border = TitaniumBorder,
-            textPrimary = DarkTextPrimary,
-            textSecondary = DarkTextSecondary,
-            primary = TitaniumPrimary,
-            primaryContainer = TitaniumPrimaryContainer,
-            onPrimaryContainer = TitaniumOnPrimaryContainer,
-            isDark = true
-        )
-        DarkThemePalette.DEEP_OCEAN_BLUE -> AppColors(
-            background = OceanBackground,
-            surface = OceanSurface,
-            surfaceVariant = OceanSurfaceVariant,
-            border = OceanBorder,
-            textPrimary = DarkTextPrimary,
-            textSecondary = DarkTextSecondary,
-            primary = OceanPrimary,
-            primaryContainer = OceanPrimaryContainer,
-            onPrimaryContainer = OceanOnPrimaryContainer,
-            isDark = true
-        )
+    val systemDark = isSystemInDarkTheme()
+    val isDark = when (themeMode.lowercase()) {
+        "dark" -> true
+        "light" -> false
+        else -> systemDark
     }
 
-    val colorScheme = darkColorScheme(
-        primary = customColors.primary,
-        onPrimary = Color(0xFF0A0E1A),
-        primaryContainer = customColors.primaryContainer,
-        onPrimaryContainer = customColors.onPrimaryContainer,
-        background = customColors.background,
-        surface = customColors.surface,
-        surfaceVariant = customColors.surfaceVariant,
-        onBackground = DarkTextPrimary,
-        onSurface = DarkTextPrimary,
-        onSurfaceVariant = DarkTextSecondary,
-        outline = customColors.border,
-        outlineVariant = customColors.border.copy(alpha = 0.5f)
-    )
+    val context = LocalContext.current
+    val baseScheme = when {
+        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+        isDark -> CuktechDarkColorScheme
+        else -> CuktechLightColorScheme
+    }
 
-    CompositionLocalProvider(LocalAppColors provides customColors) {
+    val colorScheme = if (isDark && useAmoledBlack) {
+        baseScheme.copy(
+            background = Color.Black,
+            surface = Color.Black,
+            surfaceContainerLowest = Color.Black,
+            surfaceContainerLow = Color(0xFF0A0C10),
+            surfaceContainer = Color(0xFF11141A),
+            surfaceContainerHigh = Color(0xFF181C23),
+            surfaceContainerHighest = Color(0xFF20252E)
+        )
+    } else {
+        baseScheme
+    }
+
+    val semanticColors = if (isDark) DarkSemanticColors else LightSemanticColors
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window
+            if (window != null) {
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !isDark
+                    isAppearanceLightNavigationBars = !isDark
+                }
+            }
+        }
+    }
+
+    CompositionLocalProvider(LocalSemanticColors provides semanticColors) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,
@@ -126,4 +144,3 @@ fun MyApplicationTheme(
         )
     }
 }
-

@@ -10,11 +10,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     
-    <!-- Location is necessary for general BLE discovery on various Android versions -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Location only required for BLE discovery on Android 8..11 (API 26..30) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="30" />
 
-    <!-- Internet & Net interfaces for hosting the socket bridge gateway -->
+    <!-- Internet & Net interfaces for Xiaomi Cloud auth and optional local TCP bridge -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -23,18 +23,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Storage permissions for CSV export to Downloads/cuktech10/history -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <queries>
         <package android:name="com.xiaomi.smarthome" />
     </queries>
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -42,7 +42,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyApplication"
-        tools:targetApi="34">
+        tools:targetApi="36">
         
         <activity
             android:name=".MainActivity"
@@ -78,6 +78,13 @@
                 <action android:name="com.cramqin.blecuktech10.SET_SCREEN_TIMEOUT" />
                 <action android:name="com.cramqin.blecuktech10.SET_CHARGE_LIMIT" />
                 <action android:name="com.cramqin.blecuktech10.SET_AUTO_CONNECT" />
+                <action android:name="com.cramqin.blecuktech10.SET_PORT_LOGGING" />
+                <action android:name="com.cramqin.blecuktech10.SET_TELEMETRY_ENABLED" />
+                <action android:name="com.cramqin.blecuktech10.SET_LOG_ONLY_WHEN_CHARGING" />
+                <action android:name="com.cramqin.blecuktech10.SET_PAUSE_POLLING_WHEN_LOCKED" />
+                <action android:name="com.cramqin.blecuktech10.FORCE_SOFT_RESET" />
+                <action android:name="com.cramqin.blecuktech10.MASTER_KILLSWITCH" />
+                <action android:name="com.cramqin.blecuktech10.UNDO_LAST_COMMAND" />
                 <action android:name="com.cramqin.blecuktech10.QUERY_STATUS" />
                 <action android:name="com.example.action.START_SERVER" />
                 <action android:name="com.example.action.STOP_SERVER" />
@@ -104,29 +111,44 @@
             </intent-filter>
         </receiver>
 
-        <!-- HyperOS Soft Glass 4x2 Control Center Widget -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Widget Per-Instance Configuration Activity -->
+        <activity
+            android:name=".widget.CuktechWidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.MyApplication"
+            android:label="@string/widget_config_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Material 3 / Glance 4x2 Control Center Widget -->
         <receiver
-            android:name=".widget.CuktechWidget4x2Provider"
-            android:label="CUKTECH 10 · 4x2 Soft Glass"
+            android:name=".widget.CuktechGlanceControlReceiver"
+            android:label="@string/widget_control_name"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.cramqin.blecuktech10.WIDGET_TOGGLE_PORT_1" />
-                <action android:name="com.cramqin.blecuktech10.WIDGET_TOGGLE_PORT_2" />
-                <action android:name="com.cramqin.blecuktech10.WIDGET_TOGGLE_PORT_3" />
-                <action android:name="com.cramqin.blecuktech10.WIDGET_TOGGLE_PORT_4" />
-                <action android:name="com.cramqin.blecuktech10.WIDGET_CYCLE_SCENE" />
-                <action android:name="com.cramqin.blecuktech10.WIDGET_CONNECT_OR_OPEN" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_cuktech_4x2_info" />
         </receiver>
 
-        <!-- HyperOS Soft Glass 2x2 Compact Tile Widget -->
+        <!-- Material 3 / Glance 2x2 Compact Tile Widget -->
         <receiver
-            android:name=".widget.CuktechWidget2x2Provider"
-            android:label="CUKTECH 10 · 2x2 Soft Glass"
+            android:name=".widget.CuktechGlanceCompactReceiver"
+            android:label="@string/widget_compact_name"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -134,32 +156,6 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_cuktech_2x2_info" />
-        </receiver>
-
-        <!-- Solid Dark 4x2 Control Center Widget -->
-        <receiver
-            android:name=".widget.CuktechWidget4x2SolidProvider"
-            android:label="CUKTECH 10 · 4x2 Solid Dark"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_cuktech_4x2_solid_info" />
-        </receiver>
-
-        <!-- Solid Dark 2x2 Compact Tile Widget -->
-        <receiver
-            android:name=".widget.CuktechWidget2x2SolidProvider"
-            android:label="CUKTECH 10 · 2x2 Solid Dark"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_cuktech_2x2_solid_info" />
         </receiver>
 
     </application>

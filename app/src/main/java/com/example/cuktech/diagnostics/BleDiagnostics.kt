@@ -9,6 +9,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import com.example.BleBridgeService
 import com.example.cuktech.ble.CuktechAuthState
+import com.example.cuktech.security.LogSanitizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +52,7 @@ class BleDiagnostics(private val context: Context) {
         val sb = StringBuilder()
         val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter = btManager?.adapter
+        val service = BleBridgeService.getInstance()
         val mgr = BleBridgeService.cuktechManager
 
         // === 1. PHONE & BLUETOOTH HARDWARE ===
@@ -78,15 +80,17 @@ class BleDiagnostics(private val context: Context) {
         sb.appendLine("\n=== BLE CONNECTION & GATT STATUS ===")
         val connState = BleBridgeService.bleConnectionState.value
         val addr = BleBridgeService.bleDeviceAddress.value ?: mgr?.credentialStore?.activeDevice?.value?.mac ?: "None"
+        val maskedAddr = if (addr == "None") "None" else LogSanitizer.maskMac(addr)
         val activeDevName = mgr?.credentialStore?.activeDevice?.value?.name ?: "CUKTECH 10 Ultra"
         sb.appendLine("Link State: $connState")
-        sb.appendLine("Target Charger: $activeDevName ($addr)")
+        sb.appendLine("Target Charger: $activeDevName ($maskedAddr)")
         sb.appendLine("Auth Phase: ${mgr?.authState?.value ?: CuktechAuthState.DISCONNECTED}")
 
-        val gatt = BleBridgeService.getInstance()?.getBluetoothGatt()
+        val gatt = service?.getBluetoothGatt()
         if (gatt != null) {
             val services = gatt.services
-            sb.appendLine("GATT Instance: Active (MTU Negotiated: 512 bytes)")
+            val mtu = service.negotiatedMtu
+            sb.appendLine("GATT Instance: Active (Negotiated MTU: $mtu bytes)")
             sb.appendLine("GATT Services Discovered (${services.size}):")
             for (s in services) {
                 val name = when (s.uuid.toString().uppercase()) {
@@ -113,7 +117,8 @@ class BleDiagnostics(private val context: Context) {
             sb.appendLine("Firmware: $fw")
         }
         if (!sn.isNullOrBlank() && sn != "--" && !sn.contains("Unknown", ignoreCase = true)) {
-            sb.appendLine("Serial Number: $sn")
+            val maskedSn = if (sn.length > 6) "${sn.take(3)}***${sn.takeLast(3)}" else sn
+            sb.appendLine("Serial Number: $maskedSn")
         }
         sb.appendLine("Smart Screen: 1.57\" TFT Vientiane Multi-Color Display")
         sb.appendLine("Protocol Engine: MiOT Spec v5 + CUKTECH Extended v2 (8-byte payload)")
@@ -126,16 +131,24 @@ class BleDiagnostics(private val context: Context) {
         sb.appendLine("  • USB-C3: 44W Max (UFCS / SCP / PD)")
         sb.appendLine("  • USB-A : 33W Max (UFCS / QC3.0 / SCP)")
 
-        // === 4. SYSTEM ENVIRONMENT & KEEPALIVE ===
+        // === 4. SYSTEM ENVIRONMENT, KEEPALIVE & SECURITY ===
         val powerMgr = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
         val isWhitelisted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             powerMgr?.isIgnoringBatteryOptimizations(context.packageName) == true
         } else true
-        sb.appendLine("\n=== SYSTEM & KEEPALIVE ===")
-        sb.appendLine("Battery Whitelist: ${if (isWhitelisted) "ACTIVE (Unrestricted Keepalive)" else "OPTIMIZED (Action required)"}")
-        sb.appendLine("CPU Partial WakeLock: ACTIVE (Foreground Service)")
+        val wakeHeld = service?.isWakeLockHeld() == true
+        val ksHealthy = mgr?.credentialStore?.keystoreHealthy?.value ?: true
+        val secCfg = mgr?.authManager?.config?.value
 
-        val out = sb.toString().trim()
+        sb.appendLine("\n=== SYSTEM, KEEPALIVE & SECURITY ===")
+        sb.appendLine("Battery Whitelist: ${if (isWhitelisted) "ACTIVE (Unrestricted Keepalive)" else "OPTIMIZED (Action required)"}")
+        sb.appendLine("CPU Partial WakeLock: ${if (wakeHeld) "HELD (Service active)" else "RELEASED (Idle)"}")
+        sb.appendLine("Keystore Vault: ${if (ksHealthy) "HEALTHY (Fail-closed AES-GCM)" else "ERROR (${mgr?.credentialStore?.keystoreError?.value})"}")
+        if (secCfg != null) {
+            sb.appendLine("External Channels (Opt-in): Tasker=${secCfg.taskerEnabled}, ADB=${secCfg.adbBroadcastEnabled}, TCP=${secCfg.tcpGatewayEnabled}")
+        }
+
+        val out = LogSanitizer.sanitize(sb.toString().trim())
         _status.value = _status.value.copy(lastDiagnosticOutput = out)
         out
     }

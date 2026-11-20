@@ -2,15 +2,32 @@ package com.example.cuktech.db
 
 import android.content.ContentValues
 import android.content.Context
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
+import android.os.Build
+import android.provider.MediaStore
+import com.example.cuktech.db.room.ChargeSessionEntity
+import com.example.cuktech.db.room.ChargingProfileEntity
+import com.example.cuktech.db.room.CuktechDatabase
+import com.example.cuktech.db.room.DailyEnergyAggregateEntity
+import com.example.cuktech.db.room.DeviceAliasEntity
+import com.example.cuktech.db.room.LegacySqliteMigrator
+import com.example.cuktech.db.room.PortChargeLimitEntity
+import com.example.cuktech.db.room.TelemetrySampleEntity
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.energy.PortChargeLimit
 import com.example.cuktech.protocol.PortTelemetry
+import com.example.cuktech.security.BackupPayload
+import com.example.cuktech.security.CuktechDeviceCredentials
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
+import kotlin.math.max
 
 data class PowerChartPoint(
     val timestampMs: Long,
@@ -18,158 +35,262 @@ data class PowerChartPoint(
     val portWatts: Map<Int, Double>
 )
 
+data class ArchiveSummary(
+    val archivedSessions: Int,
+    val prunedTelemetrySamples: Int
+)
+
 /**
- * Native SQLite persistence for CUKTECH 10 Ultra telemetry history, charging sessions,
- * per-port Wh charge limits, and CSV export (`cuktech-ble-server/src/cuktech_ble/history.py`).
+ * Room-backed persistence for CUKTECH 10 Ultra telemetry history, charging sessions,
+ * daily energy aggregates (after retention rollover), historical tariff cost snapshots,
+ * per-port Wh charge limits, device aliases, charging profiles, CSV export, and SAF backups.
  */
-class CuktechPersistence(private val context: Context) :
-    SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
+class CuktechPersistence @JvmOverloads constructor(
+    private val context: Context,
+    private val db: CuktechDatabase = CuktechDatabase.getInstance(context),
+    runLegacyMigration: Boolean = true
+) {
 
-    override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL(
-            """
-            CREATE TABLE IF NOT EXISTS port_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts_ms INTEGER NOT NULL,
-                port_id INTEGER NOT NULL,
-                voltage_v REAL NOT NULL,
-                current_a REAL NOT NULL,
-                power_w REAL NOT NULL,
-                protocol_name TEXT NOT NULL
-            )
-            """.trimIndent()
-        )
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_port_history_ts ON port_history(ts_ms)")
+    private val telemetryDao = db.telemetrySampleDao()
+    private val sessionDao = db.chargeSessionDao()
+    private val aggregateDao = db.dailyEnergyAggregateDao()
+    private val limitDao = db.portChargeLimitDao()
+    private val aliasDao = db.deviceAliasDao()
+    private val profileDao = db.chargingProfileDao()
 
-        db.execSQL(
-            """
-            CREATE TABLE IF NOT EXISTS charge_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                port_id INTEGER NOT NULL,
-                port_label TEXT NOT NULL,
-                start_ts REAL NOT NULL,
-                end_ts REAL,
-                wh_accumulated REAL NOT NULL,
-                peak_watts REAL NOT NULL,
-                avg_watts REAL NOT NULL,
-                protocol_used TEXT NOT NULL
-            )
-            """.trimIndent()
-        )
-
-        db.execSQL(
-            """
-            CREATE TABLE IF NOT EXISTS port_charge_limits (
-                port_id INTEGER PRIMARY KEY,
-                wh_target REAL NOT NULL,
-                mode TEXT NOT NULL,
-                baseline_wh REAL NOT NULL,
-                enabled INTEGER NOT NULL,
-                triggered INTEGER NOT NULL
-            )
-            """.trimIndent()
-        )
+    init {
+        if (runLegacyMigration) {
+            LegacySqliteMigrator.migrateIfNeeded(context, db)
+        }
+        seedBuiltInProfilesIfEmpty()
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        onCreate(db)
-    }
-
-    fun recordPortSnapshot(ports: Collection<PortTelemetry>, timestampMs: Long = System.currentTimeMillis()) {
+    private fun seedBuiltInProfilesIfEmpty() {
         runCatching {
-            val db = writableDatabase
-            db.beginTransaction()
-            try {
-                for (p in ports) {
-                    val cv = ContentValues().apply {
-                        put("ts_ms", timestampMs)
-                        put("port_id", p.portId)
-                        put("voltage_v", p.voltageV)
-                        put("current_a", p.currentA)
-                        put("power_w", p.powerW)
-                        put("protocol_name", p.protocolName)
-                    }
-                    db.insert("port_history", null, cv)
-                }
-                // Prune records older than 7 days periodically
-                val cutoff = timestampMs - 7L * 24L * 3600L * 1000L
-                db.delete("port_history", "ts_ms < ?", arrayOf(cutoff.toString()))
-                db.setTransactionSuccessful()
-            } finally {
-                db.endTransaction()
+            if (profileDao.getAll().isEmpty()) {
+                profileDao.upsertAll(
+                    listOf(
+                        ChargingProfileEntity(
+                            name = "Workstation Hybrid (100W C1)",
+                            sceneMode = 2,
+                            portSwitchBitmap = 0x0F,
+                            screenTimeout = 1,
+                            usbALowCurrent = false,
+                            idleScreenOff = false,
+                            orientationLock = false,
+                            isBuiltIn = true
+                        ),
+                        ChargingProfileEntity(
+                            name = "Single Port Burst (120W Max)",
+                            sceneMode = 3,
+                            portSwitchBitmap = 0x01,
+                            screenTimeout = 2,
+                            usbALowCurrent = false,
+                            idleScreenOff = false,
+                            orientationLock = false,
+                            isBuiltIn = true
+                        ),
+                        ChargingProfileEntity(
+                            name = "Night Eco (AI + Screen Off)",
+                            sceneMode = 1,
+                            portSwitchBitmap = 0x0F,
+                            screenTimeout = 5,
+                            usbALowCurrent = true,
+                            idleScreenOff = true,
+                            orientationLock = false,
+                            isBuiltIn = true
+                        )
+                    )
+                )
             }
         }
     }
 
-    fun insertCompletedSession(session: ChargeSessionRecord): Long {
-        return runCatching {
-            val cv = ContentValues().apply {
-                put("port_id", session.portId)
-                put("port_label", session.portLabel)
-                put("start_ts", session.startTimeSec)
-                put("end_ts", session.endTimeSec ?: (System.currentTimeMillis() / 1000.0))
-                put("wh_accumulated", session.whAccumulated)
-                put("peak_watts", session.peakWatts)
-                put("avg_watts", session.avgWatts)
-                put("protocol_used", session.protocolUsed)
+    fun observeRecentSessions(limit: Int = 300): Flow<List<ChargeSessionRecord>> =
+        sessionDao.observeRecentCompleted(limit).map { list -> list.map { it.toRecord() } }
+
+    fun observeDailyAggregates(): Flow<List<DailyEnergyAggregateEntity>> = aggregateDao.observeAll()
+
+    fun observeAliases(): Flow<List<DeviceAliasEntity>> = aliasDao.observeAll()
+
+    fun observeProfiles(): Flow<List<ChargingProfileEntity>> = profileDao.observeAll()
+
+    fun recordPortSnapshot(
+        ports: Collection<PortTelemetry>,
+        timestampMs: Long = System.currentTimeMillis(),
+        deviceMac: String = "",
+        retentionDays: Int = 30
+    ) {
+        if (ports.isEmpty()) return
+        runCatching {
+            val entities = ports.map { p ->
+                TelemetrySampleEntity(
+                    timestampMs = timestampMs,
+                    portId = p.portId,
+                    voltageV = p.voltageV,
+                    currentA = p.currentA,
+                    powerW = p.powerW,
+                    protocolName = p.protocolName,
+                    cumulativeWh = p.cumulativeWh,
+                    deviceMac = deviceMac
+                )
             }
-            val id = writableDatabase.insert("charge_sessions", null, cv)
-            pruneOldSessions(maxRetained = 300)
-            id
+            val pruneCutoffMs = timestampMs - retentionDays.coerceIn(1, 3650).toLong() * 86_400_000L
+            db.runInTransaction {
+                telemetryDao.insertAll(entities)
+                telemetryDao.deleteOlderThan(pruneCutoffMs)
+            }
+        }
+    }
+
+    fun getTelemetrySamplesSince(minTsMs: Long, limit: Int = 10000): List<TelemetrySampleEntity> {
+        return runCatching { telemetryDao.getSamplesSince(minTsMs, limit) }.getOrDefault(emptyList())
+    }
+
+    fun upsertActiveSession(record: ChargeSessionRecord): Long {
+        return runCatching {
+            val activeEntity = ChargeSessionEntity.fromRecord(record.copy(isActive = true))
+            val existing = sessionDao.getActiveSessionForPort(record.portId)
+            val target = if (existing != null) activeEntity.copy(id = existing.id) else activeEntity.copy(id = 0L)
+            sessionDao.insertOrReplace(target)
+        }.getOrDefault(-1L)
+    }
+
+    fun loadActiveSessions(): List<ChargeSessionRecord> {
+        return runCatching {
+            sessionDao.getActiveSessions().map { it.toRecord() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun clearActiveSessionForPort(portId: Int) {
+        runCatching { sessionDao.deleteActiveSessionForPort(portId) }
+    }
+
+    fun insertCompletedSession(
+        session: ChargeSessionRecord,
+        tariffPerKwhOverride: Double? = null,
+        currencyCodeOverride: String? = null
+    ): Long {
+        return runCatching {
+            val rate = max(0.0, tariffPerKwhOverride ?: session.tariffPerKwhSnapshot)
+            val currency = (currencyCodeOverride ?: session.currencyCode).ifBlank { "USD" }
+            val cost = if (rate > 0.0 && session.whAccumulated > 0.0) {
+                (session.whAccumulated / 1000.0) * rate
+            } else {
+                session.computedCost
+            }
+            val finalRecord = session.copy(
+                id = 0L,
+                endTimeSec = session.endTimeSec ?: session.lastSampleTimeSec,
+                isActive = false,
+                isPaused = false,
+                pauseReason = null,
+                tariffPerKwhSnapshot = rate,
+                currencyCode = currency,
+                computedCost = cost
+            )
+            var insertedId = -1L
+            db.runInTransaction {
+                sessionDao.deleteActiveSessionForPort(session.portId)
+                insertedId = sessionDao.insertOrReplace(ChargeSessionEntity.fromRecord(finalRecord))
+            }
+            insertedId
         }.getOrDefault(-1L)
     }
 
     /**
-     * Auto-prunes older completed sessions beyond [maxRetained] (default 300).
-     * Keeps the most recent records based on start_ts so the database never grows unbounded.
+     * Rolls completed sessions older than [retentionDays] (default 30 days) into
+     * `daily_energy_aggregates` preserving Wh, active duration, gap duration, peak wattage,
+     * and historical tariff cost totals before removing expired raw rows.
      */
-    fun pruneOldSessions(maxRetained: Int = 300) {
+    fun archiveOldSessions(
+        retentionDays: Int = 30,
+        nowMs: Long = System.currentTimeMillis()
+    ): ArchiveSummary {
+        var archivedCount = 0
+        var prunedSamples = 0
         runCatching {
-            writableDatabase.execSQL(
-                """
-                DELETE FROM charge_sessions 
-                WHERE id NOT IN (
-                    SELECT id FROM charge_sessions ORDER BY start_ts DESC LIMIT ?
-                )
-                """.trimIndent(),
-                arrayOf(maxRetained.toString())
-            )
+            val days = retentionDays.coerceIn(1, 3650)
+            val cutoffSec = (nowMs / 1000.0) - (days.toDouble() * 86_400.0)
+            val cutoffMs = nowMs - (days.toLong() * 86_400_000L)
+            val dayFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                timeZone = TimeZone.getDefault()
+            }
+
+            db.runInTransaction {
+                val expired = sessionDao.getSessionsReadyToArchive(cutoffSec)
+                if (expired.isNotEmpty()) {
+                    val grouped = expired.groupBy { entity ->
+                        val dateIso = dayFormat.format(Date((entity.startTimeSec * 1000.0).toLong()))
+                        AggregateGroupKey(
+                            dateIso = dateIso,
+                            portId = entity.portId,
+                            deviceMac = entity.deviceMac,
+                            currencyCode = entity.currencyCode.ifBlank { "USD" }
+                        )
+                    }
+                    for ((key, items) in grouped) {
+                        val existing = aggregateDao.find(key.dateIso, key.portId, key.deviceMac, key.currencyCode)
+                        val sumWh = items.sumOf { it.whAccumulated }
+                        val sumActive = items.sumOf { it.activeDurationSec }
+                        val sumGap = items.sumOf { it.gapDurationSec }
+                        val sumCost = items.sumOf { it.computedCost }
+                        val maxPeak = items.maxOfOrNull { it.peakWatts } ?: 0.0
+                        val merged = if (existing != null) {
+                            existing.copy(
+                                totalWh = existing.totalWh + sumWh,
+                                totalActiveSec = existing.totalActiveSec + sumActive,
+                                totalGapSec = existing.totalGapSec + sumGap,
+                                sessionCount = existing.sessionCount + items.size,
+                                maxPeakWatts = max(existing.maxPeakWatts, maxPeak),
+                                totalCost = existing.totalCost + sumCost,
+                                archivedSessionsCount = existing.archivedSessionsCount + items.size
+                            )
+                        } else {
+                            DailyEnergyAggregateEntity(
+                                dateIso = key.dateIso,
+                                portId = key.portId,
+                                deviceMac = key.deviceMac,
+                                currencyCode = key.currencyCode,
+                                totalWh = sumWh,
+                                totalActiveSec = sumActive,
+                                totalGapSec = sumGap,
+                                sessionCount = items.size,
+                                maxPeakWatts = maxPeak,
+                                totalCost = sumCost,
+                                archivedSessionsCount = items.size
+                            )
+                        }
+                        aggregateDao.upsert(merged)
+                    }
+                    sessionDao.deleteByIds(expired.map { it.id })
+                    archivedCount = expired.size
+                }
+                prunedSamples = telemetryDao.deleteOlderThan(cutoffMs)
+            }
         }
+        return ArchiveSummary(archivedSessions = archivedCount, prunedTelemetrySamples = prunedSamples)
+    }
+
+    fun getDailyAggregates(): List<DailyEnergyAggregateEntity> =
+        runCatching { aggregateDao.getAll() }.getOrDefault(emptyList())
+
+    fun pruneOldSessions(maxRetained: Int = 1000) {
+        runCatching { sessionDao.pruneExcessCompleted(maxRetained) }
     }
 
     fun getRecentSessions(limit: Int = 300): List<ChargeSessionRecord> {
-        val result = mutableListOf<ChargeSessionRecord>()
-        runCatching {
-            readableDatabase.rawQuery(
-                "SELECT id, port_id, port_label, start_ts, end_ts, wh_accumulated, peak_watts, avg_watts, protocol_used FROM charge_sessions ORDER BY start_ts DESC LIMIT ?",
-                arrayOf(limit.toString())
-            ).use { cursor ->
-                while (cursor.moveToNext()) {
-                    result.add(
-                        ChargeSessionRecord(
-                            id = cursor.getLong(0),
-                            portId = cursor.getInt(1),
-                            portLabel = cursor.getString(2),
-                            startTimeSec = cursor.getDouble(3),
-                            endTimeSec = if (cursor.isNull(4)) null else cursor.getDouble(4),
-                            whAccumulated = cursor.getDouble(5),
-                            peakWatts = cursor.getDouble(6),
-                            avgWatts = cursor.getDouble(7),
-                            protocolUsed = cursor.getString(8),
-                            isActive = false
-                        )
-                    )
-                }
-            }
-        }
-        return result
+        return runCatching {
+            sessionDao.getRecentCompleted(limit).map { it.toRecord() }
+        }.getOrDefault(emptyList())
     }
 
     enum class ClearHistoryOption(val label: String, val description: String) {
         KEEP_ACTIVE("Inactive Sessions Only", "Clear finished sessions; keep currently active charging session"),
         OLDER_24H("Older than 24 Hours", "Clear telemetry and sessions older than 24 hours"),
         OLDER_7D("Older than 7 Days", "Clear telemetry and sessions older than 7 days"),
-        CLEAR_ALL("Clear Everything", "Completely wipe all saved charging sessions and telemetry points")
+        OLDER_30D("Older than 30 Days", "Clear telemetry and sessions older than 30 days"),
+        CLEAR_ALL("Clear Everything", "Completely wipe all saved charging sessions, aggregates, and telemetry points")
     }
 
     fun clearSessions() {
@@ -180,80 +301,91 @@ class CuktechPersistence(private val context: Context) :
         runCatching {
             val nowMs = System.currentTimeMillis()
             val nowSec = nowMs / 1000.0
-            when (option) {
-                ClearHistoryOption.KEEP_ACTIVE -> {
-                    // charge_sessions table only contains completed/historical records.
-                    // Active sessions reside in memory so deleting charge_sessions clears history while keeping active.
-                    writableDatabase.delete("charge_sessions", null, null)
-                    writableDatabase.delete("port_history", "ts_ms < ?", arrayOf((nowMs - 300_000L).toString()))
-                }
-                ClearHistoryOption.OLDER_24H -> {
-                    val cutoffSec = nowSec - 24 * 3600.0
-                    val cutoffMs = nowMs - 24 * 3600 * 1000L
-                    writableDatabase.delete("charge_sessions", "end_ts < ?", arrayOf(cutoffSec.toString()))
-                    writableDatabase.delete("port_history", "ts_ms < ?", arrayOf(cutoffMs.toString()))
-                }
-                ClearHistoryOption.OLDER_7D -> {
-                    val cutoffSec = nowSec - 7 * 24 * 3600.0
-                    val cutoffMs = nowMs - 7 * 24 * 3600 * 1000L
-                    writableDatabase.delete("charge_sessions", "end_ts < ?", arrayOf(cutoffSec.toString()))
-                    writableDatabase.delete("port_history", "ts_ms < ?", arrayOf(cutoffMs.toString()))
-                }
-                ClearHistoryOption.CLEAR_ALL -> {
-                    writableDatabase.delete("charge_sessions", null, null)
-                    writableDatabase.delete("port_history", null, null)
+            db.runInTransaction {
+                when (option) {
+                    ClearHistoryOption.KEEP_ACTIVE -> {
+                        sessionDao.deleteAllCompleted()
+                        telemetryDao.deleteOlderThan(nowMs - 300_000L)
+                    }
+                    ClearHistoryOption.OLDER_24H -> {
+                        val cutoffSec = nowSec - 24 * 3600.0
+                        val cutoffMs = nowMs - 24L * 3600L * 1000L
+                        sessionDao.deleteCompletedOlderThan(cutoffSec)
+                        telemetryDao.deleteOlderThan(cutoffMs)
+                    }
+                    ClearHistoryOption.OLDER_7D -> {
+                        val cutoffSec = nowSec - 7 * 24 * 3600.0
+                        val cutoffMs = nowMs - 7L * 24L * 3600L * 1000L
+                        sessionDao.deleteCompletedOlderThan(cutoffSec)
+                        telemetryDao.deleteOlderThan(cutoffMs)
+                    }
+                    ClearHistoryOption.OLDER_30D -> {
+                        val cutoffSec = nowSec - 30 * 24 * 3600.0
+                        val cutoffMs = nowMs - 30L * 24L * 3600L * 1000L
+                        sessionDao.deleteCompletedOlderThan(cutoffSec)
+                        telemetryDao.deleteOlderThan(cutoffMs)
+                    }
+                    ClearHistoryOption.CLEAR_ALL -> {
+                        sessionDao.deleteAll()
+                        telemetryDao.deleteAll()
+                        aggregateDao.deleteAll()
+                    }
                 }
             }
         }
     }
 
+    // --- Port Wh Charge Limits ---
+
     fun savePortChargeLimit(limit: PortChargeLimit) {
-        runCatching {
-            val cv = ContentValues().apply {
-                put("port_id", limit.portId)
-                put("wh_target", limit.whTarget)
-                put("mode", limit.mode)
-                put("baseline_wh", limit.baselineWh)
-                put("enabled", if (limit.enabled) 1 else 0)
-                put("triggered", if (limit.triggered) 1 else 0)
-            }
-            writableDatabase.insertWithOnConflict(
-                "port_charge_limits",
-                null,
-                cv,
-                SQLiteDatabase.CONFLICT_REPLACE
-            )
-        }
+        runCatching { limitDao.upsert(PortChargeLimitEntity.fromModel(limit)) }
     }
 
     fun removePortChargeLimit(portId: Int) {
-        runCatching {
-            writableDatabase.delete("port_charge_limits", "port_id = ?", arrayOf(portId.toString()))
-        }
+        runCatching { limitDao.deleteByPortId(portId) }
     }
 
     fun loadPortChargeLimits(): Map<Int, PortChargeLimit> {
-        val map = mutableMapOf<Int, PortChargeLimit>()
+        return runCatching {
+            limitDao.getAll().associate { it.portId to it.toModel() }
+        }.getOrDefault(emptyMap())
+    }
+
+    // --- Device & Port Aliases ---
+
+    fun saveAlias(deviceMac: String, portId: Int, aliasName: String, iconKey: String = "usb") {
         runCatching {
-            readableDatabase.rawQuery(
-                "SELECT port_id, wh_target, mode, baseline_wh, enabled, triggered FROM port_charge_limits",
-                null
-            ).use { cursor ->
-                while (cursor.moveToNext()) {
-                    val pid = cursor.getInt(0)
-                    map[pid] = PortChargeLimit(
-                        portId = pid,
-                        whTarget = cursor.getDouble(1),
-                        mode = cursor.getString(2),
-                        baselineWh = cursor.getDouble(3),
-                        enabled = cursor.getInt(4) == 1,
-                        triggered = cursor.getInt(5) == 1
+            val trimmed = aliasName.trim()
+            if (trimmed.isEmpty()) {
+                aliasDao.delete(deviceMac.uppercase().trim(), portId)
+            } else {
+                aliasDao.upsert(
+                    DeviceAliasEntity(
+                        deviceMac = deviceMac.uppercase().trim(),
+                        portId = portId,
+                        aliasName = trimmed,
+                        iconKey = iconKey,
+                        updatedAtMs = System.currentTimeMillis()
                     )
-                }
+                )
             }
         }
-        return map
     }
+
+    fun getAliases(): List<DeviceAliasEntity> = runCatching { aliasDao.getAll() }.getOrDefault(emptyList())
+
+    // --- Charging Profiles ---
+
+    fun saveProfile(profile: ChargingProfileEntity): Long =
+        runCatching { profileDao.upsert(profile) }.getOrDefault(-1L)
+
+    fun deleteCustomProfile(profileId: Long) {
+        runCatching { profileDao.deleteCustomProfile(profileId) }
+    }
+
+    fun getProfiles(): List<ChargingProfileEntity> = runCatching { profileDao.getAll() }.getOrDefault(emptyList())
+
+    // --- CSV Export (SAF stream + MediaStore API 29+) ---
 
     enum class ExportTimeframe(val label: String) {
         CURRENT_SESSION("Current Active Session"),
@@ -269,25 +401,101 @@ class CuktechPersistence(private val context: Context) :
         TELEMETRY_ONLY("Raw Telemetry Only")
     }
 
+    fun buildCsvContent(
+        timeframe: ExportTimeframe = ExportTimeframe.ALL_TIME,
+        scope: ExportScope = ExportScope.ALL,
+        currentSessionStartMs: Long = 0L
+    ): String {
+        val now = System.currentTimeMillis()
+        val minTsMs = when (timeframe) {
+            ExportTimeframe.CURRENT_SESSION -> if (currentSessionStartMs > 0) currentSessionStartMs else (now - 3600_000L)
+            ExportTimeframe.LAST_1_HOUR -> now - 3600_000L
+            ExportTimeframe.LAST_24_HOURS -> now - 86_400_000L
+            ExportTimeframe.LAST_7_DAYS -> now - (7L * 86_400_000L)
+            ExportTimeframe.ALL_TIME -> 0L
+        }
+        val minStartSec = minTsMs / 1000.0
+        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+
+        val sb = StringBuilder()
+        sb.appendLine("# CUKTECH 10 Ultra Telemetry Export")
+        sb.appendLine("# Filter: ${timeframe.label} | Scope: ${scope.label} | Exported: ${fmt.format(Date(now))}")
+
+        if (scope == ExportScope.ALL || scope == ExportScope.SESSIONS_ONLY) {
+            sb.appendLine("\n# Charging Sessions")
+            sb.appendLine("session_id,port,start_time,end_time,active_duration_sec,gap_duration_sec,energy_wh,peak_watts,avg_watts,protocol,end_reason,cost,currency")
+            val sessions = runCatching { sessionDao.getCompletedSince(minStartSec, 2000) }.getOrDefault(emptyList())
+            for (s in sessions) {
+                val startStr = fmt.format(Date((s.startTimeSec * 1000).toLong()))
+                val endStr = s.endTimeSec?.let { fmt.format(Date((it * 1000).toLong())) } ?: "active"
+                val activeDur = if (s.activeDurationSec > 0L) s.activeDurationSec else maxOf(0L, ((s.endTimeSec ?: (now / 1000.0)) - s.startTimeSec).toLong())
+                sb.appendLine(
+                    String.format(
+                        Locale.US,
+                        "%d,%s,%s,%s,%d,%d,%.3f,%.2f,%.2f,%s,%s,%.4f,%s",
+                        s.id,
+                        csvSafe(s.portLabel),
+                        startStr,
+                        endStr,
+                        activeDur,
+                        s.gapDurationSec,
+                        s.whAccumulated,
+                        s.peakWatts,
+                        s.avgWatts,
+                        csvSafe(s.protocolUsed),
+                        csvSafe(s.endReason ?: ""),
+                        s.computedCost,
+                        csvSafe(s.currencyCode)
+                    )
+                )
+            }
+        }
+
+        if (scope == ExportScope.ALL || scope == ExportScope.TELEMETRY_ONLY) {
+            sb.appendLine("\n# Raw Port Telemetry History")
+            sb.appendLine("timestamp,port_id,voltage_v,current_a,power_w,protocol,cumulative_wh")
+            val samples = getTelemetrySamplesSince(minTsMs, 10000)
+            for (sample in samples) {
+                val tStr = fmt.format(Date(sample.timestampMs))
+                sb.appendLine(
+                    String.format(
+                        Locale.US,
+                        "%s,%d,%.2f,%.2f,%.2f,%s,%.3f",
+                        tStr,
+                        sample.portId,
+                        sample.voltageV,
+                        sample.currentA,
+                        sample.powerW,
+                        csvSafe(sample.protocolName),
+                        sample.cumulativeWh
+                    )
+                )
+            }
+        }
+        return sb.toString()
+    }
+
+    fun exportCsvToStream(
+        outputStream: OutputStream,
+        timeframe: ExportTimeframe = ExportTimeframe.ALL_TIME,
+        scope: ExportScope = ExportScope.ALL,
+        currentSessionStartMs: Long = 0L
+    ) {
+        val content = buildCsvContent(timeframe, scope, currentSessionStartMs)
+        outputStream.write(content.toByteArray(Charsets.UTF_8))
+        outputStream.flush()
+    }
+
     /**
-     * Exports charging sessions and port history to a CSV file in the public
-     * Downloads/cuktech10/history folder with customizable timeframe and scope filters.
+     * Scoped-storage compliant CSV export:
+     * - Android 10+ (API 29+): writes directly via `MediaStore.Downloads` without legacy storage permissions.
+     * - Android 8–9 (API 26–28): writes to app-private `getExternalFilesDir("cuktech10/history")` fallback.
      */
     fun exportSessionsAndHistoryCsv(
         timeframe: ExportTimeframe = ExportTimeframe.ALL_TIME,
         scope: ExportScope = ExportScope.ALL,
         currentSessionStartMs: Long = 0L
     ): File {
-        val now = System.currentTimeMillis()
-        val minTsMs = when (timeframe) {
-            ExportTimeframe.CURRENT_SESSION -> if (currentSessionStartMs > 0) currentSessionStartMs else (now - 3600_000L)
-            ExportTimeframe.LAST_1_HOUR -> now - 3600_000L
-            ExportTimeframe.LAST_24_HOURS -> now - 86400_000L
-            ExportTimeframe.LAST_7_DAYS -> now - (7 * 86400_000L)
-            ExportTimeframe.ALL_TIME -> 0L
-        }
-        val minStartSec = minTsMs / 1000.0
-
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val suffix = when (timeframe) {
             ExportTimeframe.CURRENT_SESSION -> "session"
@@ -297,92 +505,279 @@ class CuktechPersistence(private val context: Context) :
             ExportTimeframe.ALL_TIME -> "all"
         }
         val fileName = "cuktech10_${suffix}_$stamp.csv"
+        val content = buildCsvContent(timeframe, scope, currentSessionStartMs)
 
-        val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-        val targetDir = File(downloadsDir, "cuktech10/history")
-        var outFile = try {
-            if (!targetDir.exists()) {
-                targetDir.mkdirs()
-            }
-            File(targetDir, fileName)
-        } catch (_: Exception) {
-            val appDir = context.getExternalFilesDir("cuktech10/history") ?: context.cacheDir
-            File(appDir, fileName)
-        }
-
-        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-        val sb = StringBuilder()
-        sb.appendLine("# CUKTECH 10 Ultra Telemetry Export")
-        sb.appendLine("# Filter: ${timeframe.label} | Scope: ${scope.label} | Exported: ${fmt.format(Date(now))}")
-
-        if (scope == ExportScope.ALL || scope == ExportScope.SESSIONS_ONLY) {
-            sb.appendLine("\n# Charging Sessions")
-            sb.appendLine("session_id,port,start_time,end_time,duration_sec,energy_wh,peak_watts,avg_watts,protocol")
-            runCatching {
-                readableDatabase.rawQuery(
-                    "SELECT id, port_id, port_label, start_ts, end_ts, wh_accumulated, peak_watts, avg_watts, protocol_used FROM charge_sessions WHERE start_ts >= ? ORDER BY start_ts DESC LIMIT 1000",
-                    arrayOf(minStartSec.toString())
-                ).use { cursor ->
-                    while (cursor.moveToNext()) {
-                        val sStart = cursor.getDouble(3)
-                        val sEnd = if (cursor.isNull(4)) null else cursor.getDouble(4)
-                        val startStr = fmt.format(Date((sStart * 1000).toLong()))
-                        val endStr = sEnd?.let { fmt.format(Date((it * 1000).toLong())) } ?: "active"
-                        val durSec = if (sEnd != null) maxOf(0L, (sEnd - sStart).toLong()) else maxOf(0L, ((now / 1000.0) - sStart).toLong())
-                        sb.appendLine(
-                            "${cursor.getLong(0)},${cursor.getString(2)},$startStr,$endStr,$durSec,${"%.3f".format(cursor.getDouble(5))},${"%.2f".format(cursor.getDouble(6))},${"%.2f".format(cursor.getDouble(7))},${cursor.getString(8)}"
-                        )
-                    }
-                }
-            }
-        }
-
-        if (scope == ExportScope.ALL || scope == ExportScope.TELEMETRY_ONLY) {
-            sb.appendLine("\n# Raw Port Telemetry History")
-            sb.appendLine("timestamp,port_id,voltage_v,current_a,power_w,protocol")
-            runCatching {
-                readableDatabase.rawQuery(
-                    "SELECT ts_ms, port_id, voltage_v, current_a, power_w, protocol_name FROM port_history WHERE ts_ms >= ? ORDER BY ts_ms DESC LIMIT 10000",
-                    arrayOf(minTsMs.toString())
-                ).use { c ->
-                    while (c.moveToNext()) {
-                        val tStr = fmt.format(Date(c.getLong(0)))
-                        sb.appendLine(
-                            "$tStr,${c.getInt(1)},${"%.2f".format(c.getDouble(2))},${"%.2f".format(c.getDouble(3))},${"%.2f".format(c.getDouble(4))},${c.getString(5)}"
-                        )
-                    }
-                }
-            }
-        }
-
-        val content = sb.toString()
-        try {
-            outFile.writeText(content, Charsets.UTF_8)
-        } catch (e: Exception) {
-            // Android 10+ MediaStore fallback
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val savedViaMediaStore = runCatching {
                 val values = ContentValues().apply {
-                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/csv")
-                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/cuktech10/history")
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/cuktech10/history")
                 }
-                val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                if (uri != null) {
-                    context.contentResolver.openOutputStream(uri)?.use { os ->
-                        os.write(content.toByteArray(Charsets.UTF_8))
-                    }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: error("MediaStore URI null")
+                context.contentResolver.openOutputStream(uri)?.use { os ->
+                    os.write(content.toByteArray(Charsets.UTF_8))
+                    os.flush()
                 }
-            } else {
-                val fallbackDir = context.getExternalFilesDir(null) ?: context.cacheDir
-                outFile = File(fallbackDir, fileName)
-                outFile.writeText(content, Charsets.UTF_8)
+                true
+            }.getOrDefault(false)
+
+            val appDir = context.getExternalFilesDir("cuktech10/history") ?: context.cacheDir
+            if (!appDir.exists()) appDir.mkdirs()
+            val returnFile = File(appDir, fileName)
+            if (!savedViaMediaStore) {
+                returnFile.writeText(content, Charsets.UTF_8)
             }
+            return returnFile
+        } else {
+            val appDir = context.getExternalFilesDir("cuktech10/history") ?: context.cacheDir
+            if (!appDir.exists()) appDir.mkdirs()
+            val outFile = File(appDir, fileName)
+            outFile.writeText(content, Charsets.UTF_8)
+            return outFile
         }
-        return outFile
     }
 
-    companion object {
-        private const val DB_NAME = "cuktech10_history.db"
-        private const val DB_VERSION = 1
+    // --- Backup Payload Export & Restore ---
+
+    fun buildBackupPayload(
+        preferencesJson: JSONObject,
+        includeSecrets: Boolean,
+        devices: List<CuktechDeviceCredentials> = emptyList()
+    ): BackupPayload {
+        val sessionsArr = JSONArray()
+        for (s in sessionDao.getRecentCompleted(2000)) {
+            sessionsArr.put(JSONObject().apply {
+                put("portId", s.portId)
+                put("portLabel", s.portLabel)
+                put("deviceMac", s.deviceMac)
+                put("startTimeSec", s.startTimeSec)
+                if (s.endTimeSec != null) put("endTimeSec", s.endTimeSec)
+                put("lastSampleTimeSec", s.lastSampleTimeSec)
+                put("activeDurationSec", s.activeDurationSec)
+                put("gapDurationSec", s.gapDurationSec)
+                put("whAccumulated", s.whAccumulated)
+                put("peakWatts", s.peakWatts)
+                put("avgWatts", s.avgWatts)
+                put("protocolUsed", s.protocolUsed)
+                put("endReason", s.endReason ?: "")
+                put("tariffPerKwhSnapshot", s.tariffPerKwhSnapshot)
+                put("currencyCode", s.currencyCode)
+                put("computedCost", s.computedCost)
+            })
+        }
+
+        val aggregatesArr = JSONArray()
+        for (a in aggregateDao.getAll()) {
+            aggregatesArr.put(JSONObject().apply {
+                put("dateIso", a.dateIso)
+                put("portId", a.portId)
+                put("deviceMac", a.deviceMac)
+                put("currencyCode", a.currencyCode)
+                put("totalWh", a.totalWh)
+                put("totalActiveSec", a.totalActiveSec)
+                put("totalGapSec", a.totalGapSec)
+                put("sessionCount", a.sessionCount)
+                put("maxPeakWatts", a.maxPeakWatts)
+                put("totalCost", a.totalCost)
+                put("archivedSessionsCount", a.archivedSessionsCount)
+            })
+        }
+
+        val limitsArr = JSONArray()
+        for (l in limitDao.getAll()) {
+            limitsArr.put(JSONObject().apply {
+                put("portId", l.portId)
+                put("whTarget", l.whTarget)
+                put("mode", l.mode)
+                put("baselineWh", l.baselineWh)
+                put("enabled", l.enabled)
+                put("triggered", l.triggered)
+            })
+        }
+
+        val aliasesArr = JSONArray()
+        for (al in aliasDao.getAll()) {
+            aliasesArr.put(JSONObject().apply {
+                put("deviceMac", al.deviceMac)
+                put("portId", al.portId)
+                put("aliasName", al.aliasName)
+                put("iconKey", al.iconKey)
+                put("updatedAtMs", al.updatedAtMs)
+            })
+        }
+
+        val profilesArr = JSONArray()
+        for (p in profileDao.getAll().filter { !it.isBuiltIn }) {
+            profilesArr.put(JSONObject().apply {
+                put("name", p.name)
+                put("sceneMode", p.sceneMode)
+                put("portSwitchBitmap", p.portSwitchBitmap)
+                put("screenTimeout", p.screenTimeout)
+                put("usbALowCurrent", p.usbALowCurrent)
+                put("idleScreenOff", p.idleScreenOff)
+                put("orientationLock", p.orientationLock)
+                put("whLimitPort1", p.whLimitPort1)
+                put("whLimitPort2", p.whLimitPort2)
+                put("whLimitPort3", p.whLimitPort3)
+                put("whLimitPort4", p.whLimitPort4)
+                put("createdAtMs", p.createdAtMs)
+            })
+        }
+
+        val secretsArr = if (includeSecrets) {
+            JSONArray().apply {
+                for (d in devices) {
+                    put(JSONObject().apply {
+                        put("did", d.did)
+                        put("name", d.name)
+                        put("model", d.model)
+                        put("mac", d.mac)
+                        put("tokenHex", d.tokenHex)
+                        put("bleKeyHex", d.bleKeyHex)
+                        put("region", d.region)
+                    })
+                }
+            }
+        } else null
+
+        return BackupPayload(
+            createdAtMs = System.currentTimeMillis(),
+            includesSecrets = includeSecrets,
+            preferencesJson = preferencesJson,
+            sessionsArray = sessionsArr,
+            dailyAggregatesArray = aggregatesArr,
+            chargeLimitsArray = limitsArr,
+            aliasesArray = aliasesArr,
+            profilesArray = profilesArr,
+            devicesSecretsArray = secretsArr
+        )
     }
+
+    fun restoreBackupPayload(payload: BackupPayload, replaceExisting: Boolean = false) {
+        db.runInTransaction {
+            if (replaceExisting) {
+                sessionDao.deleteAllCompleted()
+                aggregateDao.deleteAll()
+                limitDao.deleteAll()
+                aliasDao.deleteAll()
+                profileDao.deleteAllCustom()
+            }
+
+            val sessionsToInsert = mutableListOf<ChargeSessionEntity>()
+            for (i in 0 until payload.sessionsArray.length()) {
+                val obj = payload.sessionsArray.optJSONObject(i) ?: continue
+                sessionsToInsert.add(
+                    ChargeSessionEntity(
+                        portId = obj.optInt("portId", 1),
+                        portLabel = obj.optString("portLabel", "USB-C1"),
+                        deviceMac = obj.optString("deviceMac", ""),
+                        startTimeSec = obj.optDouble("startTimeSec", 0.0),
+                        endTimeSec = if (obj.has("endTimeSec")) obj.optDouble("endTimeSec") else null,
+                        lastSampleTimeSec = obj.optDouble("lastSampleTimeSec", obj.optDouble("startTimeSec", 0.0)),
+                        activeDurationSec = obj.optLong("activeDurationSec", 0L),
+                        gapDurationSec = obj.optLong("gapDurationSec", 0L),
+                        whAccumulated = obj.optDouble("whAccumulated", 0.0),
+                        peakWatts = obj.optDouble("peakWatts", 0.0),
+                        avgWatts = obj.optDouble("avgWatts", 0.0),
+                        protocolUsed = obj.optString("protocolUsed", "Unknown"),
+                        isActive = false,
+                        endReason = obj.optString("endReason", "").ifBlank { null },
+                        tariffPerKwhSnapshot = obj.optDouble("tariffPerKwhSnapshot", 0.0),
+                        currencyCode = obj.optString("currencyCode", "USD"),
+                        computedCost = obj.optDouble("computedCost", 0.0)
+                    )
+                )
+            }
+            if (sessionsToInsert.isNotEmpty()) {
+                sessionDao.insertAll(sessionsToInsert)
+            }
+
+            for (i in 0 until payload.dailyAggregatesArray.length()) {
+                val obj = payload.dailyAggregatesArray.optJSONObject(i) ?: continue
+                aggregateDao.upsert(
+                    DailyEnergyAggregateEntity(
+                        dateIso = obj.optString("dateIso"),
+                        portId = obj.optInt("portId", 1),
+                        deviceMac = obj.optString("deviceMac", ""),
+                        currencyCode = obj.optString("currencyCode", "USD"),
+                        totalWh = obj.optDouble("totalWh", 0.0),
+                        totalActiveSec = obj.optLong("totalActiveSec", 0L),
+                        totalGapSec = obj.optLong("totalGapSec", 0L),
+                        sessionCount = obj.optInt("sessionCount", 0),
+                        maxPeakWatts = obj.optDouble("maxPeakWatts", 0.0),
+                        totalCost = obj.optDouble("totalCost", 0.0),
+                        archivedSessionsCount = obj.optInt("archivedSessionsCount", 0)
+                    )
+                )
+            }
+
+            val limits = mutableListOf<PortChargeLimitEntity>()
+            for (i in 0 until payload.chargeLimitsArray.length()) {
+                val obj = payload.chargeLimitsArray.optJSONObject(i) ?: continue
+                limits.add(
+                    PortChargeLimitEntity(
+                        portId = obj.optInt("portId", 1),
+                        whTarget = obj.optDouble("whTarget", 0.0),
+                        mode = obj.optString("mode", "once"),
+                        baselineWh = obj.optDouble("baselineWh", 0.0),
+                        enabled = obj.optBoolean("enabled", true),
+                        triggered = obj.optBoolean("triggered", false)
+                    )
+                )
+            }
+            if (limits.isNotEmpty()) limitDao.upsertAll(limits)
+
+            val aliases = mutableListOf<DeviceAliasEntity>()
+            for (i in 0 until payload.aliasesArray.length()) {
+                val obj = payload.aliasesArray.optJSONObject(i) ?: continue
+                aliases.add(
+                    DeviceAliasEntity(
+                        deviceMac = obj.optString("deviceMac", ""),
+                        portId = obj.optInt("portId", 0),
+                        aliasName = obj.optString("aliasName", ""),
+                        iconKey = obj.optString("iconKey", "usb"),
+                        updatedAtMs = obj.optLong("updatedAtMs", System.currentTimeMillis())
+                    )
+                )
+            }
+            if (aliases.isNotEmpty()) aliasDao.upsertAll(aliases)
+
+            val profiles = mutableListOf<ChargingProfileEntity>()
+            for (i in 0 until payload.profilesArray.length()) {
+                val obj = payload.profilesArray.optJSONObject(i) ?: continue
+                profiles.add(
+                    ChargingProfileEntity(
+                        name = obj.optString("name", "Profile"),
+                        sceneMode = obj.optInt("sceneMode", 1),
+                        portSwitchBitmap = obj.optInt("portSwitchBitmap", 0x0F),
+                        screenTimeout = obj.optInt("screenTimeout", 1),
+                        usbALowCurrent = obj.optBoolean("usbALowCurrent", false),
+                        idleScreenOff = obj.optBoolean("idleScreenOff", false),
+                        orientationLock = obj.optBoolean("orientationLock", false),
+                        whLimitPort1 = obj.optDouble("whLimitPort1", 0.0),
+                        whLimitPort2 = obj.optDouble("whLimitPort2", 0.0),
+                        whLimitPort3 = obj.optDouble("whLimitPort3", 0.0),
+                        whLimitPort4 = obj.optDouble("whLimitPort4", 0.0),
+                        isBuiltIn = false,
+                        createdAtMs = obj.optLong("createdAtMs", System.currentTimeMillis())
+                    )
+                )
+            }
+            if (profiles.isNotEmpty()) profileDao.upsertAll(profiles)
+        }
+    }
+
+    private fun csvSafe(value: String): String {
+        val clean = value.replace("\"", "\"\"").replace("\n", " ").replace("\r", " ")
+        return if (clean.contains(",") || clean.contains("\"")) "\"$clean\"" else clean
+    }
+
+    private data class AggregateGroupKey(
+        val dateIso: String,
+        val portId: Int,
+        val deviceMac: String,
+        val currencyCode: String
+    )
 }

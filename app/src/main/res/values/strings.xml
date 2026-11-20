@@ -1,7 +1,329 @@
 <resources>
     <string name="app_name">BLE Cuktech10</string>
-    <string name="widget_4x2_desc">HyperOS Soft Glass 4x2 Control Center: Translucent dark glass, live wattage &amp; 1-tap port toggles</string>
-    <string name="widget_2x2_desc">HyperOS Soft Glass 2x2 Compact Tile: Translucent dark glass, live graph &amp; 4-port grid</string>
-    <string name="widget_4x2_solid_desc">Solid Dark 4x2 Control Center: 100% opaque obsidian card, live wattage &amp; 1-tap port toggles</string>
-    <string name="widget_2x2_solid_desc">Solid Dark 2x2 Compact Tile: 100% opaque obsidian card, live graph &amp; 4-port grid</string>
+    <string name="widget_control_name">CUKTECH 10 Ultra Control</string>
+    <string name="widget_control_desc">Material 3 Control Widget: live wattage, optional sparkline &amp; 1-tap USB-C1/C2/C3/USB-A toggles</string>
+    <string name="widget_compact_name">CUKTECH 10 Ultra Compact</string>
+    <string name="widget_compact_desc">Material 3 Compact Widget: total power &amp; 2x2 port status grid</string>
+    <string name="widget_config_title">Configure Widget</string>
+    <string name="widget_config_ports_label">Displayed Ports</string>
+    <string name="widget_config_sparkline">Show Power Sparkline</string>
+    <string name="widget_config_session_wh">Show Active Session Wh</string>
+    <string name="widget_config_tap_dest">Open Section on Tap</string>
+
+    <!-- Navigation Destinations -->
+    <string name="nav_overview">Overview</string>
+    <string name="nav_ports">Ports</string>
+    <string name="nav_analytics">Analytics</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_diagnostics">Diagnostics</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_close">Close</string>
+
+    <!-- Connection States & Banner -->
+    <string name="status_connected">Connected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_scanning">Scanning…</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_auth_failed">Authentication Failed</string>
+    <string name="status_cooldown">Disconnecting…</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_scan_pair">Search &amp; Pair</string>
+    <string name="action_refresh_telemetry">Refresh</string>
+    <string name="action_save">Save</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="action_undo">Undo</string>
+    <string name="action_apply">Apply</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_rescan">Rescan</string>
+    <string name="action_edit">Edit</string>
+
+    <!-- Warnings & Account Notices -->
+    <string name="warning_bluetooth_off_title">Bluetooth is Turned Off</string>
+    <string name="warning_bluetooth_off_body">Please enable Bluetooth to scan for and connect to CUKTECH 10 Ultra.</string>
+    <string name="action_turn_on_bluetooth">Enable Bluetooth</string>
+    <string name="warning_region_non_cn">Active Xiaomi region is [%1$s]. CUKTECH 10 Ultra (AD1204) requires Mainland China (CN) credentials.</string>
+    <string name="warning_no_token_title">Xiaomi MiOT Credentials Missing</string>
+    <string name="warning_no_token_body">Sign in with your Xiaomi Account or import device credentials JSON to unlock encrypted BLE control.</string>
+    <string name="action_xiaomi_login">Xiaomi Login &amp; Sync</string>
+
+    <!-- Overview Screen -->
+    <string name="overview_hero_total_power">Total Output Power</string>
+    <string name="overview_rated_ceiling">120W Max · AD1204</string>
+    <string name="overview_rssi_fmt">%1$d dBm · Quality %2$d%%</string>
+    <string name="overview_active_sessions_fmt">%1$d active</string>
+    <string name="overview_session_energy_fmt">%.2f Wh today</string>
+    <string name="overview_est_cost_fmt">Est. %1$s %2$.2f</string>
+    <string name="overview_scenario_mode">Power Scenario</string>
+    <string name="overview_killswitch">Master Killswitch</string>
+    <string name="overview_killswitch_desc">Sequentially turns OFF USB-C1, USB-C2, USB-C3, and USB-A</string>
+    <string name="overview_restore_killswitch">Restore Prior Ports</string>
+    <string name="overview_live_ports">Live Ports</string>
+    <string name="overview_live_trend">Recent Total Power</string>
+    <string name="overview_recent_session">Latest Charging Session</string>
+    <string name="overview_view_analytics">View Analytics</string>
+    <string name="overview_no_device_connected">Connect your CUKTECH 10 Ultra to control ports and view real-time telemetry.</string>
+    <string name="overview_ac_connected">AC Power Connected</string>
+
+    <!-- Explicit Physical Port Names & Specs -->
+    <string name="port_name_c1">USB-C1</string>
+    <string name="port_name_c2">USB-C2</string>
+    <string name="port_name_c3">USB-C3</string>
+    <string name="port_name_a">USB-A</string>
+    <string name="port_spec_c1">120W Max · PD / PPS / UFCS</string>
+    <string name="port_spec_c2">120W Max · PD / PPS / UFCS</string>
+    <string name="port_spec_c3">44W Max · UFCS / SCP</string>
+    <string name="port_spec_a">33W Max · UFCS / SCP · 4h Low-Current</string>
+    <string name="port_status_disabled">Port OFF</string>
+    <string name="port_status_idle">Idle</string>
+    <string name="port_status_charging">Active</string>
+    <string name="port_power_toggle">Port Power</string>
+    <string name="port_delay_off_timer">Auto-Off Timer</string>
+    <string name="port_delay_timer_always">Disabled (Always On)</string>
+    <string name="port_delay_timer_fmt">Off in %1$s</string>
+    <string name="port_set_timer">Set Timer</string>
+    <string name="port_fast_charge_protocols">Supported Fast-Charge Protocols</string>
+    <string name="proto_pd">PD</string>
+    <string name="proto_pps">PPS</string>
+    <string name="proto_ufcs">UFCS</string>
+    <string name="proto_scp">SCP</string>
+    <string name="port_usba_low_current">USB-A Low-Current Mode (4h)</string>
+    <string name="port_usba_low_current_desc">Keeps trickle charging enabled for earbuds and watches without auto-cutoff.</string>
+    <string name="port_wh_limit">Energy Cutoff Limit (Wh)</string>
+    <string name="port_wh_limit_none">Not configured</string>
+    <string name="port_wh_limit_progress_fmt">%1$.2f / %2$.1f Wh (%3$s)</string>
+    <string name="port_history_logging">Session &amp; History Logging</string>
+    <string name="port_pdo_caps_label">PDO Capabilities: %1$s</string>
+    <string name="port_edit_alias">Rename Alias</string>
+    <string name="port_alias_dialog_title">Alias for %1$s</string>
+    <string name="port_alias_hint">e.g. MacBook Pro, Pixel, Desk Charger</string>
+
+    <!-- Scenario & Screen Timeout Names -->
+    <string name="scenario_ai">AI Mode</string>
+    <string name="scenario_ai_desc">Auto-balances power intelligently across USB-C and USB-A</string>
+    <string name="scenario_hybrid">Hybrid</string>
+    <string name="scenario_hybrid_desc">Prioritizes up to 100W allocation on USB-C1</string>
+    <string name="scenario_single">Single</string>
+    <string name="scenario_single_desc">Maximum single-port burst performance</string>
+    <string name="scenario_dual">Dual</string>
+    <string name="scenario_dual_desc">Balanced split across two active Type-C ports</string>
+    <string name="timeout_always">Always On</string>
+    <string name="timeout_1m">1 min</string>
+    <string name="timeout_5m">5 min</string>
+    <string name="timeout_10m">10 min</string>
+    <string name="timeout_30m">30 min</string>
+
+    <!-- Analytics, Charts & Session Replay -->
+    <string name="analytics_interval_60s">60s</string>
+    <string name="analytics_interval_5m">5m</string>
+    <string name="analytics_interval_30m">30m</string>
+    <string name="analytics_interval_session">Session</string>
+    <string name="analytics_interval_today">Today</string>
+    <string name="analytics_interval_custom">Custom</string>
+    <string name="analytics_metric_total_w">Total W</string>
+    <string name="analytics_metric_per_port_w">Per-Port W</string>
+    <string name="analytics_metric_voltage_v">Voltage V</string>
+    <string name="analytics_metric_current_a">Current A</string>
+    <string name="analytics_metric_cum_wh">Cumulative Wh</string>
+    <string name="analytics_metric_protocols">Protocols</string>
+    <string name="analytics_no_samples">No recorded telemetry samples for the selected interval yet.</string>
+    <string name="analytics_logging_paused_warning">History logging is paused. Enable Master Telemetry or port logging to record samples.</string>
+    <string name="analytics_active_sessions">Active Sessions</string>
+    <string name="analytics_completed_sessions">Completed Sessions</string>
+    <string name="analytics_daily_aggregates">Archived Daily Totals (&gt;%1$dd)</string>
+    <string name="analytics_view_table">Summary Table</string>
+    <string name="analytics_export_csv">Export CSV</string>
+    <string name="analytics_clear_history">Clear History</string>
+    <string name="analytics_no_sessions">No charging sessions recorded yet.</string>
+    <string name="analytics_replay">Replay</string>
+    <string name="replay_title">Session Replay</string>
+    <string name="replay_no_samples">No fine-grained telemetry samples exist in the archive for this session window.</string>
+    <string name="replay_play">Play</string>
+    <string name="replay_pause">Pause</string>
+    <string name="session_gap_fmt">+%1$ds gap</string>
+    <string name="session_paused">Paused</string>
+
+    <!-- Settings Hub & Subsections -->
+    <string name="settings_section_hardware">Charger Display &amp; Hardware Controls</string>
+    <string name="settings_screen_timeout">LCD Screen Timeout</string>
+    <string name="settings_idle_screen_off">Idle Screen-Off</string>
+    <string name="settings_idle_screen_off_desc">Automatically sleeps the charger screen when all ports are idle</string>
+    <string name="settings_hw_language">Charger LCD Language</string>
+    <string name="settings_orientation_lock">Orientation Lock</string>
+    <string name="settings_rotate_180">Rotate Display 180°</string>
+    <string name="settings_lcd_page">Active Charger LCD Screen Page</string>
+    <string name="settings_soft_reset">Soft Port Reset (Renegotiate PD)</string>
+    <string name="settings_section_appearance">Appearance, Language &amp; Navigation</string>
+    <string name="settings_theme_mode">Theme Mode</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_dynamic_color">Material You Dynamic Color</string>
+    <string name="settings_amoled_black">Pure Black AMOLED Mode</string>
+    <string name="settings_app_language">App Language</string>
+    <string name="settings_lang_system">Follow System</string>
+    <string name="settings_lang_en">English</string>
+    <string name="settings_lang_ru">Русский</string>
+    <string name="settings_start_screen">Default Start Screen</string>
+    <string name="settings_start_overview">Overview Dashboard</string>
+    <string name="settings_start_gateway">Connection &amp; Gateway Hub</string>
+
+    <string name="settings_section_retention">Data Retention, Energy &amp; Tariff</string>
+    <string name="settings_retention_days">Archive Retention Window</string>
+    <string name="settings_stitch_grace">Session Stitch Grace Window</string>
+    <string name="settings_tariff_rate">Electricity Rate (per kWh)</string>
+    <string name="settings_tariff_currency">Currency</string>
+
+    <string name="settings_section_cloud">Xiaomi Account, Devices &amp; Mi Home</string>
+    <string name="settings_mi_home_switch">Switch to Xiaomi Mi Home App</string>
+    <string name="settings_sync_devices">Sync Devices from Xiaomi Cloud</string>
+    <string name="settings_sign_out_creds">Clear Stored Account &amp; Keys</string>
+    <string name="settings_check_updates">GitHub Releases Updates</string>
+    <string name="settings_update_available">New release available on GitHub!</string>
+
+    <string name="settings_section_telemetry_policies">Telemetry &amp; Background Keepalive</string>
+    <string name="settings_master_telemetry">Master Telemetry Engine</string>
+    <string name="settings_log_phone_charging">Log Only When Phone Charging</string>
+    <string name="settings_pause_screen_locked">Pause Polling When Screen Locked</string>
+    <string name="settings_auto_reconnect">Proximity Auto-Reconnect</string>
+    <string name="settings_battery_whitelist">Unrestricted Battery Keepalive</string>
+    <string name="settings_battery_whitelisted">Unrestricted</string>
+    <string name="settings_battery_optimized">Restricted (Tap to Allow)</string>
+    <string name="settings_dontkillmyapp">Background Optimization Guide (dontkillmyapp)</string>
+
+    <string name="settings_section_security">Security &amp; External Automation</string>
+    <string name="settings_security_note">All external channels are disabled by default and require the per-install secret token.</string>
+    <string name="settings_tasker_opt_in">Allow Tasker / MacroDroid Plugin</string>
+    <string name="settings_adb_opt_in">Allow ADB / Local Broadcasts</string>
+    <string name="settings_tcp_opt_in">Allow TCP Socket Gateway</string>
+    <string name="settings_tcp_running">Gateway Listening</string>
+    <string name="settings_tcp_stopped">Gateway Stopped</string>
+    <string name="settings_tcp_port">TCP Port</string>
+    <string name="settings_tcp_lan_bind">Allow Non-Localhost (LAN) Connections</string>
+    <string name="settings_tcp_lan_warning">Security Warning: Exposes authenticated control socket to the local Wi-Fi network.</string>
+    <string name="settings_token_label">Install Secret Token</string>
+    <string name="settings_token_rotate">Rotate Token</string>
+    <string name="settings_ha_webhook">Home Assistant HTTP Webhook</string>
+    <string name="settings_ha_url_label">Webhook URL (HTTPS recommended)</string>
+    <string name="settings_ha_token_label">Bearer Token (Stored in Android Keystore)</string>
+    <string name="settings_ha_http_warning">Warning: Plaintext HTTP URL transmits telemetry unencrypted on LAN.</string>
+    <string name="settings_open_diagnostics">Console &amp; BLE Diagnostics</string>
+    <string name="settings_open_diagnostics_desc">Sanitized event logs (Levels 1–3) &amp; GATT/Keystore stack report</string>
+
+    <!-- Diagnostics & Console -->
+    <string name="diag_console_title">Sanitized Event Console</string>
+    <string name="diag_level_1">L1 Errors</string>
+    <string name="diag_level_2">L2 Standard</string>
+    <string name="diag_level_3">L3 Verbose</string>
+    <string name="diag_stack_title">BLE &amp; Keystore Diagnostics</string>
+    <string name="diag_run_check">Run Stack Diagnostics</string>
+    <string name="diag_no_logs">No log entries at current filter level.</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_killswitch_title">Execute Master Killswitch?</string>
+    <string name="dialog_killswitch_body">This will sequentially send OFF commands across USB-C1, USB-C2, USB-C3, and USB-A (PIID 16). Sequential writes are not atomic across hardware ports.</string>
+    <string name="dialog_soft_reset_title">Soft Reset All Ports?</string>
+    <string name="dialog_soft_reset_body">Momentarily turns all 4 ports OFF and back ON to re-negotiate USB-PD, PPS, and UFCS.</string>
+    <string name="dialog_mi_home_title">Switch to Xiaomi Mi Home?</string>
+    <string name="dialog_mi_home_body">CUKTECH 10 Ultra allows only one active BLE client. BLEBridge will cleanly disconnect first so Mi Home can connect.</string>
+    <string name="dialog_wh_limit_title">Energy Limit · %1$s</string>
+    <string name="dialog_wh_limit_target">Cutoff Target (Wh)</string>
+    <string name="dialog_wh_mode_once">Once (disable after cutoff)</string>
+    <string name="dialog_wh_mode_always">Repeating cycle</string>
+    <string name="dialog_export_title">Export Telemetry CSV</string>
+    <string name="dialog_export_downloads">Save to Downloads/cuktech10</string>
+    <string name="dialog_export_saf">Choose Location (SAF)</string>
+    <string name="dialog_clear_history_title">Clear Telemetry History</string>
+
+    <!-- Notifications, Live Updates & Anomalies -->
+    <string name="notif_channel_live_name">Live Charger Telemetry</string>
+    <string name="notif_channel_live_desc">Ongoing BLE telemetry, active timers, and Android Live Updates status</string>
+    <string name="notif_channel_completion_name">Charging Completion Alerts</string>
+    <string name="notif_channel_completion_desc">Alerts when a port reaches trickle charge completion</string>
+    <string name="notif_channel_completion_silent_name">Silent Completion Alerts</string>
+    <string name="notif_channel_completion_silent_desc">Quiet Hours or muted charging completion notifications</string>
+    <string name="notif_channel_anomaly_name">Cable &amp; Link Diagnostics</string>
+    <string name="notif_channel_anomaly_desc">Warnings about repeated PD/PPS drops, power collapses, or BLE instability</string>
+    <string name="notif_completion_title">%1$s · Charging Complete</string>
+    <string name="notif_completion_repeat_title">%1$s · Still Complete</string>
+    <string name="notif_completion_body">%1$.2f Wh delivered · Peak %2$.1f W</string>
+    <string name="notif_anomaly_title">Charging Anomaly Detected</string>
+
+    <!-- Overview: Profiles & Anomalies -->
+    <string name="overview_profiles_title">Charging Profiles</string>
+    <string name="overview_profile_save">Save Current</string>
+    <string name="overview_anomaly_dismiss">Dismiss</string>
+    <string name="profile_save_title">Save Charging Profile</string>
+    <string name="profile_name_label">Profile Name</string>
+    <string name="profile_save_summary">Captures scenario mode, active ports bitmap, display sleep settings, USB-A low-current, and active Wh limits.</string>
+
+    <!-- Settings: ToU Tariff, Notifications, Live Updates & Quiet Hours -->
+    <string name="settings_tou_enable">Day / Night Time-of-Use Tariff</string>
+    <string name="settings_tariff_day_rate">Day Rate (per kWh)</string>
+    <string name="settings_tariff_night_rate">Night Rate (per kWh)</string>
+    <string name="settings_tariff_day_start">Day Starts</string>
+    <string name="settings_tariff_night_start">Night Starts</string>
+    <string name="settings_tariff_snapshot_note">Previously completed sessions preserve their original recorded tariff cost.</string>
+
+    <string name="settings_section_notifications">Notifications, Completion &amp; Live Updates</string>
+    <string name="settings_live_updates_enable">Android 16 Live Updates / Status Chip</string>
+    <string name="settings_promoted_status_granted">Promoted Ongoing Enabled</string>
+    <string name="settings_promoted_status_denied">Promoted Ongoing Blocked (Tap to Allow)</string>
+    <string name="settings_promoted_status_legacy">Standard Persistent Notification (Android &lt; 16)</string>
+    <string name="settings_promoted_allow_btn">System Promoted Settings</string>
+    <string name="settings_live_updates_pixel_note">On Google Pixel (Android 16+), shows compact W / timer chip in status bar and AOD. OEM launchers (Xiaomi/Samsung/OnePlus) may display standard ongoing cards instead.</string>
+    <string name="settings_completion_hysteresis">Completion Hysteresis Window</string>
+    <string name="settings_completion_threshold">Trickle Completion Threshold</string>
+    <string name="settings_completion_sound">Completion Alert Sound</string>
+    <string name="settings_completion_vibration">Completion Vibration</string>
+    <string name="settings_completion_repeat">Repeat Unplugged Reminder</string>
+    <string name="settings_completion_repeat_interval">Repeat Every</string>
+    <string name="settings_completion_repeat_count">Max Repeats</string>
+    <string name="settings_quiet_hours_enable">Quiet Hours (Mute Completion Sounds)</string>
+    <string name="settings_quiet_hours_start">Quiet Start</string>
+    <string name="settings_quiet_hours_end">Quiet End</string>
+
+    <!-- Encrypted SAF Backup & Restore -->
+    <string name="settings_section_backup">Encrypted SAF Backup &amp; Restore</string>
+    <string name="settings_backup_desc">Exports preferences, charging history, daily archives, aliases, Wh limits, and custom profiles into an AES-256-GCM passphrase-protected .cukbackup file.</string>
+    <string name="settings_backup_export_btn">Create .cukbackup</string>
+    <string name="settings_backup_restore_btn">Restore Backup</string>
+    <string name="backup_export_title">Create Encrypted Backup</string>
+    <string name="backup_restore_title">Restore Encrypted Backup</string>
+    <string name="backup_passphrase_label">Backup Passphrase</string>
+    <string name="backup_passphrase_confirm_label">Confirm Passphrase</string>
+    <string name="backup_passphrase_min_len">Use at least 6 characters for PBKDF2-SHA256 encryption.</string>
+    <string name="backup_passphrase_mismatch">Passphrases do not match.</string>
+    <string name="backup_include_secrets">Include Xiaomi BLE Keys &amp; Tokens</string>
+    <string name="backup_include_secrets_warn">Warning: Includes hardware BLE encryption keys in the passphrase-protected file. Leave unchecked for safer history-only backups.</string>
+    <string name="backup_choose_saf_save">Choose File Location</string>
+    <string name="backup_restore_mode_merge">Merge with existing sessions &amp; profiles</string>
+    <string name="backup_restore_mode_replace">Replace existing history &amp; profiles cleanly</string>
+    <string name="backup_choose_saf_open">Select .cukbackup File</string>
+    <string name="backup_success_export">Encrypted backup saved cleanly</string>
+    <string name="backup_success_restore">Encrypted backup restored</string>
+
+    <!-- GitHub Releases APK Updater -->
+    <string name="settings_current_version_fmt">Installed v%1$s</string>
+    <string name="settings_check_updates_now">Check for Updates</string>
+    <string name="settings_update_up_to_date">You are running the latest version</string>
+    <string name="updater_title">GitHub Releases Update</string>
+    <string name="updater_current_latest_fmt">Installed v%1$s  →  Latest v%2$s</string>
+    <string name="updater_apk_info_fmt">%1$s · %2$.1f MB</string>
+    <string name="updater_sha256_expected">Expected SHA-256: %1$s</string>
+    <string name="updater_sha256_missing">Warning: Release provides no SHA-256 checksum. Automatic installation is blocked for security.</string>
+    <string name="updater_changelog">Release Notes</string>
+    <string name="updater_download_verify_btn">Download &amp; Verify SHA-256</string>
+    <string name="updater_downloading_fmt">Downloading APK… %1$.1f / %2$.1f MB</string>
+    <string name="updater_verifying_sha256">Verifying SHA-256 integrity…</string>
+    <string name="updater_ready_install">SHA-256 verified cleanly. Ready to install.</string>
+    <string name="updater_install_apk_btn">Install Verified APK</string>
+    <string name="updater_allow_unknown_sources">Allow APK Installs</string>
+    <string name="updater_open_github">Open GitHub Releases</string>
+    <string name="updater_up_to_date_msg">Installed build v%1$s is already up to date.</string>
+
+    <!-- Diagnostics Anomalies -->
+    <string name="diag_anomalies_title">Active Link &amp; Cable Warnings</string>
 </resources>

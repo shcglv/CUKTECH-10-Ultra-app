@@ -3,6 +3,7 @@ package com.example.cuktech.cloud
 import android.util.Base64
 import android.util.Log
 import com.example.cuktech.security.CuktechDeviceCredentials
+import com.example.cuktech.security.LogSanitizer
 import com.example.cuktech.security.XiaomiAccountSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -70,8 +71,9 @@ class XiaomiCloudClient {
     var logger: ((Boolean, String) -> Unit)? = null
 
     private fun cloudLog(message: String, isError: Boolean = false) {
-        if (isError) Log.w(TAG, message) else Log.i(TAG, message)
-        runCatching { logger?.invoke(isError, "[Xiaomi Cloud] $message") }
+        val safe = LogSanitizer.sanitize(message)
+        if (isError) Log.w(TAG, safe) else Log.i(TAG, safe)
+        runCatching { logger?.invoke(isError, "[Xiaomi Cloud] $safe") }
     }
 
     /** Same randomized agent format as cuktech-ble-server/xiaomi_cloud.py. */
@@ -623,7 +625,8 @@ class XiaomiCloudClient {
         val passToken = cookies["passToken"].orEmpty()
         val userId = cookies["userId"] ?: cookies["cUserId"].orEmpty()
 
-        cloudLog("Processing Web/Google login callback. URL: $finishUrl, Cookies: ${cookies.keys}")
+        val hostOnly = runCatching { URL(finishUrl).host ?: "web" }.getOrDefault("web")
+        cloudLog("Processing Web/Google login callback from host=$hostOnly (cookieCount=${cookies.size})")
 
         // 1. If passToken and userId are available, exchange via serviceLogin
         if (passToken.isNotBlank() && userId.isNotBlank()) {
@@ -934,7 +937,7 @@ class XiaomiCloudClient {
                     region = region
                 )
                 if (cred.isCuktech10Ultra && cred.hasValidToken) {
-                    cloudLog(">>> Found CUKTECH 10 Ultra! MAC: $mac, Model: $model, Token: ${resolvedToken.take(6)}... (${resolvedToken.length} hex)")
+                    cloudLog(">>> Found CUKTECH 10 Ultra! MAC: ${LogSanitizer.maskMac(mac)}, Model: $model, MiOT token present (${resolvedToken.length} hex)")
                 }
                 credentialsList.add(cred)
             }
@@ -1014,7 +1017,7 @@ class XiaomiCloudClient {
                 decryptRc4Response(session.ssecurity, snonce, trimmed)
             }
         }.getOrElse { err ->
-            cloudLog("Failed to decrypt response for $uri: ${err.message}. Raw: ${trimmed.take(120)}", isError = true)
+            cloudLog("Failed to decrypt response for $uri: ${err.message}", isError = true)
             trimmed
         }
 
@@ -1027,7 +1030,7 @@ class XiaomiCloudClient {
             }
             json
         }.getOrElse {
-            cloudLog("Failed to parse JSON for $uri: ${decrypted.take(120)}", isError = true)
+            cloudLog("Failed to parse JSON response for $uri (len=${decrypted.length})", isError = true)
             JSONObject()
         }
     }

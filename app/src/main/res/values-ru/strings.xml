@@ -1,0 +1,329 @@
+<resources>
+    <string name="app_name">BLE Cuktech10</string>
+    <string name="widget_control_name">CUKTECH 10 Ultra · Управление</string>
+    <string name="widget_control_desc">Виджет Material 3: живая мощность, опциональный график и переключение USB-C1/C2/C3/USB-A</string>
+    <string name="widget_compact_name">CUKTECH 10 Ultra · Компакт</string>
+    <string name="widget_compact_desc">Компактный виджет Material 3: общая мощность и сетка 4 портов</string>
+    <string name="widget_config_title">Настройка виджета</string>
+    <string name="widget_config_ports_label">Отображаемые порты</string>
+    <string name="widget_config_sparkline">Показывать график мощности</string>
+    <string name="widget_config_session_wh">Показывать энергию сессии (Вт·ч)</string>
+    <string name="widget_config_tap_dest">Раздел при нажатии</string>
+
+    <!-- Navigation Destinations -->
+    <string name="nav_overview">Обзор</string>
+    <string name="nav_ports">Порты</string>
+    <string name="nav_analytics">Аналитика</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="nav_diagnostics">Диагностика</string>
+    <string name="cd_back">Назад</string>
+    <string name="cd_close">Закрыть</string>
+
+    <!-- Connection States & Banner -->
+    <string name="status_connected">Подключено</string>
+    <string name="status_connecting">Подключение…</string>
+    <string name="status_scanning">Поиск…</string>
+    <string name="status_disconnected">Отключено</string>
+    <string name="status_auth_failed">Ошибка авторизации</string>
+    <string name="status_cooldown">Отключение…</string>
+    <string name="action_connect">Подключить</string>
+    <string name="action_disconnect">Отключить</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_scan_pair">Поиск и привязка</string>
+    <string name="action_refresh_telemetry">Обновить</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_confirm">Подтвердить</string>
+    <string name="action_undo">Отменить</string>
+    <string name="action_apply">Применить</string>
+    <string name="action_copy">Копировать</string>
+    <string name="action_clear">Очистить</string>
+    <string name="action_rescan">Повторить</string>
+    <string name="action_edit">Изменить</string>
+
+    <!-- Warnings & Account Notices -->
+    <string name="warning_bluetooth_off_title">Bluetooth выключен</string>
+    <string name="warning_bluetooth_off_body">Включите Bluetooth для поиска и подключения к CUKTECH 10 Ultra.</string>
+    <string name="action_turn_on_bluetooth">Включить Bluetooth</string>
+    <string name="warning_region_non_cn">Текущий регион Xiaomi: [%1$s]. Для CUKTECH 10 Ultra (AD1204) требуется регион Китай (CN).</string>
+    <string name="warning_no_token_title">Нет учётных данных Xiaomi MiOT</string>
+    <string name="warning_no_token_body">Войдите в аккаунт Xiaomi или импортируйте JSON-ключи устройства для шифрованного BLE-управления.</string>
+    <string name="action_xiaomi_login">Вход Xiaomi и синхронизация</string>
+
+    <!-- Overview Screen -->
+    <string name="overview_hero_total_power">Суммарная мощность</string>
+    <string name="overview_rated_ceiling">До 120 Вт · AD1204</string>
+    <string name="overview_rssi_fmt">%1$d дБм · Качество %2$d%%</string>
+    <string name="overview_active_sessions_fmt">Активных: %1$d</string>
+    <string name="overview_session_energy_fmt">%.2f Вт·ч</string>
+    <string name="overview_est_cost_fmt">Оценка: %1$s %2$.2f</string>
+    <string name="overview_scenario_mode">Сценарий мощности</string>
+    <string name="overview_killswitch">Аварийное отключение</string>
+    <string name="overview_killswitch_desc">Последовательно отключает USB-C1, USB-C2, USB-C3 и USB-A</string>
+    <string name="overview_restore_killswitch">Восстановить порты</string>
+    <string name="overview_live_ports">Порты в реальном времени</string>
+    <string name="overview_live_trend">График общей мощности</string>
+    <string name="overview_recent_session">Последняя сессия зарядки</string>
+    <string name="overview_view_analytics">Вся аналитика</string>
+    <string name="overview_no_device_connected">Подключите CUKTECH 10 Ultra для управления портами и просмотра телеметрии.</string>
+    <string name="overview_ac_connected">Питание от сети подключено</string>
+
+    <!-- Explicit Physical Port Names & Specs -->
+    <string name="port_name_c1">USB-C1</string>
+    <string name="port_name_c2">USB-C2</string>
+    <string name="port_name_c3">USB-C3</string>
+    <string name="port_name_a">USB-A</string>
+    <string name="port_spec_c1">Макс. 120 Вт · PD / PPS / UFCS</string>
+    <string name="port_spec_c2">Макс. 120 Вт · PD / PPS / UFCS</string>
+    <string name="port_spec_c3">Макс. 44 Вт · UFCS / SCP</string>
+    <string name="port_spec_a">Макс. 33 Вт · UFCS / SCP · Слабый ток 4 ч</string>
+    <string name="port_status_disabled">Порт выкл.</string>
+    <string name="port_status_idle">Простой</string>
+    <string name="port_status_charging">Зарядка</string>
+    <string name="port_power_toggle">Питание порта</string>
+    <string name="port_delay_off_timer">Таймер автоотключения</string>
+    <string name="port_delay_timer_always">Выключен (постоянно вкл.)</string>
+    <string name="port_delay_timer_fmt">Выкл. через %1$s</string>
+    <string name="port_set_timer">Задать таймер</string>
+    <string name="port_fast_charge_protocols">Протоколы быстрой зарядки</string>
+    <string name="proto_pd">PD</string>
+    <string name="proto_pps">PPS</string>
+    <string name="proto_ufcs">UFCS</string>
+    <string name="proto_scp">SCP</string>
+    <string name="port_usba_low_current">Режим слабого тока USB-A (4 ч)</string>
+    <string name="port_usba_low_current_desc">Предотвращает автоотключение при зарядке наушников и умных часов.</string>
+    <string name="port_wh_limit">Лимит энергии (Вт·ч)</string>
+    <string name="port_wh_limit_none">Не задан</string>
+    <string name="port_wh_limit_progress_fmt">%1$.2f / %2$.1f Вт·ч (%3$s)</string>
+    <string name="port_history_logging">Запись истории и Вт·ч</string>
+    <string name="port_pdo_caps_label">Профили PDO: %1$s</string>
+    <string name="port_edit_alias">Задать имя</string>
+    <string name="port_alias_dialog_title">Псевдоним для %1$s</string>
+    <string name="port_alias_hint">Например: Ноутбук, Pixel, Рабочий блок</string>
+
+    <!-- Scenario & Screen Timeout Names -->
+    <string name="scenario_ai">AI-режим</string>
+    <string name="scenario_ai_desc">Умное автоматическое распределение мощности между USB-C и USB-A</string>
+    <string name="scenario_hybrid">Гибридный</string>
+    <string name="scenario_hybrid_desc">Приоритет до 100 Вт на разъёме USB-C1</string>
+    <string name="scenario_single">Одиночный</string>
+    <string name="scenario_single_desc">Максимальная мощность на одном порту</string>
+    <string name="scenario_dual">Двойной</string>
+    <string name="scenario_dual_desc">Сбалансированное деление на два активных Type-C порта</string>
+    <string name="timeout_always">Всегда вкл.</string>
+    <string name="timeout_1m">1 мин</string>
+    <string name="timeout_5m">5 мин</string>
+    <string name="timeout_10m">10 мин</string>
+    <string name="timeout_30m">30 мин</string>
+
+    <!-- Analytics, Charts & Session Replay -->
+    <string name="analytics_interval_60s">60с</string>
+    <string name="analytics_interval_5m">5м</string>
+    <string name="analytics_interval_30m">30м</string>
+    <string name="analytics_interval_session">Сессия</string>
+    <string name="analytics_interval_today">Сегодня</string>
+    <string name="analytics_interval_custom">Период</string>
+    <string name="analytics_metric_total_w">Общие Вт</string>
+    <string name="analytics_metric_per_port_w">По портам Вт</string>
+    <string name="analytics_metric_voltage_v">Напряжение В</string>
+    <string name="analytics_metric_current_a">Ток А</string>
+    <string name="analytics_metric_cum_wh">Энергия Вт·ч</string>
+    <string name="analytics_metric_protocols">Протоколы</string>
+    <string name="analytics_no_samples">Нет записанной телеметрии за выбранный интервал.</string>
+    <string name="analytics_logging_paused_warning">Запись телеметрии приостановлена. Включите главный переключатель или запись для портов.</string>
+    <string name="analytics_active_sessions">Активные сессии</string>
+    <string name="analytics_completed_sessions">Завершённые сессии</string>
+    <string name="analytics_daily_aggregates">Архив по дням (&gt;%1$d дн.)</string>
+    <string name="analytics_view_table">Сводная таблица</string>
+    <string name="analytics_export_csv">Экспорт CSV</string>
+    <string name="analytics_clear_history">Очистить историю</string>
+    <string name="analytics_no_sessions">Сессии зарядки пока не записаны.</string>
+    <string name="analytics_replay">Воспроизвести</string>
+    <string name="replay_title">Воспроизведение сессии</string>
+    <string name="replay_no_samples">В архиве нет детальных точек телеметрии для этой сессии.</string>
+    <string name="replay_play">Пуск</string>
+    <string name="replay_pause">Пауза</string>
+    <string name="session_gap_fmt">+%1$dс пауза</string>
+    <string name="session_paused">Пауза</string>
+
+    <!-- Settings Hub & Subsections -->
+    <string name="settings_section_hardware">Экран зарядного устройства и питание</string>
+    <string name="settings_screen_timeout">Таймаут экрана устройства</string>
+    <string name="settings_idle_screen_off">Гасить экран при простое</string>
+    <string name="settings_idle_screen_off_desc">Автоматически выключает дисплей блока при отсутствии нагрузки</string>
+    <string name="settings_hw_language">Язык дисплея зарядного</string>
+    <string name="settings_orientation_lock">Блокировка ориентации</string>
+    <string name="settings_rotate_180">Повернуть экран на 180°</string>
+    <string name="settings_lcd_page">Активная страница экрана зарядного</string>
+    <string name="settings_soft_reset">Мягкий сброс портов (перезапуск PD)</string>
+    <string name="settings_section_appearance">Внешний вид, язык и старт</string>
+    <string name="settings_theme_mode">Тема оформления</string>
+    <string name="settings_theme_system">Системная</string>
+    <string name="settings_theme_light">Светлая</string>
+    <string name="settings_theme_dark">Тёмная</string>
+    <string name="settings_dynamic_color">Динамические цвета Material You</string>
+    <string name="settings_amoled_black">Чистый чёрный AMOLED</string>
+    <string name="settings_app_language">Язык интерфейса</string>
+    <string name="settings_lang_system">Как в системе</string>
+    <string name="settings_lang_en">English</string>
+    <string name="settings_lang_ru">Русский</string>
+    <string name="settings_start_screen">Стартовый экран</string>
+    <string name="settings_start_overview">Экран обзора</string>
+    <string name="settings_start_gateway">Центр подключений и шлюз</string>
+
+    <string name="settings_section_retention">Хранение данных, склейка и тариф</string>
+    <string name="settings_retention_days">Срок хранения перед архивацией</string>
+    <string name="settings_stitch_grace">Окно склейки паузы сессии</string>
+    <string name="settings_tariff_rate">Тариф за кВт·ч</string>
+    <string name="settings_tariff_currency">Валюта</string>
+
+    <string name="settings_section_cloud">Аккаунт Xiaomi, устройства и Mi Home</string>
+    <string name="settings_mi_home_switch">Переключиться на Mi Home</string>
+    <string name="settings_sync_devices">Синхронизировать устройства из облака</string>
+    <string name="settings_sign_out_creds">Удалить сохранённые ключи</string>
+    <string name="settings_check_updates">Обновления на GitHub Releases</string>
+    <string name="settings_update_available">Доступен новый релиз на GitHub!</string>
+
+    <string name="settings_section_telemetry_policies">Телеметрия и фоновая работа</string>
+    <string name="settings_master_telemetry">Главный движок телеметрии</string>
+    <string name="settings_log_phone_charging">Писать только при зарядке телефона</string>
+    <string name="settings_pause_screen_locked">Пауза опроса при выкл. экране</string>
+    <string name="settings_auto_reconnect">Автоподключение поблизости</string>
+    <string name="settings_battery_whitelist">Без ограничений батареи</string>
+    <string name="settings_battery_whitelisted">Разрешено</string>
+    <string name="settings_battery_optimized">Ограничено (нажмите для настройки)</string>
+    <string name="settings_dontkillmyapp">Инструкция по фоновой работе (dontkillmyapp)</string>
+
+    <string name="settings_section_security">Безопасность и внешняя автоматизация</string>
+    <string name="settings_security_note">Внешние каналы отключены по умолчанию и требуют секретный токен установки.</string>
+    <string name="settings_tasker_opt_in">Разрешить плагин Tasker / MacroDroid</string>
+    <string name="settings_adb_opt_in">Разрешить ADB и локальные Broadcast</string>
+    <string name="settings_tcp_opt_in">Разрешить TCP-шлюз</string>
+    <string name="settings_tcp_running">Шлюз запущен</string>
+    <string name="settings_tcp_stopped">Шлюз остановлен</string>
+    <string name="settings_tcp_port">TCP-порт</string>
+    <string name="settings_tcp_lan_bind">Разрешить подключения из локальной сети (LAN)</string>
+    <string name="settings_tcp_lan_warning">Предупреждение: открывает TCP-сокет для локальной сети Wi-Fi.</string>
+    <string name="settings_token_label">Секретный токен автоматизации</string>
+    <string name="settings_token_rotate">Обновить токен</string>
+    <string name="settings_ha_webhook">Webhook для Home Assistant</string>
+    <string name="settings_ha_url_label">URL Webhook (рекомендуется HTTPS)</string>
+    <string name="settings_ha_token_label">Bearer-токен (хранится в Android Keystore)</string>
+    <string name="settings_ha_http_warning">Внимание: обычный HTTP передаёт данные по сети без шифрования.</string>
+    <string name="settings_open_diagnostics">Консоль событий и диагностика BLE</string>
+    <string name="settings_open_diagnostics_desc">Маскированный журнал (уровни 1–3) и проверка стека GATT / Keystore</string>
+
+    <!-- Diagnostics & Console -->
+    <string name="diag_console_title">Журнал событий (с маскированием)</string>
+    <string name="diag_level_1">У1 Ошибки</string>
+    <string name="diag_level_2">У2 Стандарт</string>
+    <string name="diag_level_3">У3 Подробно</string>
+    <string name="diag_stack_title">Диагностика BLE и Keystore</string>
+    <string name="diag_run_check">Проверить стек Bluetooth</string>
+    <string name="diag_no_logs">Нет записей для выбранного уровня фильтра.</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_killswitch_title">Выполнить аварийное отключение?</string>
+    <string name="dialog_killswitch_body">Команда OFF будет последовательно отправлена для USB-C1, USB-C2, USB-C3 и USB-A (PIID 16). Последовательная запись не является атомарной на уровне железа.</string>
+    <string name="dialog_soft_reset_title">Перезапустить все порты?</string>
+    <string name="dialog_soft_reset_body">Кратковременно выключает и снова включает все 4 порта для пересогласования USB-PD, PPS и UFCS.</string>
+    <string name="dialog_mi_home_title">Переключиться на Mi Home?</string>
+    <string name="dialog_mi_home_body">CUKTECH 10 Ultra поддерживает только одного активного BLE-клиента. BLEBridge корректно отключится перед запуском Mi Home.</string>
+    <string name="dialog_wh_limit_title">Лимит энергии · %1$s</string>
+    <string name="dialog_wh_limit_target">Порог отключения (Вт·ч)</string>
+    <string name="dialog_wh_mode_once">Разово (отключить после срабатывания)</string>
+    <string name="dialog_wh_mode_always">Повторяющийся цикл</string>
+    <string name="dialog_export_title">Экспорт истории в CSV</string>
+    <string name="dialog_export_downloads">Сохранить в Загрузки/cuktech10</string>
+    <string name="dialog_export_saf">Выбрать папку (SAF)</string>
+    <string name="dialog_clear_history_title">Очистка истории телеметрии</string>
+
+    <!-- Notifications, Live Updates & Anomalies -->
+    <string name="notif_channel_live_name">Живая телеметрия блока</string>
+    <string name="notif_channel_live_desc">Фоновое подключение BLE, таймеры и статус Android Live Updates</string>
+    <string name="notif_channel_completion_name">Завершение зарядки</string>
+    <string name="notif_channel_completion_desc">Уведомления при переходе порта в режим малого тока (завершение)</string>
+    <string name="notif_channel_completion_silent_name">Тихие уведомления о завершении</string>
+    <string name="notif_channel_completion_silent_desc">Уведомления в тихие часы или при отключённом звуке</string>
+    <string name="notif_channel_anomaly_name">Аномалии кабеля и BLE</string>
+    <string name="notif_channel_anomaly_desc">Предупреждения о частых сбросах PD/PPS, провалах нагрузки и обрывах BLE</string>
+    <string name="notif_completion_title">%1$s · Зарядка завершена</string>
+    <string name="notif_completion_repeat_title">%1$s · Напоминание о завершении</string>
+    <string name="notif_completion_body">Отдано %1$.2f Вт·ч · Пик %2$.1f Вт</string>
+    <string name="notif_anomaly_title">Обнаружена аномалия зарядки</string>
+
+    <!-- Overview: Profiles & Anomalies -->
+    <string name="overview_profiles_title">Профили зарядки</string>
+    <string name="overview_profile_save">Сохранить текущий</string>
+    <string name="overview_anomaly_dismiss">Скрыть</string>
+    <string name="profile_save_title">Сохранить профиль зарядки</string>
+    <string name="profile_name_label">Название профиля</string>
+    <string name="profile_save_summary">Сохраняет сценарий мощности, активные порты, параметры экрана, режим USB-A 4ч и текущие лимиты Вт·ч.</string>
+
+    <!-- Settings: ToU Tariff, Notifications, Live Updates & Quiet Hours -->
+    <string name="settings_tou_enable">Двухзонный тариф (День / Ночь)</string>
+    <string name="settings_tariff_day_rate">Дневной тариф (кВт·ч)</string>
+    <string name="settings_tariff_night_rate">Ночной тариф (кВт·ч)</string>
+    <string name="settings_tariff_day_start">Начало дня</string>
+    <string name="settings_tariff_night_start">Начало ночи</string>
+    <string name="settings_tariff_snapshot_note">Завершённые ранее сессии сохраняют свой исторический снимок тарифа без перерасчёта.</string>
+
+    <string name="settings_section_notifications">Уведомления, завершение и Live Updates</string>
+    <string name="settings_live_updates_enable">Android 16 Live Updates / Статус-чип</string>
+    <string name="settings_promoted_status_granted">Промо-уведомления разрешены</string>
+    <string name="settings_promoted_status_denied">Промо-уведомления запрещены (разрешить)</string>
+    <string name="settings_promoted_status_legacy">Обычное постоянное уведомление (Android &lt; 16)</string>
+    <string name="settings_promoted_allow_btn">Настройки Live Updates</string>
+    <string name="settings_live_updates_pixel_note">На Google Pixel (Android 16+) показывает компактный чип Вт/таймера в строке состояния и на AOD. В других оболочках отображается стандартное уведомление.</string>
+    <string name="settings_completion_hysteresis">Окно гистерезиса завершения</string>
+    <string name="settings_completion_threshold">Порог малого тока (Вт)</string>
+    <string name="settings_completion_sound">Звук при завершении</string>
+    <string name="settings_completion_vibration">Вибрация при завершении</string>
+    <string name="settings_completion_repeat">Повторные напоминания</string>
+    <string name="settings_completion_repeat_interval">Интервал повтора</string>
+    <string name="settings_completion_repeat_count">Макс. повторов</string>
+    <string name="settings_quiet_hours_enable">Тихие часы (без звука завершения)</string>
+    <string name="settings_quiet_hours_start">Начало тишины</string>
+    <string name="settings_quiet_hours_end">Конец тишины</string>
+
+    <!-- Encrypted SAF Backup & Restore -->
+    <string name="settings_section_backup">Шифрованный SAF-бэкап и восстановление</string>
+    <string name="settings_backup_desc">Экспорт настроек, сессий, архива, псевдонимов, лимитов Вт·ч и профилей в файл .cukbackup с защитой AES-256-GCM по паролю.</string>
+    <string name="settings_backup_export_btn">Создать .cukbackup</string>
+    <string name="settings_backup_restore_btn">Восстановить</string>
+    <string name="backup_export_title">Создать шифрованный бэкап</string>
+    <string name="backup_restore_title">Восстановить из .cukbackup</string>
+    <string name="backup_passphrase_label">Пароль архива</string>
+    <string name="backup_passphrase_confirm_label">Повторите пароль</string>
+    <string name="backup_passphrase_min_len">Минимум 6 символов для PBKDF2-SHA256.</string>
+    <string name="backup_passphrase_mismatch">Пароли не совпадают.</string>
+    <string name="backup_include_secrets">Включить ключи Xiaomi BLE и токены</string>
+    <string name="backup_include_secrets_warn">Внимание: добавляет аппаратные BLE-ключи в файл бэкапа. Оставьте выключенным для резервной копии только истории и настроек.</string>
+    <string name="backup_choose_saf_save">Выбрать место сохранения</string>
+    <string name="backup_restore_mode_merge">Объединить с текущими сессиями и профилями</string>
+    <string name="backup_restore_mode_replace">Заменить текущую историю и профили</string>
+    <string name="backup_choose_saf_open">Выбрать файл .cukbackup</string>
+    <string name="backup_success_export">Шифрованный бэкап сохранён</string>
+    <string name="backup_success_restore">Данные из бэкапа восстановлены</string>
+
+    <!-- GitHub Releases APK Updater -->
+    <string name="settings_current_version_fmt">Установлена v%1$s</string>
+    <string name="settings_check_updates_now">Проверить сейчас</string>
+    <string name="settings_update_up_to_date">Установлена актуальная версия</string>
+    <string name="updater_title">Обновление с GitHub Releases</string>
+    <string name="updater_current_latest_fmt">Текущая v%1$s  →  Новая v%2$s</string>
+    <string name="updater_apk_info_fmt">%1$s · %2$.1f МБ</string>
+    <string name="updater_sha256_expected">Ожидаемый SHA-256: %1$s</string>
+    <string name="updater_sha256_missing">Внимание: в релизе не найден SHA-256. Автоматическая установка заблокирована ради безопасности.</string>
+    <string name="updater_changelog">Список изменений</string>
+    <string name="updater_download_verify_btn">Скачать и проверить SHA-256</string>
+    <string name="updater_downloading_fmt">Загрузка APK… %1$.1f / %2$.1f МБ</string>
+    <string name="updater_verifying_sha256">Проверка контрольной суммы SHA-256…</string>
+    <string name="updater_ready_install">SHA-256 подтверждён. Можно устанавливать.</string>
+    <string name="updater_install_apk_btn">Установить проверенный APK</string>
+    <string name="updater_allow_unknown_sources">Разрешить установку APK</string>
+    <string name="updater_open_github">Открыть GitHub Releases</string>
+    <string name="updater_up_to_date_msg">Текущая сборка v%1$s не требует обновления.</string>
+
+    <!-- Diagnostics Anomalies -->
+    <string name="diag_anomalies_title">Активные предупреждения кабеля и BLE</string>
+</resources>
