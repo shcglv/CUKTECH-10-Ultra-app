@@ -11,6 +11,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -81,7 +82,7 @@ private val CuktechDarkColorScheme = darkColorScheme(
 )
 
 /**
- * Pixel-native Material 3 theme supporting System/Light/Dark mode,
+ * Pixel-native Material 3 Expressive theme supporting System/Light/Dark mode,
  * Android 12+ Material You Dynamic Color, and optional Pure Black AMOLED surface override.
  */
 @Composable
@@ -99,8 +100,9 @@ fun MyApplicationTheme(
     }
 
     val context = LocalContext.current
+    val dynamicActive = useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val baseScheme = when {
-        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        dynamicActive -> {
             if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         isDark -> CuktechDarkColorScheme
@@ -121,7 +123,13 @@ fun MyApplicationTheme(
         baseScheme
     }
 
-    val semanticColors = if (isDark) DarkSemanticColors else LightSemanticColors
+    val semanticColors = remember(colorScheme, isDark, dynamicActive) {
+        CuktechSemanticColors.fromColorScheme(
+            colorScheme = colorScheme,
+            isDark = isDark,
+            dynamicEnabled = dynamicActive
+        )
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -140,6 +148,7 @@ fun MyApplicationTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,
+            shapes = CuktechShapes,
             content = content
         )
     }

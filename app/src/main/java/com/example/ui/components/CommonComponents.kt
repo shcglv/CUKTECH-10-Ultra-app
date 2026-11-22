@@ -25,30 +25,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
-import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.ElectricBolt
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -60,23 +58,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.example.R
-import com.example.cuktech.ble.CuktechAuthState
 import com.example.cuktech.db.CuktechPersistence
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.energy.PortChargeLimit
-import com.example.cuktech.security.CuktechDeviceCredentials
-import com.example.ui.theme.LocalSemanticColors
 import com.example.ui.theme.TelemetryMonoFontFamily
 import com.example.ui.theme.tabularNums
 import java.text.SimpleDateFormat
@@ -120,233 +115,16 @@ fun localizedTimeoutName(code: Int): String = when (code) {
     else -> stringResource(R.string.timeout_5m)
 }
 
+@Composable
 fun formatDurationHms(totalSec: Long): String {
     val clean = totalSec.coerceAtLeast(0L)
     val h = clean / 3600L
     val m = (clean % 3600L) / 60L
     val s = clean % 60L
     return if (h > 0L) {
-        String.format(Locale.US, "%dh %02dm %02ds", h, m, s)
+        stringResource(R.string.time_h_m_s_fmt, h, m, s)
     } else {
         String.format(Locale.US, "%d:%02d", m, s)
-    }
-}
-
-@Composable
-fun ConnectionStatusCard(
-    authState: CuktechAuthState,
-    isDisconnectCooldown: Boolean,
-    deviceName: String,
-    macAddress: String,
-    rssi: Int,
-    qualityScore: Int,
-    activeCred: CuktechDeviceCredentials?,
-    regionWarning: String?,
-    onConnectClick: () -> Unit,
-    onCancelClick: () -> Unit,
-    onDisconnectClick: () -> Unit,
-    onOpenSearchPair: () -> Unit,
-    onOpenXiaomiLogin: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val semantic = LocalSemanticColors.current
-    val isConnected = authState == CuktechAuthState.AUTHENTICATED
-    val isBusy = authState == CuktechAuthState.CONNECTING_GATT ||
-        authState == CuktechAuthState.DISCOVERING_SERVICES ||
-        authState == CuktechAuthState.PHASE_A_INIT_A4 ||
-        authState == CuktechAuthState.PHASE_B_HANDSHAKE ||
-        authState == CuktechAuthState.SCANNING
-
-    val statusColor = when {
-        isConnected -> semantic.success
-        isBusy -> semantic.warning
-        authState == CuktechAuthState.AUTH_FAILED -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.outline
-    }
-
-    val statusText = when {
-        isDisconnectCooldown -> stringResource(R.string.status_cooldown)
-        authState == CuktechAuthState.AUTHENTICATED -> stringResource(R.string.status_connected)
-        authState == CuktechAuthState.SCANNING -> stringResource(R.string.status_scanning)
-        authState == CuktechAuthState.AUTH_FAILED -> stringResource(R.string.status_auth_failed)
-        isBusy -> stringResource(R.string.status_connecting)
-        else -> stringResource(R.string.status_disconnected)
-    }
-
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-            ),
-            shape = RoundedCornerShape(20.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("connection_status_card")
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .clip(CircleShape)
-                        .background(statusColor)
-                )
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = deviceName.ifBlank { "CUKTECH 10 Ultra" },
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = buildString {
-                            append(statusText)
-                            if (macAddress.isNotBlank() && macAddress != "--") {
-                                append(" · ")
-                                append(macAddress)
-                            }
-                            if (isConnected) {
-                                append(" · ")
-                                append("${rssi} dBm (${qualityScore}%)")
-                            }
-                        },
-                        style = MaterialTheme.typography.bodySmall.tabularNums(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                if (isBusy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                    OutlinedButton(
-                        onClick = onCancelClick,
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag("connection_cancel_button")
-                    ) {
-                        Text(stringResource(R.string.action_cancel))
-                    }
-                } else if (isConnected) {
-                    FilledTonalButton(
-                        onClick = onDisconnectClick,
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag("connection_disconnect_button")
-                    ) {
-                        Text(stringResource(R.string.action_disconnect))
-                    }
-                } else {
-                    Button(
-                        onClick = onConnectClick,
-                        enabled = !isDisconnectCooldown,
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag("connection_connect_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Bluetooth,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.action_connect))
-                    }
-                }
-
-                FilledTonalButton(
-                    onClick = onOpenSearchPair,
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .testTag("search_pair_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.BluetoothSearching,
-                        contentDescription = stringResource(R.string.action_scan_pair),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-        }
-
-        if (regionWarning != null) {
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                    Text(
-                        text = regionWarning,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-
-        if (activeCred == null || !activeCred.hasValidToken) {
-            Surface(
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Key,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onTertiaryContainer
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.warning_no_token_title),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-                        Text(
-                            text = stringResource(R.string.warning_no_token_body),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
-                        )
-                    }
-                    TextButton(
-                        onClick = onOpenXiaomiLogin,
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag("xiaomi_login_banner_button")
-                    ) {
-                        Text(stringResource(R.string.action_xiaomi_login))
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -434,6 +212,7 @@ fun MasterKillswitchConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.ElectricBolt, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
@@ -441,7 +220,10 @@ fun MasterKillswitchConfirmDialog(
         text = { Text(stringResource(R.string.dialog_killswitch_body)) },
         confirmButton = {
             Button(
-                onClick = onConfirm,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConfirm()
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 modifier = Modifier
                     .heightIn(min = 48.dp)
@@ -530,6 +312,7 @@ fun BluetoothOffDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortChargeLimitDialog(
     portId: Int,
@@ -537,6 +320,7 @@ fun PortChargeLimitDialog(
     onSave: (whTarget: Double, mode: String, enabled: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var targetText by remember {
         mutableStateOf(
             if (currentLimit != null && currentLimit.whTarget > 0.0) {
@@ -547,55 +331,59 @@ fun PortChargeLimitDialog(
     var selectedMode by remember { mutableStateOf(currentLimit?.mode ?: "once") }
     val portName = explicitPortName(portId)
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.dialog_wh_limit_title, portName)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = targetText,
-                    onValueChange = { targetText = it },
-                    label = { Text(stringResource(R.string.dialog_wh_limit_target)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_wh_limit_title, portName),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            OutlinedTextField(
+                value = targetText,
+                onValueChange = { targetText = it },
+                label = { Text(stringResource(R.string.dialog_wh_limit_target)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = selectedMode == "once",
+                    onClick = { selectedMode = "once" },
+                    label = { Text(stringResource(R.string.action_once)) },
+                    modifier = Modifier.heightIn(min = 48.dp)
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = selectedMode == "once",
-                        onClick = { selectedMode = "once" },
-                        label = { Text("Once") }
-                    )
-                    FilterChip(
-                        selected = selectedMode == "always",
-                        onClick = { selectedMode = "always" },
-                        label = { Text("Always") }
-                    )
-                }
-                Text(
-                    text = if (selectedMode == "once") {
-                        stringResource(R.string.dialog_wh_mode_once)
-                    } else {
-                        stringResource(R.string.dialog_wh_mode_always)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                FilterChip(
+                    selected = selectedMode == "always",
+                    onClick = { selectedMode = "always" },
+                    label = { Text(stringResource(R.string.action_always)) },
+                    modifier = Modifier.heightIn(min = 48.dp)
                 )
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val parsed = targetText.replace(",", ".").toDoubleOrNull() ?: 20.0
-                    onSave(parsed.coerceIn(0.1, 9999.0), selectedMode, true)
+            Text(
+                text = if (selectedMode == "once") {
+                    stringResource(R.string.dialog_wh_mode_once)
+                } else {
+                    stringResource(R.string.dialog_wh_mode_always)
                 },
-                modifier = Modifier.heightIn(min = 48.dp)
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
             ) {
-                Text(stringResource(R.string.action_apply))
-            }
-        },
-        dismissButton = {
-            Row {
                 if (currentLimit?.enabled == true) {
                     TextButton(
                         onClick = { onSave(0.0, selectedMode, false) },
@@ -604,14 +392,26 @@ fun PortChargeLimitDialog(
                         Text(stringResource(R.string.action_clear), color = MaterialTheme.colorScheme.error)
                     }
                 }
+                Spacer(Modifier.weight(1f))
                 TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.action_cancel))
                 }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        val parsed = targetText.replace(",", ".").toDoubleOrNull() ?: 20.0
+                        onSave(parsed.coerceIn(0.1, 9999.0), selectedMode, true)
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(stringResource(R.string.action_apply))
+                }
             }
         }
-    )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortCountdownDialog(
     portId: Int,
@@ -619,65 +419,74 @@ fun PortCountdownDialog(
     onSave: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cleanInit = initialMinutes.coerceIn(1, 1439)
     var selectedHours by remember { mutableIntStateOf(cleanInit / 60) }
     var selectedMinutes by remember { mutableIntStateOf(cleanInit % 60) }
     val portName = explicitPortName(portId)
+    val unitH = stringResource(R.string.unit_h)
+    val unitM = stringResource(R.string.unit_m)
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text("${stringResource(R.string.port_delay_off_timer)} · $portName") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    SmoothWheelPicker(
-                        values = (0..23).toList(),
-                        selectedValue = selectedHours,
-                        onValueSelected = { selectedHours = it },
-                        formatValue = { "${it}h" },
-                        modifier = Modifier.weight(1f)
-                    )
-                    SmoothWheelPicker(
-                        values = (0..59).toList(),
-                        selectedValue = selectedMinutes,
-                        onValueSelected = { selectedMinutes = it },
-                        formatValue = { "%02dm".format(it) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(15, 30, 60, 120).forEach { mins ->
-                        FilterChip(
-                            selected = (selectedHours * 60 + selectedMinutes) == mins,
-                            onClick = {
-                                selectedHours = mins / 60
-                                selectedMinutes = mins % 60
-                            },
-                            label = {
-                                Text(
-                                    if (mins >= 60) "${mins / 60}h" else "${mins}m",
-                                    style = MaterialTheme.typography.labelMedium.tabularNums()
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onSave((selectedHours * 60 + selectedMinutes).coerceAtLeast(1)) },
-                modifier = Modifier.heightIn(min = 48.dp)
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "${stringResource(R.string.port_delay_off_timer)} · $portName",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(stringResource(R.string.action_apply))
+                SmoothWheelPicker(
+                    values = (0..23).toList(),
+                    selectedValue = selectedHours,
+                    onValueSelected = { selectedHours = it },
+                    formatValue = { "${it}$unitH" },
+                    modifier = Modifier.weight(1f)
+                )
+                SmoothWheelPicker(
+                    values = (0..59).toList(),
+                    selectedValue = selectedMinutes,
+                    onValueSelected = { selectedMinutes = it },
+                    formatValue = { "%02d$unitM".format(it) },
+                    modifier = Modifier.weight(1f)
+                )
             }
-        },
-        dismissButton = {
-            Row {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(15, 30, 60, 120).forEach { mins ->
+                    FilterChip(
+                        selected = (selectedHours * 60 + selectedMinutes) == mins,
+                        onClick = {
+                            selectedHours = mins / 60
+                            selectedMinutes = mins % 60
+                        },
+                        label = {
+                            Text(
+                                if (mins >= 60) "${mins / 60}$unitH" else "${mins}$unitM",
+                                style = MaterialTheme.typography.labelMedium.tabularNums()
+                            )
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
                 if (initialMinutes > 0) {
                     TextButton(
                         onClick = { onSave(0) },
@@ -686,12 +495,20 @@ fun PortCountdownDialog(
                         Text(stringResource(R.string.action_clear))
                     }
                 }
+                Spacer(Modifier.weight(1f))
                 TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.action_cancel))
                 }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = { onSave((selectedHours * 60 + selectedMinutes).coerceAtLeast(1)) },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(stringResource(R.string.action_apply))
+                }
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -735,30 +552,49 @@ fun AliasEditDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScenarioSelectionDialog(
     currentMode: Int,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scenarios = listOf(
         1 to (stringResource(R.string.scenario_ai) to stringResource(R.string.scenario_ai_desc)),
         2 to (stringResource(R.string.scenario_hybrid) to stringResource(R.string.scenario_hybrid_desc)),
         3 to (stringResource(R.string.scenario_single) to stringResource(R.string.scenario_single_desc)),
         4 to (stringResource(R.string.scenario_dual) to stringResource(R.string.scenario_dual_desc))
     )
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.overview_scenario_mode)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                scenarios.forEach { (id, pair) ->
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.overview_scenario_mode),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            scenarios.forEach { (id, pair) ->
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (currentMode == id) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
                             .clickable(role = Role.RadioButton) { onSelect(id) }
-                            .padding(vertical = 8.dp, horizontal = 6.dp),
+                            .padding(vertical = 10.dp, horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = currentMode == id, onClick = { onSelect(id) })
@@ -770,196 +606,265 @@ fun ScenarioSelectionDialog(
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.action_cancel))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             }
         }
-    )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExportCsvDialog(
     onExportDownloads: (CuktechPersistence.ExportTimeframe, CuktechPersistence.ExportScope) -> Unit,
     onExportSaf: (CuktechPersistence.ExportTimeframe, CuktechPersistence.ExportScope) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var timeframe by remember { mutableStateOf(CuktechPersistence.ExportTimeframe.ALL_TIME) }
     var scope by remember { mutableStateOf(CuktechPersistence.ExportScope.ALL) }
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.dialog_export_title)) },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                CuktechPersistence.ExportTimeframe.entries.forEach { tf ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { timeframe = tf }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = timeframe == tf, onClick = { timeframe = tf })
-                        Spacer(Modifier.width(6.dp))
-                        Text(tf.label, style = MaterialTheme.typography.bodyMedium)
-                    }
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_export_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            CuktechPersistence.ExportTimeframe.entries.forEach { tf ->
+                val tfLabel = when (tf) {
+                    CuktechPersistence.ExportTimeframe.CURRENT_SESSION -> stringResource(R.string.export_tf_session)
+                    CuktechPersistence.ExportTimeframe.LAST_1_HOUR -> stringResource(R.string.export_tf_1h)
+                    CuktechPersistence.ExportTimeframe.LAST_24_HOURS -> stringResource(R.string.export_tf_24h)
+                    CuktechPersistence.ExportTimeframe.LAST_7_DAYS -> stringResource(R.string.export_tf_7d)
+                    CuktechPersistence.ExportTimeframe.ALL_TIME -> stringResource(R.string.export_tf_all)
                 }
-                HorizontalDivider()
-                CuktechPersistence.ExportScope.entries.forEach { sc ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { scope = sc }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = scope == sc, onClick = { scope = sc })
-                        Spacer(Modifier.width(6.dp))
-                        Text(sc.label, style = MaterialTheme.typography.bodyMedium)
-                    }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { timeframe = tf }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = timeframe == tf, onClick = { timeframe = tf })
+                    Spacer(Modifier.width(6.dp))
+                    Text(tfLabel, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onExportSaf(timeframe, scope) },
-                modifier = Modifier.heightIn(min = 48.dp)
-            ) {
-                Text(stringResource(R.string.dialog_export_saf))
+            HorizontalDivider()
+            CuktechPersistence.ExportScope.entries.forEach { sc ->
+                val scLabel = when (sc) {
+                    CuktechPersistence.ExportScope.ALL -> stringResource(R.string.export_sc_all)
+                    CuktechPersistence.ExportScope.SESSIONS_ONLY -> stringResource(R.string.export_sc_sessions)
+                    CuktechPersistence.ExportScope.TELEMETRY_ONLY -> stringResource(R.string.export_sc_telemetry)
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { scope = sc }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = scope == sc, onClick = { scope = sc })
+                    Spacer(Modifier.width(6.dp))
+                    Text(scLabel, style = MaterialTheme.typography.bodyMedium)
+                }
             }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = { onExportDownloads(timeframe, scope) },
-                modifier = Modifier.heightIn(min = 48.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(stringResource(R.string.dialog_export_downloads))
+                OutlinedButton(
+                    onClick = { onExportDownloads(timeframe, scope) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                ) {
+                    Text(stringResource(R.string.dialog_export_downloads))
+                }
+                Button(
+                    onClick = { onExportSaf(timeframe, scope) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                ) {
+                    Text(stringResource(R.string.dialog_export_saf))
+                }
             }
         }
-    )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClearHistoryDialog(
     onConfirm: (CuktechPersistence.ClearHistoryOption) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedOption by remember { mutableStateOf(CuktechPersistence.ClearHistoryOption.OLDER_7D) }
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.dialog_clear_history_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                CuktechPersistence.ClearHistoryOption.entries.forEach { opt ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { selectedOption = opt }
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = selectedOption == opt, onClick = { selectedOption = opt })
-                        Spacer(Modifier.width(8.dp))
-                        Column {
-                            Text(opt.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                            Text(opt.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_clear_history_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            CuktechPersistence.ClearHistoryOption.entries.forEach { opt ->
+                val optLabel = when (opt) {
+                    CuktechPersistence.ClearHistoryOption.KEEP_ACTIVE -> stringResource(R.string.clear_opt_keep_active)
+                    CuktechPersistence.ClearHistoryOption.OLDER_24H -> stringResource(R.string.clear_opt_24h)
+                    CuktechPersistence.ClearHistoryOption.OLDER_7D -> stringResource(R.string.clear_opt_7d)
+                    CuktechPersistence.ClearHistoryOption.OLDER_30D -> stringResource(R.string.clear_opt_30d)
+                    CuktechPersistence.ClearHistoryOption.CLEAR_ALL -> stringResource(R.string.clear_opt_all)
+                }
+                val optDesc = when (opt) {
+                    CuktechPersistence.ClearHistoryOption.KEEP_ACTIVE -> stringResource(R.string.clear_opt_keep_active_desc)
+                    CuktechPersistence.ClearHistoryOption.OLDER_24H -> stringResource(R.string.clear_opt_24h_desc)
+                    CuktechPersistence.ClearHistoryOption.OLDER_7D -> stringResource(R.string.clear_opt_7d_desc)
+                    CuktechPersistence.ClearHistoryOption.OLDER_30D -> stringResource(R.string.clear_opt_30d_desc)
+                    CuktechPersistence.ClearHistoryOption.CLEAR_ALL -> stringResource(R.string.clear_opt_all_desc)
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { selectedOption = opt }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = selectedOption == opt, onClick = { selectedOption = opt })
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(optLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(optDesc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(selectedOption) },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.heightIn(min = 48.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
             ) {
-                Text(stringResource(R.string.action_clear))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.action_cancel))
+                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = { onConfirm(selectedOption) },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(stringResource(R.string.action_clear))
+                }
             }
         }
-    )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConsolidatedSessionsTableDialog(
     sessions: List<ChargeSessionRecord>,
     onDismiss: () -> Unit
 ) {
-    val fmt = remember { SimpleDateFormat("MM-dd HH:mm", Locale.US) }
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val activeLocale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val fmt = remember(activeLocale) { SimpleDateFormat("MM-dd HH:mm", activeLocale) }
+    val unitW = stringResource(R.string.unit_w)
+    val unitWh = stringResource(R.string.unit_wh)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 560.dp)
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = stringResource(R.string.analytics_view_table),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(Modifier.height(10.dp))
-                Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    sessions.forEach { s ->
-                        val portTitle = explicitPortName(s.portId)
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceContainerLow,
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+            Text(
+                text = stringResource(R.string.analytics_view_table),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                sessions.forEach { s ->
+                    val portTitle = explicitPortName(s.portId)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "$portTitle · ${fmt.format(Date((s.startTimeSec * 1000).toLong()))}",
-                                        style = MaterialTheme.typography.labelLarge
-                                    )
-                                    Text(
-                                        text = "${s.protocolUsed} · ${formatDurationHms(s.durationSeconds)} · Peak ${String.format(Locale.US, "%.1f", s.peakWatts)}W",
-                                        style = MaterialTheme.typography.bodySmall.tabularNums(),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "${String.format(Locale.US, "%.2f", s.whAccumulated)} Wh",
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        fontFamily = TelemetryMonoFontFamily
-                                    ).tabularNums(),
-                                    color = MaterialTheme.colorScheme.primary
+                                    text = "$portTitle · ${fmt.format(Date((s.startTimeSec * 1000).toLong()))}",
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                                Text(
+                                    text = "${s.protocolUsed} · ${formatDurationHms(s.durationSeconds)} · ${stringResource(R.string.session_peak_fmt, s.peakWatts, unitW)}",
+                                    style = MaterialTheme.typography.bodySmall.tabularNums(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                            Text(
+                                text = "${String.format(Locale.US, "%.2f", s.whAccumulated)} $unitWh",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontFamily = TelemetryMonoFontFamily
+                                ).tabularNums(),
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.cd_close))
-                    }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.cd_close))
                 }
             }
         }

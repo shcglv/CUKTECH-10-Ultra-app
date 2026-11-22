@@ -14,11 +14,22 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import com.example.ui.theme.ExpressiveMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -26,6 +37,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -34,14 +46,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.BluetoothSearching
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +75,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -69,7 +91,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -85,25 +109,30 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.BleBridgeService
 import com.example.R
+import com.example.cuktech.automation.UndoActionKind
 import com.example.cuktech.ble.CuktechAuthState
 import com.example.cuktech.prefs.StartDestination
 import com.example.ui.components.BluetoothOffDialog
 import com.example.ui.components.GitHubUpdateDialog
+import com.example.ui.components.MasterKillswitchConfirmDialog
+import com.example.ui.components.localizedScenarioName
 import com.example.ui.cuktech.CuktechDiscoveryPairingDialog
 import com.example.ui.cuktech.XiaomiAccountLoginDialog
+import com.example.ui.i18n.resolveLocale
 import com.example.ui.navigation.AppDestination
 import com.example.ui.screens.AnalyticsScreen
 import com.example.ui.screens.DiagnosticsScreen
+import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.OverviewScreen
 import com.example.ui.screens.PortsScreen
 import com.example.ui.screens.SettingsHubScreen
+import com.example.ui.theme.ExpressiveMotion
 import com.example.ui.theme.LocalSemanticColors
 import com.example.ui.theme.TelemetryMonoFontFamily
 import com.example.ui.theme.tabularNums
 import com.example.ui.viewmodel.DashboardViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -115,9 +144,11 @@ fun CuktechAppRoot(
     ),
     pendingNavTab: MutableState<String?> = remember { mutableStateOf(null) },
     initialDestinationOverride: AppDestination? = null,
-    requestPermissionsOnLaunch: Boolean = true
+    requestPermissionsOnLaunch: Boolean = true,
+    showOnboardingOverride: Boolean? = null
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val navController = rememberNavController()
@@ -125,12 +156,23 @@ fun CuktechAppRoot(
 
     val prefs by viewModel.preferences.collectAsStateWithLifecycle()
     val authState by viewModel.authState.collectAsStateWithLifecycle()
+    val activeCred by viewModel.activeCred.collectAsStateWithLifecycle()
     val totalWatts by viewModel.totalPowerWatts.collectAsStateWithLifecycle()
     val isCooldown by viewModel.isDisconnectCooldown.collectAsStateWithLifecycle()
     val undoAvailability by viewModel.undoAvailability.collectAsStateWithLifecycle()
     val updateAvailable by viewModel.updateAvailable.collectAsStateWithLifecycle()
     val releaseUpdateInfo by viewModel.releaseUpdateInfo.collectAsStateWithLifecycle()
     val updateDownloadState by viewModel.updateDownloadState.collectAsStateWithLifecycle()
+
+    val shouldShowOnboarding = showOnboardingOverride
+        ?: (initialDestinationOverride == null && pendingNavTab.value == null && !prefs.hasCompletedOnboarding)
+
+    if (shouldShowOnboarding) {
+        OnboardingScreen(
+            onFinish = { viewModel.completeOnboarding() }
+        )
+        return
+    }
 
     val startDestination = remember(initialDestinationOverride) {
         initialDestinationOverride ?: when (pendingNavTab.value) {
@@ -150,6 +192,7 @@ fun CuktechAppRoot(
     var showXiaomiLoginDialog by remember { mutableStateOf(false) }
     var showBluetoothOffDialog by remember { mutableStateOf(false) }
     var showTopbarUpdateDialog by remember { mutableStateOf(false) }
+    var showKillswitchConfirm by remember { mutableStateOf(false) }
     var isCheckingUpdatesTopbar by remember { mutableStateOf(false) }
     var permissionsGranted by remember { mutableStateOf(false) }
     var pendingPermissionCallback by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -250,13 +293,13 @@ fun CuktechAppRoot(
         }
     }
 
-    LaunchedEffect(requestPermissionsOnLaunch) {
+    LaunchedEffect(requestPermissionsOnLaunch, shouldShowOnboarding) {
         val allOk = permissionsToRequest.all {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }
         if (allOk) {
             permissionsGranted = true
-        } else if (requestPermissionsOnLaunch) {
+        } else if (requestPermissionsOnLaunch && !shouldShowOnboarding) {
             runCatching { permissionLauncher.launch(permissionsToRequest.toTypedArray()) }
         }
         runCatching { BleBridgeService.checkForUpdates() }
@@ -293,7 +336,12 @@ fun CuktechAppRoot(
             }
         }
         runCatching {
-            context.registerReceiver(btReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
+            ContextCompat.registerReceiver(
+                context,
+                btReceiver,
+                IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
         }
         onDispose {
             runCatching { context.unregisterReceiver(btReceiver) }
@@ -326,21 +374,43 @@ fun CuktechAppRoot(
 
     // Bind Snackbar strictly to CommandDispatcher.undoAvailability (cleared automatically on safety cutoffs!)
     val undoActionText = stringResource(R.string.action_undo)
-    LaunchedEffect(undoAvailability) {
+    val undoMessage = undoAvailability?.let { entry ->
+        when (val kind = entry.undoAction) {
+            is UndoActionKind.PortToggle -> stringResource(
+                if (kind.targetEnabled) R.string.undo_port_on_fmt else R.string.undo_port_off_fmt,
+                kind.portId
+            )
+            is UndoActionKind.SceneMode -> stringResource(
+                R.string.undo_scene_fmt,
+                localizedScenarioName(kind.targetMode)
+            )
+            UndoActionKind.ScreenTimeout -> stringResource(R.string.undo_screen_timeout)
+            is UndoActionKind.PortTimer -> stringResource(R.string.undo_port_timer_fmt, kind.portId)
+            UndoActionKind.UsbALowCurrent -> stringResource(R.string.undo_usba_low_current)
+            UndoActionKind.IdleScreenOff -> stringResource(R.string.undo_idle_screen_off)
+            UndoActionKind.ChargerLanguage -> stringResource(R.string.undo_charger_language)
+            UndoActionKind.OrientationLock -> stringResource(R.string.undo_orientation_lock)
+            is UndoActionKind.ProfileApplied -> stringResource(R.string.undo_profile_fmt, kind.profileName)
+            UndoActionKind.KillswitchRestore -> stringResource(R.string.undo_killswitch_restore)
+            null -> entry.label
+        }
+    }
+    LaunchedEffect(undoAvailability, undoMessage) {
         val currentUndo = undoAvailability
         snackbarHostState.currentSnackbarData?.dismiss()
-        if (currentUndo != null) {
+        if (currentUndo != null && undoMessage != null) {
             val dismissJob = launch {
                 delay(20_000L)
                 snackbarHostState.currentSnackbarData?.dismiss()
             }
             val result = snackbarHostState.showSnackbar(
-                message = currentUndo.label,
+                message = undoMessage,
                 actionLabel = undoActionText,
                 duration = SnackbarDuration.Indefinite
             )
             dismissJob.cancel()
             if (result == SnackbarResult.ActionPerformed) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 viewModel.undoLastCommand()
             }
         }
@@ -379,9 +449,9 @@ fun CuktechAppRoot(
             onDevicesSynced = { list ->
                 showXiaomiLoginDialog = false
                 val text = if (list.isNotEmpty()) {
-                    "Synced ${list.size} device(s) from Xiaomi Cloud"
+                    context.getString(R.string.toast_xiaomi_synced_fmt, list.size)
                 } else {
-                    "Xiaomi account session saved"
+                    context.getString(R.string.toast_xiaomi_session_saved)
                 }
                 Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
             }
@@ -435,26 +505,52 @@ fun CuktechAppRoot(
         )
     }
 
+    if (showKillswitchConfirm) {
+        MasterKillswitchConfirmDialog(
+            onConfirm = {
+                showKillswitchConfirm = false
+                viewModel.executeMasterKillswitch()
+            },
+            onDismiss = { showKillswitchConfirm = false }
+        )
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useRail = maxWidth >= 600.dp
 
-        val statusDotColor = when {
-            isCooldown -> semantic.warning
-            authState == CuktechAuthState.AUTHENTICATED -> semantic.success
-            authState == CuktechAuthState.AUTH_FAILED -> MaterialTheme.colorScheme.error
-            authState == CuktechAuthState.DISCONNECTED -> MaterialTheme.colorScheme.outline
-            else -> semantic.warning
-        }
+        val appLocale = resolveLocale(prefs.appLanguage)
+        val unitW = stringResource(R.string.unit_w)
+
+        val statusDotColor by animateColorAsState(
+            targetValue = when {
+                isCooldown -> semantic.warning
+                authState == CuktechAuthState.AUTHENTICATED -> semantic.success
+                authState == CuktechAuthState.AUTH_FAILED -> MaterialTheme.colorScheme.error
+                authState == CuktechAuthState.DISCONNECTED -> MaterialTheme.colorScheme.outline
+                else -> semantic.warning
+            },
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            label = "topbar_status_dot"
+        )
 
         val statusSubtitle = when {
             isCooldown -> stringResource(R.string.status_cooldown)
             authState == CuktechAuthState.AUTHENTICATED ->
-                "${String.format(Locale.US, "%.1f", totalWatts)} W · ${stringResource(R.string.status_connected)}"
+                "${String.format(appLocale, "%.1f", totalWatts)} $unitW · ${stringResource(R.string.status_connected)}"
             authState == CuktechAuthState.SCANNING -> stringResource(R.string.status_scanning)
             authState == CuktechAuthState.AUTH_FAILED -> stringResource(R.string.status_auth_failed)
             authState == CuktechAuthState.DISCONNECTED -> stringResource(R.string.status_disconnected)
             else -> stringResource(R.string.status_connecting)
         }
+
+        val isConnected = authState == CuktechAuthState.AUTHENTICATED
+        val isConnectingOrScanning = authState in setOf(
+            CuktechAuthState.SCANNING,
+            CuktechAuthState.CONNECTING_GATT,
+            CuktechAuthState.DISCOVERING_SERVICES,
+            CuktechAuthState.PHASE_A_INIT_A4,
+            CuktechAuthState.PHASE_B_HANDSHAKE
+        )
 
         Row(modifier = Modifier.fillMaxSize()) {
             if (useRail && currentDest.isTopLevel) {
@@ -468,7 +564,10 @@ fun CuktechAppRoot(
                     topLevelItems.forEach { (dest, labelRes, icon) ->
                         NavigationRailItem(
                             selected = currentDest == dest,
-                            onClick = { navigateTopLevel(dest) },
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                navigateTopLevel(dest)
+                            },
                             icon = { Icon(icon, contentDescription = null) },
                             label = {
                                 Text(
@@ -500,12 +599,47 @@ fun CuktechAppRoot(
                                 containerColor = MaterialTheme.colorScheme.background,
                                 titleContentColor = MaterialTheme.colorScheme.onBackground
                             ),
+                            navigationIcon = {
+                                IconButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        showKillswitchConfirm = true
+                                    },
+                                    enabled = isConnected,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("master_killswitch_button")
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (isConnected) {
+                                            MaterialTheme.colorScheme.errorContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceContainerHigh
+                                        },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Filled.PowerSettingsNew,
+                                                contentDescription = stringResource(R.string.topbar_killswitch_cd),
+                                                tint = if (isConnected) {
+                                                    MaterialTheme.colorScheme.onErrorContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+                                                },
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            },
                             title = {
                                 Column {
                                     Text(
-                                        text = "CUKTECH 10 Ultra",
+                                        text = stringResource(R.string.app_full_name),
                                         style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
+                                        fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -522,7 +656,7 @@ fun CuktechAppRoot(
                                         Text(
                                             text = statusSubtitle,
                                             style = MaterialTheme.typography.labelSmall.copy(
-                                                fontFamily = if (authState == CuktechAuthState.AUTHENTICATED) {
+                                                fontFamily = if (isConnected) {
                                                     TelemetryMonoFontFamily
                                                 } else {
                                                     MaterialTheme.typography.labelSmall.fontFamily
@@ -538,7 +672,10 @@ fun CuktechAppRoot(
                             actions = {
                                 if (updateAvailable) {
                                     IconButton(
-                                        onClick = { showTopbarUpdateDialog = true },
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            showTopbarUpdateDialog = true
+                                        },
                                         modifier = Modifier
                                             .size(48.dp)
                                             .testTag("topbar_update_button")
@@ -550,21 +687,171 @@ fun CuktechAppRoot(
                                         )
                                     }
                                 }
-                                IconButton(
-                                    onClick = {
-                                        navController.navigate(AppDestination.DIAGNOSTICS.route) {
-                                            launchSingleTop = true
-                                        }
-                                    },
+
+                                Surface(
+                                    shape = RoundedCornerShape(24.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                     modifier = Modifier
-                                        .size(48.dp)
-                                        .testTag("topbar_diagnostics_button")
+                                        .padding(end = 6.dp)
+                                        .testTag("topbar_connection_pill")
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.BugReport,
-                                        contentDescription = stringResource(R.string.nav_diagnostics),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                ensureBleServiceStartedAndPermissions {
+                                                    showPairingDialog = true
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .testTag("search_pair_button")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.BluetoothSearching,
+                                                contentDescription = stringResource(R.string.topbar_pairing_cd),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+
+                                        AnimatedContent(
+                                            targetState = Triple(isCooldown, isConnected, isConnectingOrScanning),
+                                            transitionSpec = {
+                                                (fadeIn(tween(220, easing = ExpressiveMotion.EmphasizedDecelerate)) togetherWith
+                                                    fadeOut(tween(150, easing = ExpressiveMotion.EmphasizedAccelerate))) using
+                                                    SizeTransform(clip = false)
+                                            },
+                                            label = "topbar_conn_action"
+                                        ) { (cooldown, connected, connecting) ->
+                                            when {
+                                                cooldown -> {
+                                                    FilledTonalButton(
+                                                        onClick = {},
+                                                        enabled = false,
+                                                        shape = CircleShape,
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                                        modifier = Modifier
+                                                            .heightIn(min = 40.dp)
+                                                            .testTag("connection_disconnect_button")
+                                                    ) {
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(14.dp),
+                                                            strokeWidth = 2.dp
+                                                        )
+                                                        Spacer(Modifier.width(6.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.status_cooldown),
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            maxLines = 1
+                                                        )
+                                                    }
+                                                }
+                                                connected -> {
+                                                    FilledTonalButton(
+                                                        onClick = {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            viewModel.cuktechManager.disconnectCharger(isManual = true)
+                                                        },
+                                                        shape = CircleShape,
+                                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                                            containerColor = semantic.successContainer,
+                                                            contentColor = semantic.success
+                                                        ),
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                                        modifier = Modifier
+                                                            .heightIn(min = 40.dp)
+                                                            .testTag("connection_disconnect_button")
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Filled.LinkOff,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.topbar_disconnect_short),
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            maxLines = 1
+                                                        )
+                                                    }
+                                                }
+                                                connecting -> {
+                                                    FilledTonalButton(
+                                                        onClick = {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                            viewModel.cuktechManager.disconnectCharger(isManual = true)
+                                                        },
+                                                        shape = CircleShape,
+                                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                                        ),
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                                        modifier = Modifier
+                                                            .heightIn(min = 40.dp)
+                                                            .testTag("connection_cancel_button")
+                                                    ) {
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(13.dp),
+                                                            strokeWidth = 2.dp
+                                                        )
+                                                        Spacer(Modifier.width(6.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.topbar_cancel_short),
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            maxLines = 1
+                                                        )
+                                                        Spacer(Modifier.width(2.dp))
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Close,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(14.dp)
+                                                        )
+                                                    }
+                                                }
+                                                else -> {
+                                                    Button(
+                                                        onClick = {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                            ensureBleServiceStartedAndPermissions {
+                                                                val mac = activeCred?.mac
+                                                                if (!mac.isNullOrBlank()) {
+                                                                    viewModel.cuktechManager.connectToCharger(mac)
+                                                                } else {
+                                                                    showPairingDialog = true
+                                                                }
+                                                            }
+                                                        },
+                                                        shape = CircleShape,
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                                        modifier = Modifier
+                                                            .heightIn(min = 40.dp)
+                                                            .testTag("connection_connect_button")
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Bluetooth,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.topbar_connect_short),
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            maxLines = 1
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         )
@@ -578,7 +865,10 @@ fun CuktechAppRoot(
                             topLevelItems.forEach { (dest, labelRes, icon) ->
                                 NavigationBarItem(
                                     selected = currentDest == dest,
-                                    onClick = { navigateTopLevel(dest) },
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        navigateTopLevel(dest)
+                                    },
                                     icon = { Icon(icon, contentDescription = null) },
                                     label = {
                                         Text(
@@ -600,9 +890,29 @@ fun CuktechAppRoot(
                         .padding(innerPadding),
                     contentAlignment = Alignment.TopCenter
                 ) {
+                    val topLevelRoutes = remember {
+                        setOf(
+                            AppDestination.OVERVIEW.route,
+                            AppDestination.PORTS.route,
+                            AppDestination.ANALYTICS.route,
+                            AppDestination.SETTINGS.route
+                        )
+                    }
                     NavHost(
                         navController = navController,
                         startDestination = startDestination.route,
+                        enterTransition = {
+                            with(ExpressiveMotion) { resolveEnter(topLevelRoutes) }
+                        },
+                        exitTransition = {
+                            with(ExpressiveMotion) { resolveExit(topLevelRoutes) }
+                        },
+                        popEnterTransition = {
+                            with(ExpressiveMotion) { resolvePopEnter(topLevelRoutes) }
+                        },
+                        popExitTransition = {
+                            with(ExpressiveMotion) { resolvePopExit(topLevelRoutes) }
+                        },
                         modifier = Modifier
                             .widthIn(max = 840.dp)
                             .fillMaxSize()

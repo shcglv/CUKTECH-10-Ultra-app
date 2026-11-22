@@ -4,9 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Shader
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,6 +41,7 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -48,14 +53,17 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
 import com.example.BleBridgeService
 import com.example.MainActivity
 import com.example.R
 import com.example.cuktech.automation.ChargerCommand
 import com.example.cuktech.automation.CommandSource
 import com.example.cuktech.ble.CuktechAuthState
-import com.example.cuktech.protocol.CuktechProtocol
+import com.example.cuktech.protocol.C3ASharedBusState
 import com.example.cuktech.protocol.PortTelemetry
+import com.example.cuktech.protocol.PortTelemetryDecoder
+import com.example.ui.i18n.withAppLocale
 import java.util.Locale
 
 private val PARAM_PORT_ID = ActionParameters.Key<Int>("port_id")
@@ -155,7 +163,8 @@ data class GlanceWidgetSnapshot(
     val sceneCode: Int,
     val sessionWh: Double,
     val ports: Map<Int, PortTelemetry>,
-    val sparklineBitmap: Bitmap?,
+    val c3aBus: C3ASharedBusState,
+    val sparklinePoints: List<Double>,
     val config: WidgetInstanceConfig
 )
 
@@ -164,24 +173,28 @@ private fun buildSnapshot(context: Context, glanceId: GlanceId): GlanceWidgetSna
     val appWidgetId = runCatching { awm.getAppWidgetId(glanceId) }.getOrDefault(-1)
     val config = WidgetConfigStore.loadConfig(context, appWidgetId)
 
-    val mgr = BleBridgeService.cuktechManager
-    val authState = mgr?.authState?.value ?: CuktechAuthState.DISCONNECTED
+    val mgr = BleBridgeService.cuktechManager ?: BleBridgeService.ensureCuktechManagersInitialized(context.applicationContext)
+    val authState = mgr.authState.value
     val isConnected = authState == CuktechAuthState.AUTHENTICATED
-    val totalWatts = if (isConnected) (mgr?.totalPowerWatts?.value ?: 0.0) else 0.0
-    val sceneCode = mgr?.settings?.value?.sceneMode ?: 1
-    val ports = mgr?.ports?.value ?: mapOf(
-        1 to PortTelemetry(1, "USB-C1"),
-        2 to PortTelemetry(2, "USB-C2"),
-        3 to PortTelemetry(3, "USB-C3"),
-        4 to PortTelemetry(4, "USB-A")
-    )
-    val sessionWh = (mgr?.activeSessions?.value?.values?.sumOf { it.whAccumulated } ?: 0.0)
+    val ports = mgr.ports.value.ifEmpty {
+        mapOf(
+            1 to PortTelemetry(1, "USB-C1"),
+            2 to PortTelemetry(2, "USB-C2"),
+            3 to PortTelemetry(3, "USB-C3"),
+            4 to PortTelemetry(4, "USB-A")
+        )
+    }
+    val c3aBus = if (isConnected) PortTelemetryDecoder.resolveC3ASharedBus(ports) else C3ASharedBusState()
+    val totalWatts = if (isConnected) PortTelemetryDecoder.computeEffectiveTotalWatts(ports) else 0.0
+    val sceneCode = mgr.settings.value.sceneMode
+    val sessionWh = mgr.activeSessions.value.values.sumOf { it.whAccumulated }
         .coerceAtLeast(ports.values.sumOf { it.cumulativeWh })
 
-    val sparkBmp = if (config.showSparkline && isConnected && totalWatts > 0.2) {
-        val points = mgr?.powerChartHistory?.value?.map { it.totalWatts } ?: emptyList()
-        renderMaterialSparklineBitmap(points, totalWatts)
-    } else null
+    val points = if (config.showSparkline && isConnected && totalWatts > 0.2) {
+        mgr.powerChartHistory.value.map { it.totalWatts }.takeLast(24)
+    } else {
+        emptyList()
+    }
 
     return GlanceWidgetSnapshot(
         authState = authState,
@@ -189,47 +202,103 @@ private fun buildSnapshot(context: Context, glanceId: GlanceId): GlanceWidgetSna
         sceneCode = sceneCode,
         sessionWh = sessionWh,
         ports = ports,
-        sparklineBitmap = sparkBmp,
+        c3aBus = c3aBus,
+        sparklinePoints = points,
         config = config
     )
 }
 
-private fun renderMaterialSparklineBitmap(points: List<Double>, currentWatts: Double): Bitmap {
-    val width = 220
-    val height = 56
-    val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+/**
+ * Renders an MD3 Expressive transparent ARGB_8888 sparkline with dynamic primary tint,
+ * smooth cubic spline, soft vertical fill gradient, and subtle endpoint dot.
+ */
+private fun renderExpressiveSparklineBitmap(
+    points: List<Double>,
+    currentWatts: Double,
+    strokeArgb: Int
+): Bitmap {
+    val width = 280
+    val height = 64
+    val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    bmp.eraseColor(android.graphics.Color.TRANSPARENT)
     val canvas = Canvas(bmp)
-    canvas.drawColor(android.graphics.Color.TRANSPARENT)
-
-    // Use a neutral high-contrast cyan-teal background strip subtly tinted for RGB_565 legibility
-    bmp.eraseColor(android.graphics.Color.rgb(18, 32, 42))
 
     val samples = if (points.size >= 4) {
-        points.takeLast(20)
+        points
     } else {
-        listOf(currentWatts * 0.85, currentWatts * 0.92, currentWatts * 0.96, currentWatts)
+        listOf(currentWatts * 0.85, currentWatts * 0.91, currentWatts * 0.96, currentWatts)
     }
     val maxW = (samples.maxOrNull() ?: 10.0).coerceAtLeast(15.0) * 1.15
-    val pad = 6f
-    val usableH = height - pad * 2f
-    val stepX = if (samples.size > 1) width.toFloat() / (samples.size - 1) else width.toFloat()
+    val padX = 6f
+    val padY = 8f
+    val usableW = width - padX * 2f
+    val usableH = height - padY * 2f
+    val stepX = if (samples.size > 1) usableW / (samples.size - 1) else usableW
 
-    val path = Path()
-    samples.forEachIndexed { idx, v ->
-        val x = idx * stepX
+    val coords = samples.mapIndexed { idx, v ->
+        val x = padX + idx * stepX
         val norm = (v / maxW).coerceIn(0.0, 1.0).toFloat()
-        val y = (height - pad) - (norm * usableH)
-        if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        val y = (height - padY) - (norm * usableH)
+        x to y
     }
 
-    val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.rgb(77, 208, 225)
-        strokeWidth = 3.2f
+    val strokePath = Path()
+    val fillPath = Path()
+    coords.forEachIndexed { idx, (x, y) ->
+        if (idx == 0) {
+            strokePath.moveTo(x, y)
+            fillPath.moveTo(x, height.toFloat())
+            fillPath.lineTo(x, y)
+        } else {
+            val (px, py) = coords[idx - 1]
+            val midX = (px + x) / 2f
+            strokePath.cubicTo(midX, py, midX, y, x, y)
+            fillPath.cubicTo(midX, py, midX, y, x, y)
+        }
+    }
+    val (lastX, lastY) = coords.last()
+    fillPath.lineTo(lastX, height.toFloat())
+    fillPath.close()
+
+    val r = android.graphics.Color.red(strokeArgb)
+    val g = android.graphics.Color.green(strokeArgb)
+    val b = android.graphics.Color.blue(strokeArgb)
+
+    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader = LinearGradient(
+            0f,
+            padY,
+            0f,
+            height.toFloat(),
+            android.graphics.Color.argb(72, r, g, b),
+            android.graphics.Color.argb(0, r, g, b),
+            Shader.TileMode.CLAMP
+        )
+    }
+    canvas.drawPath(fillPath, fillPaint)
+
+    val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = strokeArgb
+        strokeWidth = 4.0f
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
-    canvas.drawPath(path, stroke)
+    canvas.drawPath(strokePath, strokePaint)
+
+    val dotHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.argb(64, r, g, b)
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(lastX, lastY, 7.5f, dotHalo)
+
+    val dotCore = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = strokeArgb
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(lastX, lastY, 4.0f, dotCore)
+
     return bmp
 }
 
@@ -249,13 +318,15 @@ class CuktechGlanceControlWidget : GlanceAppWidget() {
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val mgr = BleBridgeService.cuktechManager ?: BleBridgeService.ensureCuktechManagersInitialized(context.applicationContext)
+        val locCtx = context.withAppLocale(mgr.preferencesRepository.preferences.value.appLanguage)
         val snapshot = buildSnapshot(context, id)
         val openIntent = buildOpenAppIntent(context, snapshot.config.tapDestination)
 
         provideContent {
             GlanceTheme {
                 ControlWidgetContent(
-                    context = context,
+                    locCtx = locCtx,
                     snapshot = snapshot,
                     openIntent = openIntent
                 )
@@ -290,13 +361,15 @@ class CuktechGlanceCompactWidget : GlanceAppWidget() {
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val mgr = BleBridgeService.cuktechManager ?: BleBridgeService.ensureCuktechManagersInitialized(context.applicationContext)
+        val locCtx = context.withAppLocale(mgr.preferencesRepository.preferences.value.appLanguage)
         val snapshot = buildSnapshot(context, id)
         val openIntent = buildOpenAppIntent(context, snapshot.config.tapDestination)
 
         provideContent {
             GlanceTheme {
                 CompactWidgetContent(
-                    context = context,
+                    locCtx = locCtx,
                     snapshot = snapshot,
                     openIntent = openIntent
                 )
@@ -323,7 +396,7 @@ class CuktechGlanceCompactWidget : GlanceAppWidget() {
 
 @Composable
 private fun ControlWidgetContent(
-    context: Context,
+    locCtx: Context,
     snapshot: GlanceWidgetSnapshot,
     openIntent: Intent
 ) {
@@ -335,23 +408,35 @@ private fun ControlWidgetContent(
         snapshot.authState == CuktechAuthState.PHASE_B_HANDSHAKE
 
     val statusText = when {
-        isConnected -> context.getString(R.string.status_connected)
-        isConnecting -> context.getString(R.string.status_connecting)
-        else -> context.getString(R.string.status_disconnected)
+        isConnected -> locCtx.getString(R.string.status_connected)
+        isConnecting -> locCtx.getString(R.string.status_connecting)
+        else -> locCtx.getString(R.string.status_disconnected)
     }
 
-    val sceneLabel = CuktechProtocol.SCENE_MODES[snapshot.sceneCode] ?: "AI Mode"
+    val unitW = locCtx.getString(R.string.unit_w)
+    val unitV = locCtx.getString(R.string.unit_v)
+    val offText = locCtx.getString(R.string.widget_off)
+    val sceneLabel = localizedWidgetSceneLabel(locCtx, snapshot.sceneCode)
     val emphasizedList = (1..4).filter { it in snapshot.config.emphasizedPorts }.ifEmpty { listOf(1, 2, 3, 4) }
+
+    val primaryArgb = GlanceTheme.colors.primary.getColor(locCtx).toArgb()
+    val sparklineBmp = remember(snapshot.sparklinePoints, snapshot.totalWatts, primaryArgb, isConnected, snapshot.config.showSparkline) {
+        if (snapshot.config.showSparkline && isConnected && snapshot.totalWatts > 0.2) {
+            renderExpressiveSparklineBitmap(snapshot.sparklinePoints, snapshot.totalWatts, primaryArgb)
+        } else {
+            null
+        }
+    }
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
             .appWidgetBackground()
-            .background(GlanceTheme.colors.widgetBackground)
-            .cornerRadius(22.dp)
-            .padding(12.dp)
+            .background(ColorProvider(R.color.widget_surface_bg))
+            .cornerRadius(28.dp)
+            .padding(14.dp)
     ) {
-        // Header Row: Status dot + Wattage + Scene Pill
+        // Header Row: Expressive status indicator + Total W + Session Wh + Scene Pill
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -361,10 +446,14 @@ private fun ControlWidgetContent(
                     .size(10.dp)
                     .cornerRadius(5.dp)
                     .background(
-                        if (isConnected) GlanceTheme.colors.primary else GlanceTheme.colors.outline
+                        when {
+                            isConnected -> GlanceTheme.colors.primary
+                            isConnecting -> GlanceTheme.colors.tertiary
+                            else -> GlanceTheme.colors.outline
+                        }
                     )
             ) {}
-            Spacer(GlanceModifier.width(6.dp))
+            Spacer(GlanceModifier.width(8.dp))
             Column(
                 modifier = GlanceModifier
                     .defaultWeight()
@@ -374,18 +463,20 @@ private fun ControlWidgetContent(
                     )
             ) {
                 Text(
-                    text = String.format(Locale.US, "%.1f W", snapshot.totalWatts),
+                    text = String.format(Locale.US, "%.1f %s", snapshot.totalWatts, unitW),
                     style = TextStyle(
                         color = GlanceTheme.colors.onSurface,
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
                     ),
                     maxLines = 1
                 )
-                val sub = if (isConnected && snapshot.config.showSessionWh && snapshot.sessionWh > 0.01) {
-                    "$statusText · ${String.format(Locale.US, "%.2f Wh", snapshot.sessionWh)}"
-                } else {
-                    statusText
+                val sub = when {
+                    isConnected && snapshot.config.showSessionWh && snapshot.sessionWh > 0.01 ->
+                        "$statusText · ${locCtx.getString(R.string.widget_session_wh_fmt, snapshot.sessionWh)}"
+                    !isConnected && !isConnecting ->
+                        "$statusText · ${locCtx.getString(R.string.widget_tap_connect)}"
+                    else -> statusText
                 }
                 Text(
                     text = sub,
@@ -399,10 +490,10 @@ private fun ControlWidgetContent(
 
             Box(
                 modifier = GlanceModifier
-                    .cornerRadius(14.dp)
+                    .cornerRadius(18.dp)
                     .background(GlanceTheme.colors.secondaryContainer)
                     .clickable(actionRunCallback<CycleSceneWidgetAction>())
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
             ) {
                 Text(
                     text = sceneLabel,
@@ -416,39 +507,54 @@ private fun ControlWidgetContent(
             }
         }
 
-        if (size.height >= 160.dp && snapshot.sparklineBitmap != null) {
-            Spacer(GlanceModifier.height(6.dp))
-            Image(
-                provider = ImageProvider(snapshot.sparklineBitmap),
-                contentDescription = context.getString(R.string.overview_live_trend),
-                contentScale = ContentScale.FillBounds,
+        if (size.height >= 160.dp && sparklineBmp != null) {
+            Spacer(GlanceModifier.height(8.dp))
+            Box(
                 modifier = GlanceModifier
                     .fillMaxWidth()
-                    .height(40.dp)
-                    .cornerRadius(10.dp)
+                    .cornerRadius(16.dp)
+                    .background(ColorProvider(R.color.widget_card_bg))
                     .clickable(actionStartActivity(openIntent))
-            )
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Image(
+                    provider = ImageProvider(sparklineBmp),
+                    contentDescription = locCtx.getString(R.string.overview_live_trend),
+                    contentScale = ContentScale.FillBounds,
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .height(34.dp)
+                )
+            }
         }
 
-        Spacer(GlanceModifier.height(8.dp))
+        Spacer(GlanceModifier.height(10.dp))
 
-        // Interactive M3 Port Tiles Row
+        // Interactive M3 Expressive Port Cards (unified C3+A card when shared 5V bus active)
+        val collapseShared = isConnected && snapshot.c3aBus.isSharedActive && 3 in emphasizedList && 4 in emphasizedList
+        val displayPortIds = if (collapseShared) emphasizedList.filter { it != 4 } else emphasizedList
+
         Row(
             modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            emphasizedList.forEachIndexed { idx, pid ->
+            displayPortIds.forEachIndexed { idx, pid ->
                 if (idx > 0) Spacer(GlanceModifier.width(6.dp))
-                val p = snapshot.ports[pid] ?: PortTelemetry(pid, explicitWidgetPortName(pid))
+                val isMergedC3A = collapseShared && pid == 3
+                val p = snapshot.ports[pid] ?: PortTelemetry(pid, localizedWidgetPortName(locCtx, pid))
                 val enabled = p.enabled
-                val w = if (isConnected) p.powerW else 0.0
+                val w = when {
+                    !isConnected -> 0.0
+                    isMergedC3A -> snapshot.c3aBus.sharedPowerW
+                    else -> p.powerW
+                }
                 val isCharging = isConnected && enabled && w > 0.2
 
                 val bg = when {
-                    !isConnected -> GlanceTheme.colors.surfaceVariant
+                    !isConnected -> ColorProvider(R.color.widget_card_bg)
                     !enabled -> GlanceTheme.colors.errorContainer
                     isCharging -> GlanceTheme.colors.primaryContainer
-                    else -> GlanceTheme.colors.surfaceVariant
+                    else -> ColorProvider(R.color.widget_card_bg)
                 }
                 val fg = when {
                     !isConnected -> GlanceTheme.colors.onSurfaceVariant
@@ -457,10 +563,13 @@ private fun ControlWidgetContent(
                     else -> GlanceTheme.colors.onSurface
                 }
 
+                val cardLabel = if (isMergedC3A) locCtx.getString(R.string.port_c3a_short) else localizedWidgetPortName(locCtx, pid)
+
                 Column(
                     modifier = GlanceModifier
                         .defaultWeight()
-                        .cornerRadius(14.dp)
+                        .fillMaxHeight()
+                        .cornerRadius(18.dp)
                         .background(bg)
                         .clickable(
                             actionRunCallback<TogglePortWidgetAction>(
@@ -468,26 +577,37 @@ private fun ControlWidgetContent(
                             )
                         )
                         .padding(horizontal = 6.dp, vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = explicitWidgetPortName(pid),
+                        text = cardLabel,
                         style = TextStyle(color = fg, fontSize = 10.sp, fontWeight = FontWeight.Medium),
                         maxLines = 1
                     )
+                    Spacer(GlanceModifier.height(2.dp))
                     Text(
-                        text = if (!enabled && isConnected) "OFF" else String.format(Locale.US, "%.1fW", w),
-                        style = TextStyle(color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                        text = if (!enabled && isConnected) {
+                            offText
+                        } else {
+                            String.format(Locale.US, "%.1f %s", w, unitW)
+                        },
+                        style = TextStyle(color = fg, fontSize = 13.sp, fontWeight = FontWeight.Bold),
                         maxLines = 1
                     )
-                    if (size.width >= 240.dp) {
+                    if (size.width >= 220.dp) {
+                        Spacer(GlanceModifier.height(1.dp))
+                        val detail = when {
+                            !isConnected -> "—"
+                            !enabled -> locCtx.getString(R.string.port_status_disabled)
+                            isMergedC3A -> "5$unitV · 15$unitW"
+                            isCharging && size.height >= 160.dp ->
+                                "${p.protocolName} · ${String.format(Locale.US, "%.0f%s", p.voltageV, unitV)}"
+                            isCharging -> p.protocolName
+                            else -> locCtx.getString(R.string.port_status_idle)
+                        }
                         Text(
-                            text = when {
-                                !isConnected -> "—"
-                                !enabled -> context.getString(R.string.port_status_disabled)
-                                isCharging -> p.protocolName
-                                else -> context.getString(R.string.port_status_idle)
-                            },
+                            text = detail,
                             style = TextStyle(color = fg, fontSize = 9.sp),
                             maxLines = 1
                         )
@@ -500,20 +620,37 @@ private fun ControlWidgetContent(
 
 @Composable
 private fun CompactWidgetContent(
-    context: Context,
+    locCtx: Context,
     snapshot: GlanceWidgetSnapshot,
     openIntent: Intent
 ) {
+    val size = LocalSize.current
     val isConnected = snapshot.authState == CuktechAuthState.AUTHENTICATED
-    val sceneLabel = CuktechProtocol.SCENE_MODES[snapshot.sceneCode] ?: "AI"
+    val isConnecting = snapshot.authState == CuktechAuthState.CONNECTING_GATT ||
+        snapshot.authState == CuktechAuthState.DISCOVERING_SERVICES ||
+        snapshot.authState == CuktechAuthState.PHASE_A_INIT_A4 ||
+        snapshot.authState == CuktechAuthState.PHASE_B_HANDSHAKE
+
+    val unitW = locCtx.getString(R.string.unit_w)
+    val offText = locCtx.getString(R.string.widget_off)
+    val sceneLabel = localizedWidgetSceneLabel(locCtx, snapshot.sceneCode)
+
+    val primaryArgb = GlanceTheme.colors.primary.getColor(locCtx).toArgb()
+    val sparklineBmp = remember(snapshot.sparklinePoints, snapshot.totalWatts, primaryArgb, isConnected, snapshot.config.showSparkline) {
+        if (snapshot.config.showSparkline && isConnected && snapshot.totalWatts > 0.2) {
+            renderExpressiveSparklineBitmap(snapshot.sparklinePoints, snapshot.totalWatts, primaryArgb)
+        } else {
+            null
+        }
+    }
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
             .appWidgetBackground()
-            .background(GlanceTheme.colors.widgetBackground)
-            .cornerRadius(22.dp)
-            .padding(10.dp)
+            .background(ColorProvider(R.color.widget_surface_bg))
+            .cornerRadius(28.dp)
+            .padding(12.dp)
     ) {
         Row(
             modifier = GlanceModifier
@@ -526,13 +663,19 @@ private fun CompactWidgetContent(
         ) {
             Box(
                 modifier = GlanceModifier
-                    .size(8.dp)
-                    .cornerRadius(4.dp)
-                    .background(if (isConnected) GlanceTheme.colors.primary else GlanceTheme.colors.outline)
+                    .size(9.dp)
+                    .cornerRadius(5.dp)
+                    .background(
+                        when {
+                            isConnected -> GlanceTheme.colors.primary
+                            isConnecting -> GlanceTheme.colors.tertiary
+                            else -> GlanceTheme.colors.outline
+                        }
+                    )
             ) {}
             Spacer(GlanceModifier.width(6.dp))
             Text(
-                text = String.format(Locale.US, "%.1f W", snapshot.totalWatts),
+                text = String.format(Locale.US, "%.1f %s", snapshot.totalWatts, unitW),
                 style = TextStyle(
                     color = GlanceTheme.colors.onSurface,
                     fontSize = 18.sp,
@@ -541,43 +684,134 @@ private fun CompactWidgetContent(
                 modifier = GlanceModifier.defaultWeight(),
                 maxLines = 1
             )
+            Box(
+                modifier = GlanceModifier
+                    .cornerRadius(12.dp)
+                    .background(GlanceTheme.colors.secondaryContainer)
+                    .clickable(actionRunCallback<CycleSceneWidgetAction>())
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = sceneLabel.take(8),
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onSecondaryContainer,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    maxLines = 1
+                )
+            }
+        }
+
+        if (size.height >= 135.dp && sparklineBmp != null) {
+            Spacer(GlanceModifier.height(6.dp))
+            Box(
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .cornerRadius(12.dp)
+                    .background(ColorProvider(R.color.widget_card_bg))
+                    .clickable(actionStartActivity(openIntent))
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+            ) {
+                Image(
+                    provider = ImageProvider(sparklineBmp),
+                    contentDescription = locCtx.getString(R.string.overview_live_trend),
+                    contentScale = ContentScale.FillBounds,
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .height(22.dp)
+                )
+            }
+        } else if (size.height >= 135.dp && !isConnected && !isConnecting) {
+            Spacer(GlanceModifier.height(2.dp))
             Text(
-                text = sceneLabel.take(6),
-                style = TextStyle(
-                    color = GlanceTheme.colors.primary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium
-                ),
-                modifier = GlanceModifier.clickable(actionRunCallback<CycleSceneWidgetAction>()),
+                text = locCtx.getString(R.string.widget_tap_connect),
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 10.sp),
+                maxLines = 1,
+                modifier = GlanceModifier.clickable(actionRunCallback<ConnectWidgetAction>())
+            )
+        } else if (size.height >= 135.dp && isConnected && snapshot.config.showSessionWh && snapshot.sessionWh > 0.01) {
+            Spacer(GlanceModifier.height(2.dp))
+            Text(
+                text = locCtx.getString(R.string.widget_session_wh_fmt, snapshot.sessionWh),
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 10.sp),
                 maxLines = 1
             )
         }
 
-        if (snapshot.sparklineBitmap != null) {
-            Spacer(GlanceModifier.height(4.dp))
-            Image(
-                provider = ImageProvider(snapshot.sparklineBitmap),
-                contentDescription = context.getString(R.string.overview_live_trend),
-                contentScale = ContentScale.FillBounds,
-                modifier = GlanceModifier
-                    .fillMaxWidth()
-                    .height(26.dp)
-                    .cornerRadius(8.dp)
-                    .clickable(actionStartActivity(openIntent))
-            )
-        }
+        Spacer(GlanceModifier.height(8.dp))
 
-        Spacer(GlanceModifier.height(6.dp))
-
-        // 2x2 Port Grid
-        val rows = listOf(1 to 2, 3 to 4)
+        // 2x2 Expressive Port Grid (or unified C3+A row when shared 5V bus active)
         Column(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
-            rows.forEachIndexed { rowIndex, (leftId, rightId) ->
-                if (rowIndex > 0) Spacer(GlanceModifier.height(4.dp))
+            Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+                CompactPortCell(
+                    locCtx = locCtx,
+                    portId = 1,
+                    port = snapshot.ports[1],
+                    isConnected = isConnected,
+                    unitW = unitW,
+                    offText = offText,
+                    modifier = GlanceModifier.defaultWeight().fillMaxHeight()
+                )
+                Spacer(GlanceModifier.width(6.dp))
+                CompactPortCell(
+                    locCtx = locCtx,
+                    portId = 2,
+                    port = snapshot.ports[2],
+                    isConnected = isConnected,
+                    unitW = unitW,
+                    offText = offText,
+                    modifier = GlanceModifier.defaultWeight().fillMaxHeight()
+                )
+            }
+            Spacer(GlanceModifier.height(6.dp))
+            if (isConnected && snapshot.c3aBus.isSharedActive) {
+                Row(
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .defaultWeight()
+                        .cornerRadius(14.dp)
+                        .background(GlanceTheme.colors.primaryContainer)
+                        .clickable(
+                            actionRunCallback<TogglePortWidgetAction>(
+                                actionParametersOf(PARAM_PORT_ID to 3)
+                            )
+                        )
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "${locCtx.getString(R.string.port_c3a_short)} · ${String.format(Locale.US, "%.1f %s", snapshot.c3aBus.sharedPowerW, unitW)}",
+                        style = TextStyle(
+                            color = GlanceTheme.colors.onPrimaryContainer,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        maxLines = 1
+                    )
+                }
+            } else {
                 Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
-                    CompactPortCell(leftId, snapshot.ports[leftId], isConnected, GlanceModifier.defaultWeight())
-                    Spacer(GlanceModifier.width(4.dp))
-                    CompactPortCell(rightId, snapshot.ports[rightId], isConnected, GlanceModifier.defaultWeight())
+                    CompactPortCell(
+                        locCtx = locCtx,
+                        portId = 3,
+                        port = snapshot.ports[3],
+                        isConnected = isConnected,
+                        unitW = unitW,
+                        offText = offText,
+                        modifier = GlanceModifier.defaultWeight().fillMaxHeight()
+                    )
+                    Spacer(GlanceModifier.width(6.dp))
+                    CompactPortCell(
+                        locCtx = locCtx,
+                        portId = 4,
+                        port = snapshot.ports[4],
+                        isConnected = isConnected,
+                        unitW = unitW,
+                        offText = offText,
+                        modifier = GlanceModifier.defaultWeight().fillMaxHeight()
+                    )
                 }
             }
         }
@@ -586,19 +820,22 @@ private fun CompactWidgetContent(
 
 @Composable
 private fun CompactPortCell(
+    locCtx: Context,
     portId: Int,
     port: PortTelemetry?,
     isConnected: Boolean,
+    unitW: String,
+    offText: String,
     modifier: GlanceModifier
 ) {
     val enabled = port?.enabled ?: true
     val w = if (isConnected) (port?.powerW ?: 0.0) else 0.0
     val isCharging = isConnected && enabled && w > 0.2
     val bg = when {
-        !isConnected -> GlanceTheme.colors.surfaceVariant
+        !isConnected -> ColorProvider(R.color.widget_card_bg)
         !enabled -> GlanceTheme.colors.errorContainer
         isCharging -> GlanceTheme.colors.primaryContainer
-        else -> GlanceTheme.colors.surfaceVariant
+        else -> ColorProvider(R.color.widget_card_bg)
     }
     val fg = when {
         !isConnected -> GlanceTheme.colors.onSurfaceVariant
@@ -606,44 +843,52 @@ private fun CompactPortCell(
         isCharging -> GlanceTheme.colors.onPrimaryContainer
         else -> GlanceTheme.colors.onSurface
     }
-    val shortName = when (portId) {
-        1 -> "C1"
-        2 -> "C2"
-        3 -> "C3"
-        4 -> "A"
-        else -> "P$portId"
-    }
-    val wText = when {
-        !isConnected -> "$shortName 0W"
-        !enabled -> "$shortName OFF"
-        w >= 10.0 -> String.format(Locale.US, "%s %.0fW", shortName, w)
-        else -> String.format(Locale.US, "%s %.1fW", shortName, w)
+    val portLabel = localizedWidgetPortName(locCtx, portId)
+    val valueText = when {
+        !isConnected -> "—"
+        !enabled -> offText
+        w >= 10.0 -> String.format(Locale.US, "%.0f %s", w, unitW)
+        else -> String.format(Locale.US, "%.1f %s", w, unitW)
     }
 
-    Box(
+    Column(
         modifier = modifier
-            .cornerRadius(10.dp)
+            .cornerRadius(14.dp)
             .background(bg)
             .clickable(
                 actionRunCallback<TogglePortWidgetAction>(
                     actionParametersOf(PARAM_PORT_ID to portId)
                 )
             )
-            .padding(horizontal = 4.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = wText,
-            style = TextStyle(color = fg, fontSize = 11.sp, fontWeight = FontWeight.Medium),
+            text = portLabel,
+            style = TextStyle(color = fg, fontSize = 9.sp, fontWeight = FontWeight.Medium),
+            maxLines = 1
+        )
+        Text(
+            text = valueText,
+            style = TextStyle(color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold),
             maxLines = 1
         )
     }
 }
 
-private fun explicitWidgetPortName(portId: Int): String = when (portId) {
-    1 -> "USB-C1"
-    2 -> "USB-C2"
-    3 -> "USB-C3"
-    4 -> "USB-A"
-    else -> "Port $portId"
+private fun localizedWidgetPortName(locCtx: Context, portId: Int): String = when (portId) {
+    1 -> locCtx.getString(R.string.port_name_c1)
+    2 -> locCtx.getString(R.string.port_name_c2)
+    3 -> locCtx.getString(R.string.port_name_c3)
+    4 -> locCtx.getString(R.string.port_name_a)
+    else -> "P$portId"
+}
+
+private fun localizedWidgetSceneLabel(locCtx: Context, sceneCode: Int): String = when (sceneCode) {
+    1 -> locCtx.getString(R.string.scenario_ai)
+    2 -> locCtx.getString(R.string.scenario_hybrid)
+    3 -> locCtx.getString(R.string.scenario_single)
+    4 -> locCtx.getString(R.string.scenario_dual)
+    else -> locCtx.getString(R.string.scenario_ai)
 }

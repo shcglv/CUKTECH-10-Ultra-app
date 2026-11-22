@@ -37,17 +37,28 @@ jobs:
     - name: Make Gradle Wrapper Executable
       run: chmod +x gradlew
 
-    # ISSUE FIX: Removed the problematic 'gradle/actions/setup-gradle@v4' step that was
-    # performing its own validation and conflicting with our explicit wrapper validation.
-    # The gradle wrapper itself handles setup when invoked via ./gradlew
+    - name: Run Unit & Robolectric Tests
+      run: ./gradlew :app:testDebugUnitTest --no-daemon
+
+    - name: Verify R8 Minification & Shrink Rules
+      run: ./gradlew :app:minifyReleaseWithR8 --no-daemon
 
     - name: Build Debug APK with Gradle
       run: ./gradlew assembleDebug --no-daemon
 
+    - name: Upload Test Reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Unit-Test-Reports
+        path: app/build/reports/tests/testDebugUnitTest/
+        if-no-files-found: ignore
+        retention-days: 14
+
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: BLE-Bridge-Debug-APK
+        name: Cuktech-Debug-APK
         path: app/build/outputs/apk/debug/app-debug.apk
         if-no-files-found: error
         retention-days: 14

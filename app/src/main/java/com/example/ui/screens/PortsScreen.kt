@@ -1,7 +1,29 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -14,12 +36,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Card
@@ -29,38 +54,50 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.cuktech.ble.CuktechAuthState
+import com.example.cuktech.db.room.PortDevicePresetEntity
 import com.example.cuktech.energy.PortChargeLimit
+import com.example.cuktech.power.CableHealthRating
+import com.example.cuktech.power.EtaEstimate
+import com.example.cuktech.power.PortCableDiagnostic
+import com.example.cuktech.protocol.C3ASharedBusState
 import com.example.cuktech.protocol.ChargerSettingsState
 import com.example.cuktech.protocol.PortTelemetry
 import com.example.ui.components.AliasEditDialog
+import com.example.ui.components.CableDiagnosticsSheet
+import com.example.ui.components.DevicePresetSheet
 import com.example.ui.components.PortChargeLimitDialog
 import com.example.ui.components.PortCountdownDialog
 import com.example.ui.components.SoftResetConfirmDialog
+import com.example.ui.components.WavyLoadProgressBar
 import com.example.ui.components.explicitPortName
 import com.example.ui.components.formatDurationHms
 import com.example.ui.components.portSpecLabel
+import com.example.ui.theme.ExpressiveMotion
 import com.example.ui.theme.LocalSemanticColors
 import com.example.ui.theme.TelemetryMonoFontFamily
 import com.example.ui.theme.tabularNums
@@ -74,6 +111,7 @@ fun PortsScreen(
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val ports by viewModel.ports.collectAsStateWithLifecycle()
+    val c3aSharedBus by viewModel.c3aSharedBus.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val chargeLimits by viewModel.chargeLimits.collectAsStateWithLifecycle()
     val countdowns by viewModel.countdownRemainingSeconds.collectAsStateWithLifecycle()
@@ -81,19 +119,20 @@ fun PortsScreen(
     val portLoggingMap by viewModel.portLoggingMap.collectAsStateWithLifecycle()
     val aliases by viewModel.aliases.collectAsStateWithLifecycle()
     val focusedPort by viewModel.selectedPortFocus.collectAsStateWithLifecycle()
+    val presets by viewModel.portDevicePresets.collectAsStateWithLifecycle()
+    val etaEstimates by viewModel.etaEstimates.collectAsStateWithLifecycle()
+    val cableDiagnostics by viewModel.cableDiagnostics.collectAsStateWithLifecycle()
 
     val isConnected = authState == CuktechAuthState.AUTHENTICATED
-    val listState = rememberLazyListState()
+    val haptic = LocalHapticFeedback.current
+    val semantic = LocalSemanticColors.current
 
     var editingLimitPortId by remember { mutableStateOf<Int?>(null) }
     var editingTimerPortId by remember { mutableStateOf<Int?>(null) }
     var editingAliasPortId by remember { mutableStateOf<Int?>(null) }
+    var editingPresetPortId by remember { mutableStateOf<Int?>(null) }
+    var inspectingCablePortId by remember { mutableStateOf<Int?>(null) }
     var showSoftResetDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(focusedPort) {
-        val index = (focusedPort - 1).coerceIn(0, 3)
-        listState.animateScrollToItem(index)
-    }
 
     editingLimitPortId?.let { pid ->
         PortChargeLimitDialog(
@@ -132,6 +171,41 @@ fun PortsScreen(
         )
     }
 
+    editingPresetPortId?.let { pid ->
+        DevicePresetSheet(
+            portId = pid,
+            currentPreset = presets[pid],
+            onSave = { presetType, capacityMah, cellSeriesCount, label, targetWh, initSoc ->
+                editingPresetPortId = null
+                viewModel.savePortDevicePreset(
+                    portId = pid,
+                    presetType = presetType,
+                    deviceLabel = label,
+                    targetWh = targetWh,
+                    initialSocPct = initSoc,
+                    capacityMah = capacityMah,
+                    cellSeriesCount = cellSeriesCount
+                )
+            },
+            onDelete = {
+                editingPresetPortId = null
+                viewModel.deletePortDevicePreset(pid)
+            },
+            onDismiss = { editingPresetPortId = null }
+        )
+    }
+
+    inspectingCablePortId?.let { pid ->
+        val diag = cableDiagnostics[pid]
+        if (diag != null) {
+            CableDiagnosticsSheet(
+                diag = diag,
+                onResetStats = { viewModel.resetCableDiagnosticStats(pid) },
+                onDismiss = { inspectingCablePortId = null }
+            )
+        }
+    }
+
     if (showSoftResetDialog) {
         SoftResetConfirmDialog(
             onConfirm = {
@@ -142,40 +216,229 @@ fun PortsScreen(
         )
     }
 
-    LazyColumn(
-        state = listState,
+    val activeDotPulse = rememberInfiniteTransition(label = "port_tab_active_dot")
+    val dotAlpha by activeDotPulse.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dotAlpha"
+    )
+    val unitW = stringResource(R.string.unit_w)
+    val unitV = stringResource(R.string.unit_v)
+    val unitA = stringResource(R.string.unit_a)
+
+    Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
-            .testTag("ports_screen"),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .testTag("ports_screen")
     ) {
-        item { Spacer(Modifier.height(6.dp)) }
+        Spacer(Modifier.height(6.dp))
 
-        items(listOf(1, 2, 3, 4), key = { it }) { portId ->
-            val port = ports[portId] ?: PortTelemetry(portId, explicitPortName(portId))
-            PortDetailCard(
-                portId = portId,
-                port = port,
-                alias = viewModel.aliasForPort(portId, aliases),
-                settings = settings,
-                isConnected = isConnected,
-                isFocused = focusedPort == portId,
-                countdownSec = countdowns[portId],
-                usbALowCurrentRemainingSec = if (portId == 4) usbALowRemaining else null,
-                chargeLimit = chargeLimits[portId],
-                isLoggingEnabled = portLoggingMap[portId] ?: true,
-                onTogglePortPower = { enabled -> viewModel.setPortEnabled(portId, enabled) },
-                onOpenTimer = { editingTimerPortId = portId },
-                onToggleProtocol = { proto, enabled -> viewModel.setPortProtocol(portId, proto, enabled) },
-                onToggleUsbALowCurrent = { enabled -> viewModel.setUsbALowCurrent(enabled) },
-                onOpenChargeLimit = { editingLimitPortId = portId },
-                onToggleLogging = { enabled -> viewModel.setPortLoggingEnabled(portId, enabled) },
-                onEditAlias = { editingAliasPortId = portId }
-            )
+        // Material 3 Expressive Segmented Port Sub-Tabs (C1 | C2 | C3 | A)
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("ports_tab_row")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(1, 2, 3, 4).forEach { pid ->
+                    val selected = focusedPort == pid
+                    val accent = semantic.colorForPort(pid)
+                    val p = ports[pid]
+                    val pActive = (p?.powerW ?: 0.0) > 0.2 || (c3aSharedBus.isSharedActive && pid in 3..4)
+                    val shortCode = when (pid) {
+                        1 -> "C1"
+                        2 -> "C2"
+                        3 -> "C3"
+                        else -> "A"
+                    }
+                    val tabWatts = if (c3aSharedBus.isSharedActive && pid in 3..4) {
+                        c3aSharedBus.sharedPowerW
+                    } else {
+                        p?.powerW ?: 0.0
+                    }
+                    val activeCd = if (pActive) {
+                        stringResource(R.string.port_tab_active_cd, explicitPortName(pid))
+                    } else {
+                        explicitPortName(pid)
+                    }
+                    val tabBg by animateColorAsState(
+                        targetValue = if (selected) accent.copy(alpha = 0.18f) else androidx.compose.ui.graphics.Color.Transparent,
+                        animationSpec = ExpressiveMotion.spatialSpring(),
+                        label = "port_tab_bg_$pid"
+                    )
+                    val tabBorderColor by animateColorAsState(
+                        targetValue = if (selected) accent.copy(alpha = 0.65f) else androidx.compose.ui.graphics.Color.Transparent,
+                        animationSpec = ExpressiveMotion.spatialSpring(),
+                        label = "port_tab_border_$pid"
+                    )
+
+                    Surface(
+                        color = tabBg,
+                        shape = RoundedCornerShape(14.dp),
+                        border = if (selected) BorderStroke(1.dp, tabBorderColor) else null,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.selectPortFocus(pid)
+                            }
+                            .semantics { contentDescription = activeCd }
+                            .testTag("port_tab_$pid")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 7.dp, horizontal = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (pActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(accent.copy(alpha = dotAlpha))
+                                    )
+                                }
+                                Text(
+                                    text = shortCode,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                    color = if (selected) accent else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = if (pActive) {
+                                    "${String.format(Locale.getDefault(), "%.0f", tabWatts)}$unitW"
+                                } else {
+                                    "—"
+                                },
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = TelemetryMonoFontFamily
+                                ).tabularNums(),
+                                color = if (pActive) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        item {
+        AnimatedVisibility(
+            visible = c3aSharedBus.isSharedActive && focusedPort in 3..4,
+            enter = expandVertically(ExpressiveMotion.spatialSpring()) + fadeIn(),
+            exit = shrinkVertically(ExpressiveMotion.spatialSpring()) + fadeOut()
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .testTag("c3a_shared_banner")
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "${stringResource(R.string.port_c3a_shared_badge)} · ${String.format(Locale.getDefault(), "%.1f", c3aSharedBus.sharedPowerW)} $unitW (${String.format(Locale.getDefault(), "%.2f", c3aSharedBus.voltageV)} $unitV · ${String.format(Locale.getDefault(), "%.2f", c3aSharedBus.currentA)} $unitA)",
+                            style = MaterialTheme.typography.labelLarge.tabularNums(),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            text = stringResource(R.string.port_c3a_shared_banner),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Spacer(Modifier.height(10.dp))
+
+            AnimatedContent(
+                targetState = focusedPort.coerceIn(1, 4),
+                transitionSpec = {
+                    val forward = targetState > initialState
+                    val slideIn = slideInHorizontally(tween(240, easing = ExpressiveMotion.EmphasizedDecelerate)) { w ->
+                        if (forward) (w * 0.12f).toInt() else -(w * 0.12f).toInt()
+                    }
+                    val slideOut = slideOutHorizontally(tween(170, easing = ExpressiveMotion.EmphasizedAccelerate)) { w ->
+                        if (forward) -(w * 0.08f).toInt() else (w * 0.08f).toInt()
+                    }
+                    ((slideIn + fadeIn(tween(220, easing = ExpressiveMotion.EmphasizedDecelerate))) togetherWith
+                        (slideOut + fadeOut(tween(150, easing = ExpressiveMotion.EmphasizedAccelerate)))) using
+                        SizeTransform(clip = false)
+                },
+                label = "port_tab_detail_anim"
+            ) { portId ->
+                val port = ports[portId] ?: PortTelemetry(portId, explicitPortName(portId))
+                PortDetailCard(
+                    portId = portId,
+                    port = port,
+                    alias = viewModel.aliasForPort(portId, aliases),
+                    settings = settings,
+                    isConnected = isConnected,
+                    isFocused = true,
+                    isSharedC3ABus = c3aSharedBus.isSharedActive && portId in 3..4,
+                    c3aSharedBus = c3aSharedBus,
+                    countdownSec = countdowns[portId],
+                    usbALowCurrentRemainingSec = if (portId == 4) usbALowRemaining else null,
+                    chargeLimit = chargeLimits[portId],
+                    devicePreset = presets[portId],
+                    etaEstimate = etaEstimates[portId],
+                    cableDiag = cableDiagnostics[portId],
+                    isLoggingEnabled = portLoggingMap[portId] ?: true,
+                    onTogglePortPower = { enabled -> viewModel.setPortEnabled(portId, enabled) },
+                    onOpenTimer = { editingTimerPortId = portId },
+                    onToggleProtocol = { proto, enabled -> viewModel.setPortProtocol(portId, proto, enabled) },
+                    onToggleUsbALowCurrent = { enabled -> viewModel.setUsbALowCurrent(enabled) },
+                    onOpenChargeLimit = { editingLimitPortId = portId },
+                    onOpenDevicePreset = { editingPresetPortId = portId },
+                    onOpenCableDiag = { inspectingCablePortId = portId },
+                    onToggleLogging = { enabled -> viewModel.setPortLoggingEnabled(portId, enabled) },
+                    onEditAlias = { editingAliasPortId = portId }
+                )
+            }
+
             OutlinedButton(
                 onClick = { showSoftResetDialog = true },
                 enabled = isConnected,
@@ -202,33 +465,46 @@ private fun PortDetailCard(
     settings: ChargerSettingsState,
     isConnected: Boolean,
     isFocused: Boolean,
+    isSharedC3ABus: Boolean,
+    c3aSharedBus: C3ASharedBusState,
     countdownSec: Long?,
     usbALowCurrentRemainingSec: Long?,
     chargeLimit: PortChargeLimit?,
+    devicePreset: PortDevicePresetEntity?,
+    etaEstimate: EtaEstimate?,
+    cableDiag: PortCableDiagnostic?,
     isLoggingEnabled: Boolean,
     onTogglePortPower: (Boolean) -> Unit,
     onOpenTimer: () -> Unit,
     onToggleProtocol: (String, Boolean) -> Unit,
     onToggleUsbALowCurrent: (Boolean) -> Unit,
     onOpenChargeLimit: () -> Unit,
+    onOpenDevicePreset: () -> Unit,
+    onOpenCableDiag: () -> Unit,
     onToggleLogging: (Boolean) -> Unit,
     onEditAlias: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     val semantic = LocalSemanticColors.current
     val accent = semantic.colorForPort(portId)
     val portName = explicitPortName(portId)
     val specLabel = portSpecLabel(portId)
     val isActive = port.powerW > 0.2
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> accent
+            isActive -> accent.copy(alpha = 0.45f)
+            else -> androidx.compose.ui.graphics.Color.Transparent
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "port_card_border"
+    )
 
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        border = when {
-            isFocused -> BorderStroke(1.5.dp, accent)
-            isActive -> BorderStroke(1.dp, accent.copy(alpha = 0.4f))
-            else -> null
-        },
+        border = if (isFocused || isActive) BorderStroke(if (isFocused) 1.5.dp else 1.dp, borderColor) else null,
         shape = RoundedCornerShape(22.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -287,17 +563,41 @@ private fun PortDetailCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (isSharedC3ABus) {
+                        Spacer(Modifier.height(4.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.port_c3a_shared_badge),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
 
                 Switch(
                     checked = port.enabled,
-                    onCheckedChange = onTogglePortPower,
+                    onCheckedChange = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onTogglePortPower(it)
+                    },
                     enabled = isConnected,
                     modifier = Modifier.testTag("port_power_switch_$portId")
                 )
             }
 
             // Live Telemetry Readouts
+            val unitW = stringResource(R.string.unit_w)
+            val unitV = stringResource(R.string.unit_v)
+            val unitA = stringResource(R.string.unit_a)
+            val unitWh = stringResource(R.string.unit_wh)
+            val displayPowerW = if (isSharedC3ABus) c3aSharedBus.sharedPowerW else port.powerW
+            val displayVoltageV = if (isSharedC3ABus) c3aSharedBus.voltageV else port.voltageV
+            val displayCurrentA = if (isSharedC3ABus) c3aSharedBus.currentA else port.currentA
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 shape = RoundedCornerShape(14.dp),
@@ -311,21 +611,27 @@ private fun PortDetailCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     MetricItem(
-                        value = String.format(Locale.US, "%.1f W", port.powerW),
-                        label = port.protocolName,
-                        highlightColor = if (isActive) accent else MaterialTheme.colorScheme.onSurface
+                        value = "${String.format(Locale.US, "%.1f", displayPowerW)} $unitW",
+                        label = if (isSharedC3ABus) {
+                            stringResource(R.string.port_c3a_short)
+                        } else if (port.protocolName == "Idle") {
+                            stringResource(R.string.port_status_idle)
+                        } else {
+                            port.protocolName
+                        },
+                        highlightColor = if (isActive || isSharedC3ABus) accent else MaterialTheme.colorScheme.onSurface
                     )
                     MetricItem(
-                        value = String.format(Locale.US, "%.2f V", port.voltageV),
-                        label = "Voltage"
+                        value = "${String.format(Locale.US, "%.2f", displayVoltageV)} $unitV",
+                        label = stringResource(R.string.port_metric_voltage)
                     )
                     MetricItem(
-                        value = String.format(Locale.US, "%.2f A", port.currentA),
-                        label = "Current"
+                        value = "${String.format(Locale.US, "%.2f", displayCurrentA)} $unitA",
+                        label = stringResource(R.string.port_metric_current)
                     )
                     MetricItem(
-                        value = String.format(Locale.US, "%.2f Wh", port.cumulativeWh),
-                        label = "Energy"
+                        value = "${String.format(Locale.US, "%.2f", port.cumulativeWh)} $unitWh",
+                        label = stringResource(R.string.port_metric_energy)
                     )
                 }
             }
@@ -337,6 +643,105 @@ private fun PortDetailCard(
                     style = MaterialTheme.typography.bodySmall.tabularNums(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            // Cable Health & Voltage-Drop Stress Diagnostic Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.cable_diag_label),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    val healthText = when (cableDiag?.healthRating) {
+                        CableHealthRating.EXCELLENT -> stringResource(R.string.cable_health_excellent)
+                        CableHealthRating.MODERATE_SAG -> stringResource(R.string.cable_health_moderate)
+                        CableHealthRating.UNSTABLE -> stringResource(R.string.cable_health_unstable)
+                        else -> stringResource(R.string.cable_health_idle)
+                    }
+                    val detailText = when {
+                        cableDiag == null || !cableDiag.isActive -> healthText
+                        cableDiag.isVariablePps -> "$healthText · ${stringResource(R.string.cable_pps_variable)}"
+                        cableDiag.nominalRailV != null -> "$healthText · ${stringResource(R.string.cable_sag_mv_fmt, cableDiag.voltageSagMv)}"
+                        else -> healthText
+                    }
+                    Text(
+                        text = detailText,
+                        style = MaterialTheme.typography.bodySmall.tabularNums(),
+                        color = if (cableDiag?.healthRating == CableHealthRating.UNSTABLE) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+                OutlinedButton(
+                    onClick = onOpenCableDiag,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("port_cable_diag_button_$portId")
+                ) {
+                    Icon(Icons.Default.Cable, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.action_edit))
+                }
+            }
+
+            // Charging ETA Estimate & Device Battery Preset Row
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.port_eta_title),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        val etaText = if (etaEstimate == null || devicePreset == null) {
+                            stringResource(R.string.port_eta_no_preset)
+                        } else {
+                            val mins = etaEstimate.estimatedMinutesRemaining
+                            when {
+                                etaEstimate.isNearlyFull -> stringResource(R.string.port_eta_nearly_full)
+                                mins == null -> stringResource(R.string.port_eta_idle)
+                                mins >= 60 -> stringResource(R.string.port_eta_remaining_hm_fmt, mins / 60, mins % 60, etaEstimate.deviceLabel)
+                                else -> stringResource(R.string.port_eta_remaining_m_fmt, mins, etaEstimate.deviceLabel)
+                            }
+                        }
+                        Text(
+                            text = etaText,
+                            style = MaterialTheme.typography.bodySmall.tabularNums(),
+                            color = if (etaEstimate != null) accent else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = onOpenDevicePreset,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("port_preset_button_$portId")
+                    ) {
+                        Icon(Icons.Default.BatteryChargingFull, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.port_eta_assign_btn))
+                    }
+                }
+                if (etaEstimate != null) {
+                    WavyLoadProgressBar(
+                        progress = etaEstimate.progressFraction,
+                        color = accent,
+                        active = isActive
+                    )
+                    Text(
+                        text = stringResource(R.string.port_eta_disclaimer),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // Per-Port Real Supported Protocol Switches
@@ -451,11 +856,16 @@ private fun PortDetailCard(
                         )
                         val limitDesc = if (chargeLimit != null && chargeLimit.enabled) {
                             val used = chargeLimit.currentUsedWh(port.cumulativeWh)
+                            val localizedMode = if (chargeLimit.mode.equals("always", ignoreCase = true)) {
+                                stringResource(R.string.action_always)
+                            } else {
+                                stringResource(R.string.action_once)
+                            }
                             stringResource(
                                 R.string.port_wh_limit_progress_fmt,
                                 used,
                                 chargeLimit.whTarget,
-                                chargeLimit.mode
+                                localizedMode
                             )
                         } else {
                             stringResource(R.string.port_wh_limit_none)
@@ -476,10 +886,10 @@ private fun PortDetailCard(
                     }
                 }
                 if (chargeLimit != null && chargeLimit.enabled) {
-                    LinearProgressIndicator(
-                        progress = { chargeLimit.progressFraction(port.cumulativeWh) },
-                        modifier = Modifier.fillMaxWidth(),
-                        color = accent
+                    WavyLoadProgressBar(
+                        progress = chargeLimit.progressFraction(port.cumulativeWh),
+                        color = accent,
+                        active = isActive
                     )
                 }
             }

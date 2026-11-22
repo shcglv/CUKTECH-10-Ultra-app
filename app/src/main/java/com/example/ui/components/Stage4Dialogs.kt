@@ -145,7 +145,7 @@ fun EncryptedBackupExportDialog(
                         IconButton(onClick = { visible = !visible }) {
                             Icon(
                                 imageVector = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = "Toggle password"
+                                contentDescription = stringResource(R.string.cd_toggle_password)
                             )
                         }
                     },
@@ -257,7 +257,7 @@ fun EncryptedBackupRestoreDialog(
                         IconButton(onClick = { visible = !visible }) {
                             Icon(
                                 imageVector = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = "Toggle password"
+                                contentDescription = stringResource(R.string.cd_toggle_password)
                             )
                         }
                     },
@@ -507,7 +507,11 @@ fun GitHubUpdateDialog(
                                         GitHubApkUpdater.buildInstallApkIntent(context, downloadState.apkFile)
                                     )
                                 }.onFailure { err ->
-                                    Toast.makeText(context, err.message ?: "Install launch failed", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(
+                                        context,
+                                        err.message ?: context.getString(R.string.toast_install_launch_failed),
+                                        Toast.LENGTH_LONG
+                                    ).show()
                                 }
                             }
                         },

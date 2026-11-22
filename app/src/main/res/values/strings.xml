@@ -1,9 +1,10 @@
 <resources>
-    <string name="app_name">BLE Cuktech10</string>
+    <string name="app_name">Cuktech</string>
+    <string name="app_full_name">CUKTECH 10 Ultra</string>
     <string name="widget_control_name">CUKTECH 10 Ultra Control</string>
-    <string name="widget_control_desc">Material 3 Control Widget: live wattage, optional sparkline &amp; 1-tap USB-C1/C2/C3/USB-A toggles</string>
+    <string name="widget_control_desc">Material 3 Expressive Control Widget: live wattage, optional sparkline &amp; 1-tap USB-C1/C2/C3/USB-A toggles</string>
     <string name="widget_compact_name">CUKTECH 10 Ultra Compact</string>
-    <string name="widget_compact_desc">Material 3 Compact Widget: total power &amp; 2x2 port status grid</string>
+    <string name="widget_compact_desc">Material 3 Expressive Compact Widget: total power &amp; 2x2 port status grid</string>
     <string name="widget_config_title">Configure Widget</string>
     <string name="widget_config_ports_label">Displayed Ports</string>
     <string name="widget_config_sparkline">Show Power Sparkline</string>
@@ -40,6 +41,31 @@
     <string name="action_rescan">Rescan</string>
     <string name="action_edit">Edit</string>
 
+    <!-- TopBar Connection Pill & Onboarding -->
+    <string name="topbar_connect_short">Connect</string>
+    <string name="topbar_disconnect_short">Disconnect</string>
+    <string name="topbar_cancel_short">Cancel</string>
+    <string name="topbar_pairing_cd">Search &amp; Pair Devices</string>
+    <string name="topbar_killswitch_cd">Master Killswitch</string>
+    <string name="onboarding_badge_author">CUKTECH 10 Ultra · by joxit</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_start">Get Started</string>
+    <string name="onboarding_page_indicator_fmt">Step %1$d of %2$d</string>
+    <string name="onboarding_page1_title">CUKTECH 10 Ultra</string>
+    <string name="onboarding_page1_subtitle">120W GaN Telemetry &amp; Smart Control</string>
+    <string name="onboarding_page1_body">Inspect live per-port voltage, current, fast-charge protocols (PD, PPS, UFCS, SCP), cumulative Wh, and electricity cost — with full hardware control right from your phone.</string>
+    <string name="onboarding_page2_title">Mainland China &amp; Single BLE Link</string>
+    <string name="onboarding_page2_subtitle">Encrypted MiOT BLE Pairing Behavior</string>
+    <string name="onboarding_page2_body">CUKTECH 10 Ultra (AD1204) authenticates via encrypted Xiaomi MiOT (CN region) and accepts only one active BLE client at a time. Close Mi Home while using Cuktech — you can switch back anytime in 1 tap.</string>
+    <string name="onboarding_page3_title">Permissions &amp; Live Status</string>
+    <string name="onboarding_page3_subtitle">Bluetooth Nearby &amp; Live Updates</string>
+    <string name="onboarding_page3_body">Grant Bluetooth Nearby Devices and Notification permissions so Cuktech can scan over BLE, display Material 3 Live Updates chips, and alert you on charging completion.</string>
+    <string name="onboarding_perm_button">Grant Bluetooth &amp; Notifications</string>
+    <string name="onboarding_perm_granted">Bluetooth &amp; notifications granted</string>
+    <string name="settings_replay_onboarding">Replay Welcome Guide</string>
+    <string name="settings_replay_onboarding_desc">Revisit feature overview and runtime permission prompts</string>
+
     <!-- Warnings & Account Notices -->
     <string name="warning_bluetooth_off_title">Bluetooth is Turned Off</string>
     <string name="warning_bluetooth_off_body">Please enable Bluetooth to scan for and connect to CUKTECH 10 Ultra.</string>
@@ -53,6 +79,8 @@
     <string name="overview_hero_total_power">Total Output Power</string>
     <string name="overview_rated_ceiling">120W Max · AD1204</string>
     <string name="overview_rssi_fmt">%1$d dBm · Quality %2$d%%</string>
+    <string name="overview_mac_rssi_fmt">%1$s · %2$d dBm (%3$d%%)</string>
+    <string name="hero_rated_pct_fmt">%1$d%% · 120 W</string>
     <string name="overview_active_sessions_fmt">%1$d active</string>
     <string name="overview_session_energy_fmt">%.2f Wh today</string>
     <string name="overview_est_cost_fmt">Est. %1$s %2$.2f</string>
@@ -65,16 +93,53 @@
     <string name="overview_recent_session">Latest Charging Session</string>
     <string name="overview_view_analytics">View Analytics</string>
     <string name="overview_no_device_connected">Connect your CUKTECH 10 Ultra to control ports and view real-time telemetry.</string>
+    <string name="overview_ble_standby_hint">At 0W idle with the screen off, CUKTECH 10 Ultra sleeps its BLE radio. Tap the charger button or plug in a cable to wake it.</string>
     <string name="overview_ac_connected">AC Power Connected</string>
+    <string name="profile_builtin_workstation">Desk Workstation (100W C1)</string>
+    <string name="profile_builtin_single">Single Port Max Burst</string>
+    <string name="profile_builtin_night">Night Safe Care (USB-A + Idle Off)</string>
+
+    <!-- Units & Shared Formats -->
+    <string name="unit_w">W</string>
+    <string name="unit_wh">Wh</string>
+    <string name="unit_v">V</string>
+    <string name="unit_a">A</string>
+    <string name="unit_dbm">dBm</string>
+    <string name="unit_s">s</string>
+    <string name="unit_m">m</string>
+    <string name="unit_h">h</string>
+    <string name="unit_d">d</string>
+    <string name="action_once">Once</string>
+    <string name="action_always">Always</string>
+    <string name="action_start">Start</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_enable">Enable</string>
+    <string name="action_disable">Disable</string>
+    <string name="action_delete_profile">Delete profile</string>
+    <string name="session_peak_fmt">Peak %1$.1f %2$s</string>
+    <string name="session_avg_fmt">Avg %1$.1f %2$s</string>
+    <string name="chart_last_hours_fmt">Last %1$d h</string>
+    <string name="port_metric_voltage">Voltage</string>
+    <string name="port_metric_current">Current</string>
+    <string name="port_metric_energy">Energy</string>
+    <string name="time_h_m_s_fmt">%1$dh %2$02dm %3$02ds</string>
+    <string name="time_m_s_fmt">%1$dm %2$02ds</string>
+    <string name="time_s_fmt">%1$ds</string>
+    <string name="time_h_m_fmt">%1$dh %2$02dm</string>
 
     <!-- Explicit Physical Port Names & Specs -->
     <string name="port_name_c1">USB-C1</string>
     <string name="port_name_c2">USB-C2</string>
     <string name="port_name_c3">USB-C3</string>
     <string name="port_name_a">USB-A</string>
-    <string name="port_spec_c1">120W Max · PD / PPS / UFCS</string>
-    <string name="port_spec_c2">120W Max · PD / PPS / UFCS</string>
-    <string name="port_spec_c3">44W Max · UFCS / SCP</string>
+    <string name="port_c3a_shared_title">USB-C3 + USB-A</string>
+    <string name="port_c3a_short">C3+A</string>
+    <string name="port_c3a_shared_badge">Shared 5V / 15W Bus</string>
+    <string name="port_c3a_shared_banner">USB-C3 and USB-A are powered together on the shared 5V rail (15W max). Power is unified without double-counting.</string>
+    <string name="port_tab_active_cd">%1$s active</string>
+    <string name="port_spec_c1">120W Max · PD / PPS / UFCS / Mi 120W</string>
+    <string name="port_spec_c2">120W Max · PD / PPS / UFCS / Mi 120W</string>
+    <string name="port_spec_c3">44W Max · UFCS / SCP · 15W w/ USB-A</string>
     <string name="port_spec_a">33W Max · UFCS / SCP · 4h Low-Current</string>
     <string name="port_status_disabled">Port OFF</string>
     <string name="port_status_idle">Idle</string>
@@ -142,8 +207,27 @@
     <string name="replay_no_samples">No fine-grained telemetry samples exist in the archive for this session window.</string>
     <string name="replay_play">Play</string>
     <string name="replay_pause">Pause</string>
+    <string name="replay_sample_counter_fmt">Sample %1$d / %2$d</string>
     <string name="session_gap_fmt">+%1$ds gap</string>
     <string name="session_paused">Paused</string>
+    <string name="export_tf_session">Current Active Session</string>
+    <string name="export_tf_1h">Last 1 Hour</string>
+    <string name="export_tf_24h">Last 24 Hours</string>
+    <string name="export_tf_7d">Last 7 Days</string>
+    <string name="export_tf_all">All Time History</string>
+    <string name="export_sc_all">Full (Sessions + Telemetry)</string>
+    <string name="export_sc_sessions">Sessions Only</string>
+    <string name="export_sc_telemetry">Raw Telemetry Only</string>
+    <string name="clear_opt_keep_active">Inactive Sessions Only</string>
+    <string name="clear_opt_keep_active_desc">Clear finished sessions; keep currently active charging session</string>
+    <string name="clear_opt_24h">Older than 24 Hours</string>
+    <string name="clear_opt_24h_desc">Clear telemetry and sessions older than 24 hours</string>
+    <string name="clear_opt_7d">Older than 7 Days</string>
+    <string name="clear_opt_7d_desc">Clear telemetry and sessions older than 7 days</string>
+    <string name="clear_opt_30d">Older than 30 Days</string>
+    <string name="clear_opt_30d_desc">Clear telemetry and sessions older than 30 days</string>
+    <string name="clear_opt_all">Clear Everything</string>
+    <string name="clear_opt_all_desc">Completely wipe all saved charging sessions, aggregates, and telemetry points</string>
 
     <!-- Settings Hub & Subsections -->
     <string name="settings_section_hardware">Charger Display &amp; Hardware Controls</string>
@@ -179,6 +263,7 @@
     <string name="settings_section_cloud">Xiaomi Account, Devices &amp; Mi Home</string>
     <string name="settings_mi_home_switch">Switch to Xiaomi Mi Home App</string>
     <string name="settings_sync_devices">Sync Devices from Xiaomi Cloud</string>
+    <string name="xiaomi_devices_spoiler_fmt">Saved Xiaomi Devices (%1$d)</string>
     <string name="settings_sign_out_creds">Clear Stored Account &amp; Keys</string>
     <string name="settings_check_updates">GitHub Releases Updates</string>
     <string name="settings_update_available">New release available on GitHub!</string>
@@ -204,13 +289,17 @@
     <string name="settings_tcp_lan_bind">Allow Non-Localhost (LAN) Connections</string>
     <string name="settings_tcp_lan_warning">Security Warning: Exposes authenticated control socket to the local Wi-Fi network.</string>
     <string name="settings_token_label">Install Secret Token</string>
-    <string name="settings_token_rotate">Rotate Token</string>
+    <string name="settings_token_copied_label">Cuktech Automation Token</string>
+    <string name="settings_token_rotate">Rotate</string>
     <string name="settings_ha_webhook">Home Assistant HTTP Webhook</string>
     <string name="settings_ha_url_label">Webhook URL (HTTPS recommended)</string>
     <string name="settings_ha_token_label">Bearer Token (Stored in Android Keystore)</string>
+    <string name="settings_ha_token_configured">Configured cleanly in Android Keystore</string>
     <string name="settings_ha_http_warning">Warning: Plaintext HTTP URL transmits telemetry unencrypted on LAN.</string>
     <string name="settings_open_diagnostics">Console &amp; BLE Diagnostics</string>
     <string name="settings_open_diagnostics_desc">Sanitized event logs (Levels 1–3) &amp; GATT/Keystore stack report</string>
+    <string name="cd_reveal_token">Reveal or hide secret token</string>
+    <string name="cd_toggle_password">Toggle password visibility</string>
 
     <!-- Diagnostics & Console -->
     <string name="diag_console_title">Sanitized Event Console</string>
@@ -227,7 +316,7 @@
     <string name="dialog_soft_reset_title">Soft Reset All Ports?</string>
     <string name="dialog_soft_reset_body">Momentarily turns all 4 ports OFF and back ON to re-negotiate USB-PD, PPS, and UFCS.</string>
     <string name="dialog_mi_home_title">Switch to Xiaomi Mi Home?</string>
-    <string name="dialog_mi_home_body">CUKTECH 10 Ultra allows only one active BLE client. BLEBridge will cleanly disconnect first so Mi Home can connect.</string>
+    <string name="dialog_mi_home_body">CUKTECH 10 Ultra allows only one active BLE client. Cuktech will cleanly disconnect first so Mi Home can connect.</string>
     <string name="dialog_wh_limit_title">Energy Limit · %1$s</string>
     <string name="dialog_wh_limit_target">Cutoff Target (Wh)</string>
     <string name="dialog_wh_mode_once">Once (disable after cutoff)</string>
@@ -236,6 +325,8 @@
     <string name="dialog_export_downloads">Save to Downloads/cuktech10</string>
     <string name="dialog_export_saf">Choose Location (SAF)</string>
     <string name="dialog_clear_history_title">Clear Telemetry History</string>
+    <string name="signout_confirm_title">Clear Stored Account &amp; Keys?</string>
+    <string name="signout_confirm_body">Removes saved Xiaomi Account session and BLE encryption keys from Android Keystore. History and settings remain intact.</string>
 
     <!-- Notifications, Live Updates & Anomalies -->
     <string name="notif_channel_live_name">Live Charger Telemetry</string>
@@ -250,6 +341,57 @@
     <string name="notif_completion_repeat_title">%1$s · Still Complete</string>
     <string name="notif_completion_body">%1$.2f Wh delivered · Peak %2$.1f W</string>
     <string name="notif_anomaly_title">Charging Anomaly Detected</string>
+    <string name="notif_connecting">Connecting to charger…</string>
+    <string name="notif_connecting_name">Connecting to CUKTECH 10 Ultra…</string>
+    <string name="notif_auth_failed">Auth failed · Check credentials</string>
+    <string name="notif_ready">Ready</string>
+    <string name="notif_standby_title">⚡ CUKTECH 10 Ultra · Standby</string>
+    <string name="notif_standby_content">Awaiting charger power-on… (Auto-Reconnect active)</string>
+    <string name="notif_standby_big">Charger unplugged or out of range. Auto-connect is active and will reconnect as soon as power is restored.</string>
+    <string name="notif_total_watts_title_fmt">⚡ %1$.1fW Total · CUKTECH 10 Ultra</string>
+    <string name="notif_idle_title">⚡ CUKTECH 10 Ultra (Idle)</string>
+    <string name="notif_active_output_fallback">0.0W active output</string>
+    <string name="notif_all_idle">All ports idle</string>
+    <string name="notif_all_idle_long">All ports idle (No active draw)</string>
+    <string name="notif_timers_prefix">⏱️ Timers: </string>
+    <string name="notif_wh_limits_prefix">🎯 Wh Limits: </string>
+    <string name="notif_usba_trickle_fmt">USB-A Trickle: %1$s</string>
+
+    <!-- Undo & Feedback Toasts -->
+    <string name="undo_port_on_fmt">Undo Port %1$d -&gt; ON</string>
+    <string name="undo_port_off_fmt">Undo Port %1$d -&gt; OFF</string>
+    <string name="undo_scene_fmt">Undo Scene -&gt; %1$s</string>
+    <string name="undo_screen_timeout">Undo Screen Timeout</string>
+    <string name="undo_port_timer_fmt">Undo Port %1$d Timer</string>
+    <string name="undo_usba_low_current">Undo USB-A Low Current</string>
+    <string name="undo_idle_screen_off">Undo Idle Screen Off</string>
+    <string name="undo_charger_language">Undo Charger Language</string>
+    <string name="undo_orientation_lock">Undo Orientation Lock</string>
+    <string name="undo_profile_fmt">Undo Profile \'%1$s\'</string>
+    <string name="undo_killswitch_restore">Restore ports from Killswitch snapshot</string>
+    <string name="toast_connected">⚡ CUKTECH 10 Ultra Connected</string>
+    <string name="toast_disconnected">🔌 CUKTECH 10 Ultra Disconnected</string>
+    <string name="toast_copied_fmt">%1$s copied cleanly</string>
+    <string name="toast_saved_fmt">Saved %1$s</string>
+    <string name="toast_csv_ok">CSV exported cleanly</string>
+    <string name="toast_csv_fail">Failed to write CSV via Storage Access Framework</string>
+    <string name="toast_tariff_saved">Electricity tariff saved</string>
+    <string name="toast_token_rotated">Secret token rotated</string>
+    <string name="toast_webhook_saved">Home Assistant webhook saved</string>
+    <string name="toast_xiaomi_synced_fmt">Synced %1$d Xiaomi device(s)</string>
+    <string name="toast_xiaomi_session_saved">Xiaomi Cloud session saved (0 CUKTECH devices returned)</string>
+    <string name="sync_devices_count_fmt">Synced %1$d device(s)</string>
+    <string name="sync_no_devices">No CUKTECH / MiOT devices returned</string>
+    <string name="sync_failed_fmt">Sync failed: %1$s</string>
+    <string name="backup_failed_fmt">Backup failed: %1$s</string>
+    <string name="restore_failed_fmt">Restore failed: %1$s</string>
+    <string name="restore_summary_with_keys_fmt">Sessions: %1$d, Profiles: %2$d, BLE keys: %3$d</string>
+    <string name="restore_summary_fmt">Sessions: %1$d, Profiles: %2$d</string>
+    <string name="toast_mi_home_missing">Xiaomi Mi Home app not installed</string>
+    <string name="toast_update_check_failed_fmt">Update check failed: %1$s</string>
+    <string name="toast_bt_disabled">Bluetooth is turned OFF. Please enable Bluetooth.</string>
+    <string name="toast_battery_whitelist_opened">System prompt opened — tap Allow for unrestricted keepalive</string>
+    <string name="toast_install_launch_failed">Unable to open APK installer</string>
 
     <!-- Overview: Profiles & Anomalies -->
     <string name="overview_profiles_title">Charging Profiles</string>
@@ -326,4 +468,245 @@
 
     <!-- Diagnostics Anomalies -->
     <string name="diag_anomalies_title">Active Link &amp; Cable Warnings</string>
+
+    <!-- Xiaomi Account & BLE Pairing Dialogs -->
+    <string name="xiaomi_login_title">Xiaomi Cloud Login &amp; Sync</string>
+    <string name="xiaomi_qr_init">Generating Xiaomi Cloud QR session…</string>
+    <string name="xiaomi_qr_creating_fmt">Creating secure QR code session for region [%1$s]…</string>
+    <string name="xiaomi_qr_scan_prompt">Scan with Mi Home or Xiaomi Account to confirm sign-in</string>
+    <string name="xiaomi_qr_expired">QR code expired. Tap refresh to reload.</string>
+    <string name="xiaomi_qr_2fa_req">Xiaomi Account 2-Factor Authentication (2FA) required</string>
+    <string name="xiaomi_qr_status_fmt">QR status: %1$s</string>
+    <string name="xiaomi_qr_failed_fmt">Failed to create QR code: %1$s</string>
+    <string name="xiaomi_qr_tap_refresh">Tap refresh to load QR code</string>
+    <string name="xiaomi_qr_refresh_btn">Refresh QR Code</string>
+    <string name="xiaomi_region_warn_fmt">Warning: Active account region is [%1$s]. CUKTECH 10 Ultra requires Mainland China (CN) region in Mi Home.</string>
+    <string name="xiaomi_tab_web">Web / Browser</string>
+    <string name="xiaomi_tab_qr">QR Code</string>
+    <string name="xiaomi_tab_password">Password</string>
+    <string name="xiaomi_tab_manual">Manual</string>
+    <string name="xiaomi_logged_in_fetching_fmt">Signed in (UID: %1$s). Syncing Xiaomi Cloud devices…</string>
+    <string name="xiaomi_web_verifying_url">Verifying pasted login URL…</string>
+    <string name="xiaomi_web_preparing_fmt">Preparing secure web session for region [%1$s]…</string>
+    <string name="xiaomi_web_browser_opened">Browser opened. Sign in with Google, Facebook, or Xiaomi, then switch back here.</string>
+    <string name="xiaomi_web_open_failed_fmt">Could not open browser: %1$s</string>
+    <string name="xiaomi_web_expired">Web session expired. Tap below to re-open.</string>
+    <string name="xiaomi_web_2fa_hint">2FA required. Please complete verification.</string>
+    <string name="xiaomi_web_confirmed">Authentication confirmed! Syncing devices…</string>
+    <string name="xiaomi_web_status_fmt">Status: %1$s</string>
+    <string name="xiaomi_web_start_failed_fmt">Failed to start web session: %1$s</string>
+    <string name="xiaomi_web_title">Web &amp; Social Sign-In</string>
+    <string name="xiaomi_web_desc">Opens account.xiaomi.com in your default browser. Sign in using Google, Facebook, or Xiaomi Account, then return here.</string>
+    <string name="xiaomi_web_open_btn">Open Login in Browser</string>
+    <string name="xiaomi_web_reopen_btn">Re-open Browser Login</string>
+    <string name="xiaomi_web_waiting">Waiting for browser login… Return to Cuktech after signing in.</string>
+    <string name="xiaomi_web_open_account">Open account.xiaomi.com</string>
+    <string name="xiaomi_web_paste_show">Paste redirect URL</string>
+    <string name="xiaomi_web_paste_hide">Hide URL paste</string>
+    <string name="xiaomi_web_paste_label">Pasted STS / Redirect URL or cookies</string>
+    <string name="xiaomi_web_submit_url">Submit URL</string>
+    <string name="xiaomi_pw_user_label">Xiaomi ID / Phone / Email</string>
+    <string name="xiaomi_pw_pass_label">Password</string>
+    <string name="xiaomi_pw_autofill_tip">Tip: If autofill does not prompt, long-press a field and choose Autofill or Bitwarden.</string>
+    <string name="xiaomi_pw_missing_fields">Please enter username and password</string>
+    <string name="xiaomi_pw_authenticating">Authenticating with Xiaomi Cloud…</string>
+    <string name="xiaomi_pw_2fa_prompt">2-Factor Authentication required. Please complete verification.</string>
+    <string name="xiaomi_pw_signin_btn">Sign In &amp; Sync BLE Key</string>
+    <string name="xiaomi_manual_import_invalid">Invalid or unsupported JSON credentials file</string>
+    <string name="xiaomi_manual_import_btn">Import Credentials JSON (File Picker)</string>
+    <string name="xiaomi_manual_mac_label">Charger Bluetooth MAC (e.g. AA:BB:CC:11:22:33)</string>
+    <string name="xiaomi_manual_token_label">12-Byte MiOT Token (24 Hex characters)</string>
+    <string name="xiaomi_manual_ble_key_label">16-Byte BLE Key / beaconkey (Optional, 32 Hex)</string>
+    <string name="xiaomi_manual_invalid_input">Provide a valid MAC address and 24-hex token</string>
+    <string name="xiaomi_manual_save_btn">Save to Android Keystore</string>
+    <string name="xiaomi_2fa_title">Xiaomi 2-Factor Authentication (2FA)</string>
+    <string name="xiaomi_2fa_body">Two-factor authentication is active on this account.</string>
+    <string name="xiaomi_2fa_phone_fmt">Linked phone: %1$s</string>
+    <string name="xiaomi_2fa_email_fmt">Linked email: %1$s</string>
+    <string name="xiaomi_2fa_channel_sms">SMS / Authenticator</string>
+    <string name="xiaomi_2fa_channel_email">Email Code</string>
+    <string name="xiaomi_2fa_code_label">6-Digit Code</string>
+    <string name="xiaomi_2fa_send_btn">Send Code</string>
+    <string name="xiaomi_2fa_requesting">Requesting verification code…</string>
+    <string name="xiaomi_2fa_code_sent">Code sent! Enter the 6-digit verification code.</string>
+    <string name="xiaomi_2fa_send_failed">Failed to send code. Try web verification below.</string>
+    <string name="xiaomi_2fa_verifying">Verifying 2FA code…</string>
+    <string name="xiaomi_2fa_web_extracting">Web 2FA complete, extracting session…</string>
+    <string name="xiaomi_2fa_verify_btn">Verify &amp; Sign In</string>
+    <string name="xiaomi_2fa_web_expand">Need captcha or push? Expand web verification</string>
+    <string name="xiaomi_2fa_web_collapse">Hide embedded web verification</string>
+    <string name="xiaomi_pair_title">Search &amp; Pair CUKTECH 10 Ultra</string>
+    <string name="xiaomi_switch_title">Switch Connected Device?</string>
+    <string name="xiaomi_switch_body_fmt">Disconnect the current charger and connect to %1$s (%2$s)?</string>
+    <string name="xiaomi_switch_confirm">Disconnect &amp; Connect</string>
+    <string name="xiaomi_pair_bt_off_title">Bluetooth is Turned OFF</string>
+    <string name="xiaomi_pair_bt_off_body">Turn on Bluetooth to scan and connect (Location is not required on Android 12+).</string>
+    <string name="xiaomi_pair_synced_header">Synced Cloud Devices (Tap to Connect)</string>
+    <string name="xiaomi_pair_token_ready">Token Ready</string>
+    <string name="xiaomi_pair_token_missing">Token Missing</string>
+    <string name="xiaomi_pair_discovered_fmt">Discovered Bluetooth Peripherals (%1$d)</string>
+    <string name="xiaomi_pair_empty">No 0xFE95 broadcast packets detected yet. Wake the charger screen or plug in a cable, or choose a synced device above.</string>
+
+    <!-- Tasker / Locale Action Plugin -->
+    <string name="tasker_title">Tasker: CUKTECH 10 Ultra</string>
+    <string name="tasker_disabled_warning">Tasker integration is disabled in Cuktech Security settings. Enable opt-in Tasker automation in the app so this action can execute.</string>
+    <string name="tasker_select_action">Select Action</string>
+    <string name="tasker_select_port">Select Port</string>
+    <string name="tasker_port_state">Port Power State</string>
+    <string name="tasker_power_on">Power ON</string>
+    <string name="tasker_power_off">Power OFF</string>
+    <string name="tasker_act_connect">Connect Charger BLE</string>
+    <string name="tasker_act_disconnect">Disconnect Charger BLE</string>
+    <string name="tasker_act_auto_connect">Proximity Auto-Connect (On/Off)</string>
+    <string name="tasker_act_set_port">Switch Port Power (On/Off)</string>
+    <string name="tasker_act_set_mode">Set Power Allocation Scenario</string>
+    <string name="tasker_act_set_timeout">Set Screen Timeout</string>
+    <string name="tasker_act_idle_off">Idle Screen-Off (Sleep LCD when idle)</string>
+    <string name="tasker_act_low_current">USB-A Low Current Mode (4h)</string>
+    <string name="tasker_act_port_timer">Set Port Delay Poweroff Timer</string>
+    <string name="tasker_act_charge_limit">Set Port Wh Auto-Cutoff Limit</string>
+    <string name="tasker_act_soft_reset">Force Soft Port Reset (Renegotiate PD)</string>
+    <string name="tasker_act_killswitch">Master Killswitch (All 4 Ports OFF)</string>
+    <string name="tasker_act_undo">Undo Last Command (within 20s)</string>
+    <string name="tasker_act_port_logging">Port History Logging (On/Off)</string>
+    <string name="tasker_act_telemetry">Master Telemetry (On/Paused)</string>
+    <string name="tasker_act_log_charging">Log Only When Phone Charging</string>
+    <string name="tasker_act_pause_locked">Pause Polling When Screen Locked</string>
+    <string name="tasker_scenario_title">Power Allocation Scenario</string>
+    <string name="tasker_timeout_title">Screen Timeout Duration</string>
+    <string name="tasker_idle_off_desc">Turns off the charger LCD when all ports are idle.</string>
+    <string name="tasker_low_current_title">USB-A Low Current Mode (4h)</string>
+    <string name="tasker_low_current_enable">Enable (4h)</string>
+    <string name="tasker_timer_duration_title">Shutoff Countdown Duration</string>
+    <string name="tasker_timer_preset_always">Always On (Cancel Timer)</string>
+    <string name="tasker_timer_preset_15m">15 Minutes</string>
+    <string name="tasker_timer_preset_30m">30 Minutes</string>
+    <string name="tasker_timer_preset_1h">1 Hour</string>
+    <string name="tasker_timer_preset_2h">2 Hours</string>
+    <string name="tasker_timer_preset_4h">4 Hours</string>
+    <string name="tasker_soft_reset_title">Force Soft Port Reset</string>
+    <string name="tasker_auto_connect_desc">Automatically connects to CUKTECH 10 Ultra on proximity/power restoration.</string>
+    <string name="tasker_logging_title">Port History &amp; Wh Logging</string>
+    <string name="tasker_logging_on">Logging ON</string>
+    <string name="tasker_logging_off">Logging OFF</string>
+    <string name="tasker_telemetry_desc">Enables or pauses active BLE telemetry polling across all ports.</string>
+    <string name="tasker_telemetry_on">Telemetry ON</string>
+    <string name="tasker_telemetry_pause">Pause Telemetry</string>
+    <string name="tasker_log_charging_desc">Restricts history recording to when the host phone is charging.</string>
+    <string name="tasker_pause_locked_desc">Suspends BLE polling and DB writes when screen is locked.</string>
+    <string name="tasker_pause_locked_on">Pause When Locked</string>
+    <string name="tasker_pause_locked_off">Continuous Logging</string>
+    <string name="tasker_limit_target_label">Energy Limit Target (Wh)</string>
+    <string name="tasker_limit_enable">Enable Limit</string>
+    <string name="tasker_limit_disable">Disable Limit</string>
+
+    <!-- Widgets -->
+    <string name="widget_off">OFF</string>
+    <string name="widget_tap_connect">Tap to connect</string>
+    <string name="widget_session_wh_fmt">%1$.2f Wh</string>
+
+    <!-- Expressive Charts & Breakdown -->
+    <string name="analytics_metric_stacked_w">Stacked W</string>
+    <string name="analytics_chart_scrub_hint">Drag across the chart to inspect exact telemetry samples</string>
+    <string name="analytics_breakdown_title">Port Energy Breakdown</string>
+    <string name="analytics_breakdown_total_fmt">Total logged: %1$.2f Wh</string>
+    <string name="analytics_port_filter_hint">Tap port chips to toggle series</string>
+    <string name="dialog_custom_range_desc">Select lookback window for telemetry history</string>
+
+    <!-- Live 120W Power Balancer -->
+    <string name="budget_card_title">120W GaN Live Balancer</string>
+    <string name="budget_utilization_fmt">%1$.1f / %2$.0f W (%3$d%%)</string>
+    <string name="budget_headroom_fmt">Headroom: %1$.1f W</string>
+    <string name="budget_status_idle">Idle · Standby</string>
+    <string name="budget_status_balanced">Balanced Load</string>
+    <string name="budget_status_high">High GaN Load</string>
+    <string name="budget_status_ceiling">Near 120W Ceiling</string>
+    <string name="budget_switch_scenario">Scenario: %1$s</string>
+
+    <!-- Charging ETA & Battery Capacity (mAh) -->
+    <string name="port_eta_title">Charging Estimate (mAh)</string>
+    <string name="port_eta_assign_btn">Battery</string>
+    <string name="port_eta_no_preset">Set battery mAh capacity for ETA estimate</string>
+    <string name="port_eta_nearly_full">Nearly full (taper phase)</string>
+    <string name="port_eta_idle">Waiting for active load</string>
+    <string name="port_eta_remaining_hm_fmt">~%1$dh %2$dm left · %3$s</string>
+    <string name="port_eta_remaining_m_fmt">~%1$d min left · %2$s</string>
+    <string name="port_eta_disclaimer" formatted="false">Estimate from Wh delivered vs battery capacity (charger cannot read phone BMS %)</string>
+    <string name="preset_sheet_title_fmt">Battery Capacity · %1$s</string>
+    <string name="preset_cat_phone">Phone (~19 Wh)</string>
+    <string name="preset_cat_tablet">Tablet (~30 Wh)</string>
+    <string name="preset_cat_handheld">Handheld (~50 Wh)</string>
+    <string name="preset_cat_laptop">Laptop (~70 Wh)</string>
+    <string name="preset_cat_custom">Custom</string>
+    <string name="preset_label_input">Device Name (Optional)</string>
+    <string name="preset_label_hint">e.g. Pixel, Laptop, Power Bank</string>
+    <string name="preset_wh_input">Battery Capacity (Wh)</string>
+    <string name="preset_mah_input">Battery Capacity (mAh)</string>
+    <string name="preset_unit_mah">mAh (3.85 V)</string>
+    <string name="preset_unit_wh">Wh</string>
+    <string name="preset_cells_label">Cell Configuration (3.85 V nominal)</string>
+    <string name="preset_cell_1s">1S · 3.85 V</string>
+    <string name="preset_cell_2s">2S · 7.7 V</string>
+    <string name="preset_cell_3s">3S · 11.55 V</string>
+    <string name="preset_computed_wh_fmt">Calculated Energy: %1$.1f Wh</string>
+    <string name="preset_computed_mah_fmt">Equivalent Capacity: ~%1$d mAh (%2$dS)</string>
+    <string name="preset_init_soc_input">Starting %</string>
+    <string name="preset_init_soc_fmt">Starting Charge Level: %1$d%%</string>
+
+    <!-- Cable Voltage-Drop & Health Diagnostics -->
+    <string name="cable_diag_label">Cable Health</string>
+    <string name="cable_health_idle">Idle</string>
+    <string name="cable_health_excellent">Healthy</string>
+    <string name="cable_health_moderate">Moderate Sag</string>
+    <string name="cable_health_unstable">Unstable</string>
+    <string name="cable_class_unknown">Checking…</string>
+    <string name="cable_class_3a">Standard 3A</string>
+    <string name="cable_class_5a">5A E-Marker</string>
+    <string name="cable_pps_variable">Variable PPS</string>
+    <string name="cable_sag_mv_fmt">ΔV %1$d mV</string>
+    <string name="cable_mohm_fmt">~%1$d mΩ</string>
+    <string name="cable_sheet_title_fmt">Cable Diagnostics · %1$s</string>
+    <string name="cable_sheet_desc">Infers voltage sag against fixed PD rails (5/9/12/15/20V) and estimates dynamic loop resistance during load steps. PPS negotiates variable voltage, so sag is omitted on PPS.</string>
+    <string name="cable_metric_nominal_rail">Nominal Rail</string>
+    <string name="cable_metric_measured">Measured Output</string>
+    <string name="cable_metric_sag">Voltage Sag (ΔV)</string>
+    <string name="cable_metric_resistance">Est. Loop Resistance</string>
+    <string name="cable_metric_peak">Peak Current / Power</string>
+    <string name="cable_metric_alerts">PD Renegotiations / Alerts</string>
+    <string name="cable_reset_stats_btn">Reset Cable Stats</string>
+
+    <!-- Local Automation Rules -->
+    <string name="settings_section_automation">Local Automation Rules</string>
+    <string name="automation_desc">Runs on-device telemetry rules via CommandDispatcher while connected over BLE.</string>
+    <string name="automation_empty">No local automation rules yet. Add a rule or tap a quick template below.</string>
+    <string name="automation_add_rule">New Rule</string>
+    <string name="automation_tpl_idle_off">+ Idle Auto-Off &lt;1.5W</string>
+    <string name="automation_tpl_night_mode">+ Night Dual 23:00</string>
+    <string name="automation_tpl_laptop_burst">+ Laptop Hybrid &gt;65W</string>
+    <string name="automation_tpl_idle_off_name">USB-C1 Idle Auto-Off</string>
+    <string name="automation_tpl_night_mode_name">Night 23:00 Dual Split</string>
+    <string name="automation_tpl_laptop_burst_name">Laptop &gt;65W Hybrid</string>
+    <string name="automation_trig_low_power">Low Power Cutoff (&lt; W)</string>
+    <string name="automation_trig_schedule">Daily Schedule (HH:mm)</string>
+    <string name="automation_trig_high_load">High Load Burst (&gt;= W)</string>
+    <string name="automation_act_port_off">Turn Port OFF</string>
+    <string name="automation_act_set_scene">Switch Power Scenario</string>
+    <string name="automation_rule_name_label">Rule Name</string>
+    <string name="automation_port_label">Target Port</string>
+    <string name="automation_threshold_label">Power Threshold (W)</string>
+    <string name="automation_hold_label_fmt">Hold Duration: %1$d sec</string>
+    <string name="automation_time_label_fmt">Schedule Time: %1$02d:%2$02d</string>
+    <string name="automation_days_label">Active Weekdays</string>
+    <string name="automation_cooldown_label_fmt">Cooldown: %1$d min</string>
+    <string name="automation_last_fired_fmt">Last triggered: %1$s</string>
+    <string name="automation_never_fired">Not triggered yet</string>
+    <string name="automation_editor_title">Automation Rule</string>
+    <string name="overview_automation_active_fmt">%1$d local automation rules active</string>
+    <string name="weekday_mon">Mon</string>
+    <string name="weekday_tue">Tue</string>
+    <string name="weekday_wed">Wed</string>
+    <string name="weekday_thu">Thu</string>
+    <string name="weekday_fri">Fri</string>
+    <string name="weekday_sat">Sat</string>
+    <string name="weekday_sun">Sun</string>
 </resources>

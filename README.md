@@ -1,186 +1,87 @@
-# ⚡ BLEBridge — CUKTECH 10 Ultra GaN Charger (`AD1204`)
+# ⚡ Cuktech — CUKTECH 10 Ultra (`AD1204`) v2.0.0
 
 <p align="center">
-  <b>Native Android BLE Controller, Live Telemetry Dashboard, Automation Hub &amp; TCP Gateway for the CUKTECH 10 Ultra 120W GaN Charger</b>
+  <b>Native Android Material 3 Expressive Controller, Live Telemetry Dashboard, Glance Widgets &amp; Hardened Automation Hub for CUKTECH 10 Ultra (120W GaN, MiOT PID <code>0x660E</code>, <code>njcuk.fitting.ad1204</code>)</b><br/>
+  Package: <code>com.joxit.cuktech</code> · Author: <b>joxit</b>
 </p>
 
 <p align="center">
-  <a href="../../releases"><img src="https://img.shields.io/github/v/release/cramqin/BLEBridge-Cuktech10-Ultra?label=Release&amp;color=00E5FF" alt="Release" /></a>
+  <a href="../../releases"><img src="https://img.shields.io/github/v/release/joxit/cuktech-10-ultra?label=Release&amp;color=00E5FF" alt="Release" /></a>
   <a href="https://github.com/ImranR98/Obtainium"><img src="https://img.shields.io/badge/Obtainium-Compatible-8A2BE2?logo=android&amp;logoColor=white" alt="Obtainium" /></a>
-  <img src="https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?logo=android&amp;logoColor=white" alt="Android" />
-  <img src="https://img.shields.io/badge/Kotlin-2.2%2B-7F52FF?logo=kotlin&amp;logoColor=white" alt="Kotlin" />
+  <img src="https://img.shields.io/badge/Platform-Android%208.0%2B%20(Target%20SDK%2036)-3DDC84?logo=android&amp;logoColor=white" alt="Android" />
+  <img src="https://img.shields.io/badge/UI-Material%203%20Expressive%20%2B%20Glance-7F52FF?logo=kotlin&amp;logoColor=white" alt="Material 3 Expressive" />
   <img src="https://img.shields.io/badge/Device-CUKTECH%2010%20Ultra%20(AD1204)-00E5FF" alt="Device" />
-  <img src="https://img.shields.io/badge/100%25-Vibe%20Coded%20%E2%9C%A8-FF6900" alt="Vibe Coded" />
 </p>
-
-> [!NOTE]
-> **✨ Vibe-Coded Disclaimer:** This entire native Android application was **vibe-coded** with AI pair-programming by combining and porting two awesome open-source repositories into a unified Kotlin + Jetpack Compose Android app. While it is tested daily on real **CUKTECH 10 Ultra (`AD1204`)** hardware, please review the code and use at your own discretion!
 
 ---
 
 ## 📖 Quick Links
-- **[Full Features & Hardware Documentation (FEATURES.md)](FEATURES.md)** — Complete deep-dive into every single feature, register, dialog, graph, and automation intent.
-- **[TCP Socket Bridge & Remote PC Guide (docs/TCP_SOCKET_BRIDGE.md)](docs/TCP_SOCKET_BRIDGE.md)** — Step-by-step instructions for testing raw TCP telemetry on local Wi-Fi, ADB, or Tailscale VPN.
-- **[Releases & APK Downloads](../../releases)** — Pre-built signed APKs for Android 8.0+.
-- **[Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.cramqin.blecuktech10%22%2C%22url%22%3A%22https%3A//github.com/cramqin/BLEBridge-Cuktech10-Ultra%22%2C%22author%22%3A%22cramqin%22%2C%22name%22%3A%22BLEBridge%20-%20CUKTECH%2010%20Ultra%22%7D)** — 1-tap install and automatic background updates via Obtainium.
-- **[OEM Background Optimization Guide](https://dontkillmyapp.com/)** — Fix aggressive battery killers on Xiaomi HyperOS, Samsung, etc.
-
----
-
-## 📱 App Screenshots
-
-| <div width="33%">Core Telemetry & Controls</div> | <div width="33%">Analytics & Automation</div> | <div width="33%">Account & Widgets</div> |
-| :---: | :---: | :---: |
-| <a href="docs/screenshots/screenshot_01_gateway_connected.png"><img src="docs/screenshots/screenshot_01_gateway_connected.png" width="100%" alt="Gateway & Keepalive" /></a><br><sub><b>Gateway & Keepalive</b></sub> | <a href="docs/screenshots/screenshot_04_telemetry_graph.png"><img src="docs/screenshots/screenshot_04_telemetry_graph.png" width="100%" alt="Real-Time Rolling Power Curves" /></a><br><sub><b>Real-Time Rolling Power Curves</b></sub> | <a href="docs/screenshots/screenshot_02_login_modal.png"><img src="docs/screenshots/screenshot_02_login_modal.png" width="100%" alt="4 Cloud Login Modes & 2FA" /></a><br><sub><b>4 Cloud Login Modes & 2FA</b></sub> |
-| <a href="docs/screenshots/screenshot_03_telemetry_live.png"><img src="docs/screenshots/screenshot_03_telemetry_live.png" width="100%" alt="Hardware Port Deep-Linking" /></a><br><sub><b>Hardware Port Deep-Linking</b></sub> | <a href="docs/screenshots/screenshot_06_power_distribution.png"><img src="docs/screenshots/screenshot_06_power_distribution.png" width="100%" alt="Power Proportion Breakdown" /></a><br><sub><b>Power Proportion Breakdown</b></sub> | <a href="docs/screenshots/screenshot_05_themes.png"><img src="docs/screenshots/screenshot_05_themes.png" width="100%" alt="5 Dark Accent Palettes" /></a><br><sub><b>5 Dark Accent Palettes</b></sub> |
-| <a href="docs/screenshots/screenshot_07_port_protocols.png"><img src="docs/screenshots/screenshot_07_port_protocols.png" width="100%" alt="Port Protocols & Countdown Timers" /></a><br><sub><b>Port Protocols & Countdown Timers</b></sub> | <a href="docs/screenshots/screenshot_08_charging_stats.png"><img src="docs/screenshots/screenshot_08_charging_stats.png" width="100%" alt="Session History & Wh Logs" /></a><br><sub><b>Session History & Wh Logs</b></sub> | <a href="docs/screenshots/screenshot_10_widget_preview.png"><img src="docs/screenshots/screenshot_10_widget_preview.png" width="100%" alt="2x2 Solid Dark Widget Tile" /></a><br><sub><b>2x2 Solid Dark Widget Tile</b></sub> |
-| <a href="docs/screenshots/screenshot_09_automation_setup.png"><img src="docs/screenshots/screenshot_09_automation_setup.png" width="100%" alt="Tasker & Screen Hardware Control" /></a><br><sub><b>Tasker & Screen Control</b></sub> | | |
-
-<p align="center">
-  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.cramqin.blecuktech10%22%2C%22url%22%3A%22https%3A//github.com/cramqin/BLEBridge-Cuktech10-Ultra%22%2C%22author%22%3A%22cramqin%22%2C%22name%22%3A%22BLEBridge%20-%20CUKTECH%2010%20Ultra%22%7D">
-    <img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" width="220" alt="Add to Obtainium" />
-  </a>
-  <br>
-  <sub><i>Get automatic background updates and 1-tap install via <a href="https://github.com/ImranR98/Obtainium">Obtainium</a></i></sub>
-</p>
+- **[Complete v2.0.0 Features & Hardware Guide (FEATURES.md)](FEATURES.md)** — Detailed reference for telemetry, protocols, safety cutoffs, Glance widgets, Live Updates, backups, and automation.
+- **[Hardened TCP JSON Gateway Guide (docs/TCP_SOCKET_BRIDGE.md)](docs/TCP_SOCKET_BRIDGE.md)** — Loopback-first (`127.0.0.1:8080`) token-authenticated TCP socket protocol and ADB forwarding instructions.
+- **[Releases & Signed APKs + `.sha256`](../../releases)** — Signed releases (`Cuktech-10-Ultra-v*.apk`) built via GitHub Actions with SHA-256 verification sidecars.
+- **[Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.joxit.cuktech%22%2C%22url%22%3A%22https%3A//github.com/joxit/cuktech-10-ultra%22%2C%22author%22%3A%22joxit%22%2C%22name%22%3A%22Cuktech%20-%20CUKTECH%2010%20Ultra%22%7D)** — Background update tracking directly from GitHub Releases.
+- **[OEM Background Guide (dontkillmyapp.com)](https://dontkillmyapp.com/)** — Exempt background BLE services on aggressive OEM ROMs.
 
 ---
 
 ## 🙏 Acknowledgments & Heritage
 
-This project brings full native Android control for the **CUKTECH 10 Ultra 120W GaN Charger (`njcuk.fitting.ad1204`, Product ID `0x660E`)** by combining and porting the work of two open-source repositories:
+**Cuktech (`com.joxit.cuktech`)** for **CUKTECH 10 Ultra (`njcuk.fitting.ad1204`, Product ID `0x660E`)** is an independent app built by **joxit**, utilizing MiOT BLE protocol findings from:
 
-1. **[`kairui1108/cuktech-ble-server`](https://github.com/kairui1108/cuktech-ble-server)** *(and [`kairui1108/cuktech-ble-ha`](https://github.com/kairui1108/cuktech-ble-ha))* — Complete reverse-engineered Xiaomi MiOT BLE v5 + CUKTECH Extended v2 protocol implementation, 2-phase ECDH (`SECP256R1`) + `HKDF-SHA256` + `AES-CCM` authentication handshake, 8-byte port telemetry decoding, adaptive energy integration (`Wh`), and hardware SIID/PIID register specifications.
-2. **[`woldphone/BLEBridge`](https://github.com/woldphone/BLEBridge)** — Resilient Android Foreground Service BLE-to-TCP network bridge architecture, sequential GATT coroutine task queue, automatic MTU 512 negotiation, and GATT cache recovery.
-
-Huge thanks to the authors of both repositories for making this native Android port possible!
+1. **[`kairui1108/cuktech-ble-server`](https://github.com/kairui1108/cuktech-ble-server)** *(and [`kairui1108/cuktech-ble-ha`](https://github.com/kairui1108/cuktech-ble-ha))* — Xiaomi MiOT BLE v5 + CUKTECH Extended v2 protocol specification, 2-phase `SECP256R1` ECDH + `HKDF-SHA256` + `AES-CCM` handshake, 8-byte port telemetry decoding, and hardware SIID/PIID definitions.
+2. **[`woldphone/BLEBridge`](https://github.com/woldphone/BLEBridge)** — Early Foreground Service & sequential GATT queue pattern inspiration.
 
 ---
 
-## ⚡ Performance, Battery & Polling Architecture
+## ✨ What's New in v2.0.0
 
-Unlike typical smart home bridges that hammer Bluetooth channels or drain your phone battery, BLEBridge was engineered specifically around the AD1204U hardware's exact BLE characteristics:
-
-- **0.0% CPU & True Deep Sleep (Doze Mode) Friendly:**
-  - When the screen is turned off or device is locked, the CPU partial wakelock is strictly released. The phone's Application Processor enters deep sleep (Doze mode) without overnight battery drain, while the hardware Bluetooth controller handles BLE packets and GATT notifications.
-  - **Silent Idle Telemetry Filter:** When a poll returns unchanged `0.0V 0.0A (Idle)` values, the app **silently drops redundant state emissions**. It does not re-compose UI components, trigger launcher widget redraws, fire Home Assistant webhooks, or flood the console log.
-  - **Self-Healing Persistent Notification:** The foreground notification is sticky (`setOngoing(true)`) and automatically re-verifies its visibility. If accidentally cleared by the user or system, it immediately re-posts upon app resume or incoming telemetry.
-- **Smart Push + Adaptive Polling (Hardware-Aware):**
-  - **USB-C1 & USB-C2:** The charger hardware automatically broadcasts spontaneous BLE push notifications (`b4 = 0x04`) the instant a cable is plugged in or wattage shifts. BLEBridge listens passively for C1/C2—only running a gentle `3s` backup poll when actively charging to catch unplugs, and **0 polls while idle**.
-  - **USB-C3 & USB-A:** The charger firmware never broadcasts push notifications on C3/A. BLEBridge polls C3 and USB-A adaptively: every `5s` when all ports are idle (ensuring fast plug-in detection) and ramps up to `3s` whenever any port is active for smooth `Wh` energy integration.
-- **Sequential Mutex Hardware Queue & Controller Cooldown:**
-  - Prevents Telink BLE controller deadlocks by funneling all GATT writes through a sequential, non-blocking coroutine queue with automatic 1.8s command timeouts.
-  - Implements an automated 2-second disconnect cooldown with button debounce and atomic GATT handle fencing, preventing rapid spamming, HCI state desynchronization, and Android Bluetooth error 133.
-- **Safe Multi-Device Switching:**
-  - Seamlessly browse discovered peripherals without breaking active telemetry. Switching to another charger prompts for confirmation, gracefully tearing down the active GATT connection before establishing a new session.
-- **Widget Battery Optimization:**
-  - The Android Home Screen Widgets declare `updatePeriodMillis="0"` (zero alarm-based wakeups). They update reactively only when live state actually changes and are automatically paused by Android when your screen is off.
-
----
-
-## ⚠️ Prerequisites & Xiaomi Mi Home Requirements
-
-Before using **BLEBridge – CUKTECH 10 Ultra**, please note the following hardware and account requirements:
-
-1. **Initial Device Pairing (Mi Home App Required Once):**
-   - Your CUKTECH 10 Ultra **must first be added/bound to your Xiaomi account using the official Xiaomi Mi Home (米家) app**.
-   - During initial binding, Xiaomi generates the unique **12-byte MiOT BLE Token** required for Phase B encrypted BLE authentication.
-2. **Mainland China (`CN`) Region Required:**
-   - The CUKTECH 10 Ultra (`njcuk.fitting.ad1204`) is registered under Xiaomi's **Mainland China (`cn`)** cloud server.
-   - In the Xiaomi Mi Home app, your region **must be set to Mainland China (中国大陆)** when adding the charger.
-3. **Exclusive BLE Connection (One App at a Time):**
-   - The charger's Bluetooth controller only accepts **one active GATT connection at a time**. Do not keep the Mi Home app open in the foreground while BLEBridge is connected (and vice versa).
-4. **Firmware Updates:**
-   - Official OTA firmware updates for the charger must be performed through the **Xiaomi Mi Home** app. BLEBridge includes a 1-tap **"Open in Xiaomi Mi Home"** button that cleanly releases the Bluetooth handle and launches Mi Home for firmware checks.
-5. **Background Keepalive & OEM Battery Optimization ([dontkillmyapp.com](https://dontkillmyapp.com/)):**
-   - To keep live BLE telemetry, widgets, and background automations running reliably when your screen is off, tap **"Ignore Battery Optimization"** inside the app's **Background Keepalive & System Integration** card.
-   - Aggressive Android OEMs (Xiaomi HyperOS / MIUI, Samsung OneUI, OPPO ColorOS, Vivo OriginOS, Huawei, etc.) often kill background services even with standard Android battery whitelist enabled. Tap the **"OEM Background Guide (dontkillmyapp.com)"** button in the app or visit **[https://dontkillmyapp.com/](https://dontkillmyapp.com/)** to configure Autostart and set Battery Saver to *No Restrictions*.
-6. **Invisible in Standard Android System Bluetooth Settings (Normal Behavior):**
-   - **You will NOT see the CUKTECH 10 Ultra in your phone's standard Android Bluetooth settings menu**, nor can you pair to it from Android's system Bluetooth scanner.
-   - This is because the charger broadcasts nameless, encrypted Xiaomi MiOT `0xFE95` BLE service advertisements (`Product ID 0x660E`) rather than classic Bluetooth or standard HID/audio profiles.
-   - **BLEBridge's built-in scanner specifically decodes `0xFE95` advertisements** and matches the embedded MAC/Product ID against your synced Xiaomi Cloud credentials—so even though it's invisible in your phone's Bluetooth settings, **it will appear and connect right inside BLEBridge!**
+- **Material 3 Expressive (MD3E) & Adaptive UX (`Overview`, `Ports`, `Analytics`, `Settings` + `Diagnostics`):**
+  - True **Material You Dynamic Color** toggle (`useDynamicColor`, Android 12+), Light/Dark/System themes, optional **AMOLED Black** dark mode, spring motion & haptic feedback, predictive back & `WindowInsets.safeDrawing` (`enableEdgeToEdge()`), and **NavigationRail** on tablets/foldables.
+  - **Custom Monochrome Vector Icon & Android 12+ SplashScreen:** Built from the clean Cuktech monochrome vector glyph.
+  - **3-Step First-Install Onboarding (`OnboardingScreen`):** Explains 120W GaN telemetry, Mainland China (`CN`) single-client BLE behavior, and requests Bluetooth & Notification permissions cleanly; replayable anytime in Settings.
+  - **Compact Top-Bar Connection Pill:** Quick-access pairing (`Search & Pair`) and Connect/Disconnect/Cancel pill lives right in the `TopAppBar`, keeping the `Overview` dashboard uncluttered; `Diagnostics` sits neatly inside `Settings`.
+  - **100% RU / EN / System Localization:** Live switching across every screen, dialog, Toast, Tasker plugin, notification, and Glance widget without restarting the app.
+  - **Interactive Hardware Faceplate:** Visual front-panel representation of `USB-C1`, `USB-C2`, `USB-C3`, and `USB-A` with negotiated protocol chips, power bars, and 1-tap navigation to each port's card.
+- **Real Safety Controls & Hardware Fidelity:**
+  - **Master Killswitch (Sequential Per-Port Cutoff):** Disables all 4 ports sequentially over `PIID 16` with per-port outcome reporting and snapshot restore.
+  - **Localized Undo Snackbar with Safety Lockout:** Supports Undo for user commands (`SetPortEnabled`, `SceneMode`, `ScreenTimeout`, timers, profiles) while automatically invalidating Undo/Restore whenever a `Wh` limit or countdown safety cutoff fires.
+  - **Strict Per-Port Hardware Protocols:** Matches actual AD1204 silicon — `PD`/`PPS`/`UFCS` on `USB-C1` & `USB-C2`, and `UFCS`/`SCP` + `USB-A 4h Low-Current Mode` on `USB-C3` & `USB-A`.
+  - **Cable / Connection Anomaly Detector:** Alerts on rapid PD renegotiation collapses, sudden load-drop loops, and BLE flapping loops.
+- **Validated Energy Integration & Utility Economics (`Room` + `DataStore`):**
+  - Integrates `Wh` strictly across confirmed consecutive telemetry samples without fabricating energy across BLE disconnects or dead gaps.
+  - **Day/Night Time-of-Use Electricity Tariffs** with immutable session cost snapshots and **30-day automatic archiving** into daily aggregates.
+  - **Interactive Multi-Interval Analytics & Session Replay:** Switch between `60s`, `5m`, `30m`, `Session`, `Today`, `Custom` and separated charts (`Power W`, `Voltage V`, `Current A`, `Energy Wh`, `Protocols`), plus chronological scrubbing & playback and custom **Charging Profiles**.
+- **Android 16+ Live Updates & MD3E Glance Widgets:**
+  - **Promoted Ongoing Notification (Android 16 / API 36+):** Uses native `NotificationCompat` Live Updates (`requestPromotedOngoing` + compact `shortCriticalText`). *Status-bar chip / AOD prominence depends on user grant of Promoted Notifications in system settings and OEM support.*
+  - **Completion Alerts with Hysteresis & Quiet Hours:** Distinguishes sustained trickle completion (`<= threshold W` for `30–300s`) from abrupt cable unplugs.
+  - **Material 3 Expressive Glance Widgets (`4x2` & `2x2`) with Per-Widget Configuration:** Dynamic Color / M3 rounded surface tiles (`updatePeriodMillis="0"`), transparent dynamic-tinted gradient `ARGB_8888` sparkline, localized RU/EN labels, and 1-tap port/scenario controls.
+- **Fail-Closed Security & Encrypted SAF Backup:**
+  - **Zero-Trust Secret Storage (`AndroidKeyStore` AES-256-GCM):** Zero raw plaintext key fallback; automatic backup exclusion (`android:allowBackup="false"`).
+  - **Opt-In External Automation:** Tasker plugin, `com.joxit.cuktech.*` ADB broadcast intents, and loopback-first TCP JSON Gateway (`127.0.0.1:8080`) are **disabled by default** and protected by a per-install 256-bit CSPRNG token (`MessageDigest.isEqual`), exponential lockout, and rate limits.
+  - **Encrypted `.cukbackup` SAF Export/Import:** `PBKDF2WithHmacSHA256` (210k iterations) + `AES-256-GCM`, excluding Xiaomi/automation secrets unless explicitly opted in.
+  - **Direct In-App GitHub Updater:** HTTPS download + **fail-closed SHA-256 verification** against release digest / `.sha256` sidecar before package install.
 
 ---
 
-## 📊 Comparison: BLEBridge vs. Official Xiaomi Mi Home App
+## ⚠️ Prerequisites & Hardware Constraints
 
-| Feature / Capability | **BLEBridge (This App)** | **Xiaomi Mi Home App** |
-| :--- | :---: | :---: |
-| **Initial Charger Binding & Cloud Registration** | ❌ *(Requires Mi Home once)* | ✅ **Yes** |
-| **Official Charger OTA Firmware Updates** | ❌ *(Hands off to Mi Home)* | ✅ **Yes** |
-| **100% Local Offline BLE Control (After Token Sync)** | ✅ **Yes (Zero cloud dependency)** | ⚠️ **Bluetooth (Requires cloud for plugin load/updates)** |
-| **Connection & Startup Speed** | ⚡ **Instant (~1.5s native GATT)** | 🐢 Slow (Heavy plugin initialization) |
-| **Persistent Background Keepalive & Live Notification** | ✅ **Yes (24/7 foreground service)** | ❌ Disconnects when screen locks |
-| **Interactive Home Screen Widgets (`4x2` & `2x2`)** | ✅ **Yes (Soft Glass & Solid Dark)** | ❌ None |
-| **Hardware Visual Panel (Interactive Port Jump)** | ✅ **Yes (Tap port graphic → jumps to port settings)** | ⚠️ Non-interactive graphic |
-| **Multi-Line Real-Time Power Curves & Rolling Canvas Graph** | ✅ **Yes (Live 60s multi-line graph)** | ⚠️ Cloud hourly chart only |
-| **Force Soft Port Reset (USB-PD Contract Re-negotiation)** | ✅ **Yes (App, Tasker, ADB)** | ❌ None |
-| **Per-Port Live Telemetry (`V`, `A`, `W`, Fast-Charge Protocol)** | ✅ **Yes (Real-time graphs & cards)** | ✅ Yes |
-| **1-Tap Individual Port Power Toggle (`C1`, `C2`, `C3`, `USB-A`)** | ✅ **Yes (App, Widget, Tasker, ADB)** | ✅ Yes |
-| **Power Allocation Scenarios (`AI`, `Hybrid`, `Single`, `Dual`)** | ✅ **Yes (Dialog, Widget, Tasker)** | ✅ Yes |
-| **Per-Port Fast-Charge Protocol Switches (`PD`, `PPS`, `UFCS`, `SCP`)** | ✅ **Yes (Individual port control)** | ✅ Yes |
-| **Port Auto-Off Countdown Timer (`30m` – `10h`) with Live Ticker** | ✅ **Yes (Second-by-second countdown)** | ⚠️ Basic timer only |
-| **Per-Port Energy Cutoff Limit (`Wh` Auto-Shutoff: Once / Always)** | ✅ **Yes (Automatic port cutoff)** | ❌ None |
-| **Charging Session History, Peak Wattage & `Wh` Energy Integrator** | ✅ **Yes (With CSV export & charts)** | ⚠️ Limited cloud chart |
-| **Tasker / Locale / MacroDroid Native Plugin** | ✅ **Yes (Full UI action plugin)** | ❌ None |
-| **ADB / Termux Broadcast Intent API** | ✅ **Yes** | ❌ None |
-| **Home Assistant HTTP Webhook Push Integration** | ✅ **Yes** | ❌ None |
-| **Raw TCP-to-BLE Socket Gateway (`port 8080`)** | ✅ **Yes** | ❌ None |
-| **Built-in Console Log with Filtering & Live Copy** | ✅ **Yes (1,000-message rolling buffer)** | ❌ None |
-| **Manual Bluetooth Stack & MiOT Handshake Diagnostics** | ✅ **Yes (On-demand stack audit)** | ❌ None |
-
----
-
-## ✨ Features Overview
-
-👉 **For the complete in-depth guide to every feature, register, and dialog, see [FEATURES.md](FEATURES.md).**
-
-1. **Interactive Charger Faceplate:** Custom dark obsidian representation of the physical charger on the Live tab. Tap any port on the graphic to jump directly to that port on the Ports tab with a glowing highlight.
-2. **Real-Time Rolling Power Graphs:** 60-second multi-line Canvas graph (`Total`, `C1`, `C2`, `C3`, `USB-A`) + embedded sparklines on home screen widgets.
-3. **Soft Port Reset (`PIID 25`):** Power-cycles DC-DC buck-boost switches (`0x00 -> 0x0F`) to force fresh USB-PD/PPS contract re-negotiation without pulling plugs.
-4. **4 Cloud Login Modes + 2FA:** Google/Web OAuth, Mi Home QR scan, direct password login with SMS/Email 2FA, or offline manual token entry. Multi-device charger switcher included.
-5. **Full Port & Protocol Control:** Independent toggles for PD (up to 100W), PPS, UFCS, Huawei SCP, and USB-A 4h low-current mode.
-6. **Energy Limits & Timers:** Auto-shutoff by energy (`Wh`) or duration (`30m`–`10h`) with live second-by-second countdown badges.
-7. **Session History & CSV Export:** Trapezoidal `Wh` energy integration, Session Detail Inspector dialog, Consolidated Sessions Table dialog, and customizable CSV exports saved to `Downloads/cuktech10/history/`.
-8. **Resilient Connection Lifecycle & Cooldown:** Automated 2-second cooldown on disconnect with debounced buttons and atomic GATT fencing, preventing HCI race conditions and status 133 errors.
-9. **Persistent Live Notification & Keepalive:** Ongoing Android Foreground Service notification displaying live wattage, active ports, connection status, and quick action controls without opening the app.
-10. **4 Home Screen Widgets:** Soft Glass (`4x2` & `2x2`) and Solid Dark (`4x2` & `2x2`) with 1-tap port toggles and charging sparkline.
-11. **Automation Hub:** Full Tasker/Locale action plugin, live telemetry broadcast intent (`com.cramqin.blecuktech10.TELEMETRY_UPDATE`), Home Assistant Webhook, and ADB command interface.
-12. **Proximity Auto-Connect & Background Reconnect:** Automatically connects when the charger comes into Bluetooth range. Features persistent background reconnect across power cycles (with 5-minute progressive battery backoff), startup auto-reconnection, manual disconnect override on toggle, and Tasker action/intent control (`com.cramqin.blecuktech10.SET_AUTO_CONNECT`).
-13. **Connection & Disconnection Toast Feedback:** Lightweight, debounced native Android Toast alerts on every connect and disconnect event across all connection modes.
-
----
-
-## 🗺️ Roadmap (Target: v2.0.0)
-
-We are continuously enhancing the BLEBridge experience. The following features are planned for upcoming releases toward **v2.0.0**:
-
-- [ ] **Master Killswitch:** 1-tap master toggle in the app dashboard and ongoing notification action to cut or restore power to all 4 ports simultaneously.
-- [ ] **Electricity Costing & Monthly `kWh` Tracker:** Configure your local power utility rate (e.g. `₱/kWh`, `$/kWh`) to automatically calculate and track power consumption costs per session and per month.
-- [ ] **Historical Session Graph Replay:** Interactive graph explorer to replay wattage and voltage curves from archived charging sessions.
-- [ ] **Interactive Port Action Toasts:** Contextual toast alerts with quick "Undo" actions when ports are toggled on/off.
-- [ ] **Settings Backup & Cloud Sync:** Export/import encrypted settings, port aliases, and automation configs, with optional cloud backup tied to your authenticated Xiaomi account.
-- [ ] **In-App Direct APK Updater:** Automatic background version check with direct in-app download and installation of official releases without visiting GitHub.
+1. **Initial Mi Home Binding Required Once:** The CUKTECH 10 Ultra (`njcuk.fitting.ad1204`) must be bound once in the official **Xiaomi Mi Home (中国大陆 / Mainland China server)** app to generate the 12-byte MiOT BLE Token.
+2. **One Active BLE Connection at a Time:** The charger's Telink BLE MCU accepts only **1 active GATT link**. Close Mi Home while using **Cuktech**; **Settings** provides a 1-tap handoff button for official firmware OTA updates inside Mi Home.
+3. **Hidden in System Bluetooth Settings (Normal):** Because the charger advertises nameless encrypted `0xFE95` MiOT beacons (`PID 0x660E`), pair/connect from inside **Cuktech**'s Scanner (`Search & Pair`) or Xiaomi Cloud sync.
+4. **Polling & Wake Policy Transparency:** Background telemetry runs inside an Android `connectedDevice` Foreground Service with configurable **Pause polling when screen is locked** or **Log only when phone charging** policies.
 
 ---
 
 ## 📦 Installation & Building
 
-### Download Pre-built Signed APK
-Grab the latest signed `.apk` directly from the [**Releases**](../../releases) page and install it on any Android 8.0+ (`API 26+`) device.
+### Signed Release APKs
+Download the latest signed `.apk` (and `.sha256` verification file) from [**GitHub Releases**](../../releases) for Android 8.0+ (`API 26+`), or track updates inside **Settings -> Check for App Updates** or [**Obtainium**](https://github.com/ImranR98/Obtainium).
 
-<p align="left">
-  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.cramqin.blecuktech10%22%2C%22url%22%3A%22https%3A//github.com/cramqin/BLEBridge-Cuktech10-Ultra%22%2C%22author%22%3A%22cramqin%22%2C%22name%22%3A%22BLEBridge%20-%20CUKTECH%2010%20Ultra%22%7D">
-    <img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" width="220" alt="Add to Obtainium" />
-  </a>
-</p>
-
-*(Tap the badge above if you have [Obtainium](https://github.com/ImranR98/Obtainium) installed for seamless 1-tap installation and automatic background updates directly from GitHub releases!)*
-
-### Build from Source
+### Build & Test from Source
 ```bash
-git clone https://github.com/cramqin/BLEBridge-Cuktech10-Ultra.git
-cd BLEBridge-Cuktech10-Ultra
+git clone https://github.com/joxit/cuktech-10-ultra.git
+cd cuktech-10-ultra
+./gradlew :app:testDebugUnitTest
 ./gradlew assembleDebug
 ```
 
@@ -188,4 +89,4 @@ cd BLEBridge-Cuktech10-Ultra
 
 ## 📄 License & Disclaimer
 
-This project is an independent open-source community tool and is **not** affiliated with, endorsed by, or sponsored by CUKTECH or Xiaomi Corporation. Use at your own risk.
+Independent open-source community application by **joxit**; **not** affiliated with, endorsed by, or sponsored by CUKTECH or Xiaomi Corporation. Hardware control and automation features are provided as-is; always verify electrical safety limits for your connected devices.

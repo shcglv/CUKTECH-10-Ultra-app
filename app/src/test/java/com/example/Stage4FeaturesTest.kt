@@ -388,23 +388,23 @@ class Stage4FeaturesTest {
         val releaseJson = """
             {
               "tag_name": "v2.5.0",
-              "name": "BLEBridge v2.5.0",
+              "name": "Cuktech 10 Ultra v2.5.0",
               "prerelease": false,
               "draft": false,
-              "html_url": "https://github.com/cramqin/BLEBridge-Cuktech10-Ultra/releases/tag/v2.5.0",
+              "html_url": "https://github.com/joxit/cuktech-10-ultra/releases/tag/v2.5.0",
               "published_at": "2026-11-20T12:00:00Z",
-              "body": "### Changelog\n- Material 3 Glance Widgets\n- Android 16 Live Updates",
+              "body": "### Changelog\n- Material 3 Expressive Glance Widgets\n- Android 16 Live Updates",
               "assets": [
                 {
-                  "name": "blebridge-v2.5.0-release.apk",
+                  "name": "Cuktech-10-Ultra-v2.5.0.apk",
                   "size": 12582912,
-                  "browser_download_url": "https://github.com/cramqin/BLEBridge-Cuktech10-Ultra/releases/download/v2.5.0/blebridge-v2.5.0-release.apk",
+                  "browser_download_url": "https://github.com/joxit/cuktech-10-ultra/releases/download/v2.5.0/Cuktech-10-Ultra-v2.5.0.apk",
                   "digest": "sha256:$expectedSha"
                 },
                 {
-                  "name": "blebridge-v2.5.0-release.apk.sha256",
+                  "name": "Cuktech-10-Ultra-v2.5.0.apk.sha256",
                   "size": 96,
-                  "browser_download_url": "https://github.com/cramqin/BLEBridge-Cuktech10-Ultra/releases/download/v2.5.0/blebridge-v2.5.0-release.apk.sha256"
+                  "browser_download_url": "https://github.com/joxit/cuktech-10-ultra/releases/download/v2.5.0/Cuktech-10-Ultra-v2.5.0.apk.sha256"
                 }
               ]
             }

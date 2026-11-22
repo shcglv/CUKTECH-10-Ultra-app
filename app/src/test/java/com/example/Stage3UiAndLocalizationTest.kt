@@ -138,17 +138,39 @@ class Stage3UiAndLocalizationTest {
         }
 
         composeTestRule.onNodeWithTag("ports_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("ports_tab_row").assertIsDisplayed()
         composeTestRule.onNodeWithTag("port_1_proto_pd").assertExists()
         composeTestRule.onNodeWithTag("port_1_proto_pps").assertExists()
         composeTestRule.onNodeWithTag("port_1_proto_ufcs").assertExists()
 
-        composeTestRule.onNodeWithTag("ports_screen").performScrollToNode(hasTestTag("port_card_3"))
+        // Verify DevicePresetSheet defaults to mAh + 1S/2S/3S while exposing Wh mode and category presets
+        composeTestRule.onNodeWithTag("port_preset_button_1").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("preset_mode_mah").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("preset_mode_wh").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("preset_cat_phone").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("preset_mah_input").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("preset_cell_1s").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("preset_cell_2s").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("preset_init_soc_input").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("preset_initial_soc_slider").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("preset_mode_wh").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("preset_wh_input").assertIsDisplayed()
+        androidx.test.espresso.Espresso.pressBack()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("port_tab_3").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("port_card_3").assertIsDisplayed()
         composeTestRule.onNodeWithTag("port_3_proto_ufcs").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("port_3_proto_scp").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("port_3_proto_pd").assertDoesNotExist()
         composeTestRule.onNodeWithTag("port_3_proto_pps").assertDoesNotExist()
 
-        composeTestRule.onNodeWithTag("ports_screen").performScrollToNode(hasTestTag("port_card_4"))
+        composeTestRule.onNodeWithTag("port_tab_4").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("port_card_4").assertIsDisplayed()
         composeTestRule.onNodeWithTag("port_4_proto_ufcs").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("port_4_proto_scp").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("usba_low_current_switch").performScrollTo().assertIsDisplayed()
@@ -239,10 +261,12 @@ class Stage3UiAndLocalizationTest {
         }
 
         composeTestRule.onNodeWithTag("analytics_chart_card").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("chart_metric_voltage_v").performScrollTo().performClick()
-        composeTestRule.onNodeWithTag("chart_metric_current_a").performScrollTo().performClick()
-        composeTestRule.onNodeWithTag("chart_metric_cumulative_wh").performScrollTo().performClick()
-        composeTestRule.onNodeWithTag("chart_metric_protocols").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("chart_metric_stacked_w").performClick()
+        composeTestRule.onNodeWithTag("chart_metric_per_port_w").performClick()
+        composeTestRule.onNodeWithTag("chart_metric_voltage_v").performClick()
+        composeTestRule.onNodeWithTag("chart_metric_current_a").performClick()
+        composeTestRule.onNodeWithTag("chart_metric_cumulative_wh").performClick()
+        composeTestRule.onNodeWithTag("chart_metric_protocols").performClick()
 
         composeTestRule.onNodeWithTag("analytics_screen")
             .performScrollToNode(hasTestTag("replay_session_button_$sessionId"))

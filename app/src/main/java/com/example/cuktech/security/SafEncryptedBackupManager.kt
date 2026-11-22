@@ -25,7 +25,9 @@ data class BackupPayload(
     val chargeLimitsArray: JSONArray,
     val aliasesArray: JSONArray,
     val profilesArray: JSONArray,
-    val devicesSecretsArray: JSONArray? = null
+    val devicesSecretsArray: JSONArray? = null,
+    val portPresetsArray: JSONArray = JSONArray(),
+    val automationRulesArray: JSONArray = JSONArray()
 )
 
 /**
@@ -64,6 +66,8 @@ object SafEncryptedBackupManager {
             put("charge_limits", payload.chargeLimitsArray)
             put("aliases", payload.aliasesArray)
             put("profiles", payload.profilesArray)
+            put("port_presets", payload.portPresetsArray)
+            put("automation_rules", payload.automationRulesArray)
             if (payload.includesSecrets && payload.devicesSecretsArray != null) {
                 put("devices_secrets", payload.devicesSecretsArray)
             }
@@ -171,7 +175,9 @@ object SafEncryptedBackupManager {
             chargeLimitsArray = inner.optJSONArray("charge_limits") ?: JSONArray(),
             aliasesArray = inner.optJSONArray("aliases") ?: JSONArray(),
             profilesArray = inner.optJSONArray("profiles") ?: JSONArray(),
-            devicesSecretsArray = if (includesSecrets) inner.optJSONArray("devices_secrets") else null
+            devicesSecretsArray = if (includesSecrets) inner.optJSONArray("devices_secrets") else null,
+            portPresetsArray = inner.optJSONArray("port_presets") ?: JSONArray(),
+            automationRulesArray = inner.optJSONArray("automation_rules") ?: JSONArray()
         )
     }
 

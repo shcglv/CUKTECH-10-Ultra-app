@@ -153,3 +153,52 @@ interface ChargingProfileDao {
     @Query("DELETE FROM charging_profiles WHERE isBuiltIn = 0")
     fun deleteAllCustom()
 }
+
+@Dao
+interface PortDevicePresetDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsert(preset: PortDevicePresetEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertAll(presets: List<PortDevicePresetEntity>)
+
+    @Query("SELECT * FROM port_device_presets ORDER BY portId ASC")
+    fun getAll(): List<PortDevicePresetEntity>
+
+    @Query("SELECT * FROM port_device_presets ORDER BY portId ASC")
+    fun observeAll(): Flow<List<PortDevicePresetEntity>>
+
+    @Query("DELETE FROM port_device_presets WHERE portId = :portId")
+    fun deleteByPortId(portId: Int)
+
+    @Query("DELETE FROM port_device_presets")
+    fun deleteAll()
+}
+
+@Dao
+interface AutomationRuleDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsert(rule: AutomationRuleEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertAll(rules: List<AutomationRuleEntity>)
+
+    @Query("SELECT * FROM automation_rules ORDER BY createdAtMs DESC, id DESC")
+    fun getAll(): List<AutomationRuleEntity>
+
+    @Query("SELECT * FROM automation_rules ORDER BY createdAtMs DESC, id DESC")
+    fun observeAll(): Flow<List<AutomationRuleEntity>>
+
+    @Query("UPDATE automation_rules SET enabled = :enabled WHERE id = :id")
+    fun setEnabled(id: Long, enabled: Boolean)
+
+    @Query("UPDATE automation_rules SET lastTriggeredMs = :triggeredMs WHERE id = :id")
+    fun updateLastTriggered(id: Long, triggeredMs: Long)
+
+    @Query("DELETE FROM automation_rules WHERE id = :id")
+    fun deleteById(id: Long)
+
+    @Query("DELETE FROM automation_rules")
+    fun deleteAll()
+}
+

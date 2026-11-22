@@ -10,12 +10,12 @@ android {
   compileSdk = 36
 
   defaultConfig {
-    applicationId = "com.cramqin.blecuktech10"
+    applicationId = "com.joxit.cuktech"
     minSdk = 26
     targetSdk = 36
     // Overridable from CI: -PappVersionCode=... -PappVersionName=...
-    versionCode = (project.findProperty("appVersionCode") as String?)?.toInt() ?: 1
-    versionName = (project.findProperty("appVersionName") as String?) ?: "1.0"
+    versionCode = (project.findProperty("appVersionCode") as String?)?.toInt() ?: 2
+    versionName = (project.findProperty("appVersionName") as String?) ?: "2.0.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

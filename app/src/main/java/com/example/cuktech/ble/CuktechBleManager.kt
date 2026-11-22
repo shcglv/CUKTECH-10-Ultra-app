@@ -13,6 +13,7 @@ import com.example.cuktech.automation.CommandResult
 import com.example.cuktech.automation.CommandSource
 import com.example.cuktech.automation.HardwareCommandAdapter
 import com.example.cuktech.automation.KillswitchSnapshot
+import com.example.cuktech.automation.LocalAutomationEngine
 import com.example.cuktech.automation.UndoAvailability
 import com.example.cuktech.cloud.XiaomiCloudClient
 import com.example.cuktech.db.CuktechPersistence
@@ -21,6 +22,8 @@ import com.example.cuktech.energy.AdaptiveEnergyIntegrator
 import com.example.cuktech.energy.ChargeSessionDetector
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.energy.PortChargeLimit
+import com.example.cuktech.power.CableDiagnosticEngine
+import com.example.cuktech.power.PortCableDiagnostic
 import com.example.cuktech.notifications.AnomalyAlert
 import com.example.cuktech.notifications.CableAnomalyDetector
 import com.example.cuktech.notifications.ChargingCompletionDetector
@@ -35,8 +38,11 @@ import com.example.cuktech.protocol.PortTelemetryDecoder
 import com.example.cuktech.protocol.SessionKeys
 import com.example.cuktech.security.AutomationAuthManager
 import com.example.cuktech.security.CuktechDeviceCredentials
+import com.example.R
 import com.example.cuktech.security.LogSanitizer
 import com.example.cuktech.security.SecureCredentialStore
+import com.example.ui.i18n.resolveLocale
+import com.example.ui.i18n.withAppLocale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -188,6 +194,11 @@ class CuktechBleManager @JvmOverloads constructor(
     private val _authState = MutableStateFlow(CuktechAuthState.DISCONNECTED)
     val authState: StateFlow<CuktechAuthState> = _authState.asStateFlow()
 
+    @androidx.annotation.VisibleForTesting
+    internal fun setAuthStateForTest(state: CuktechAuthState) {
+        _authState.value = state
+    }
+
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
@@ -241,6 +252,9 @@ class CuktechBleManager @JvmOverloads constructor(
     val completionDetector = ChargingCompletionDetector()
     val anomalyDetector = CableAnomalyDetector()
     val anomalyAlerts: StateFlow<List<AnomalyAlert>> = anomalyDetector.alerts
+    val cableDiagnosticEngine = CableDiagnosticEngine()
+    val cableDiagnostics: StateFlow<Map<Int, PortCableDiagnostic>> = cableDiagnosticEngine.diagnostics
+    val localAutomationEngine = LocalAutomationEngine()
 
     // Telemetry & Sleep Policy StateFlows
     private val _telemetryMasterEnabled = MutableStateFlow(true)
@@ -336,7 +350,7 @@ class CuktechBleManager @JvmOverloads constructor(
     val lastKillswitchSnapshot: StateFlow<KillswitchSnapshot?> = commandDispatcher.lastKillswitchSnapshot
 
     init {
-        val prefs = context.getSharedPreferences("ble_cuktech_prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("cuktech_app_prefs", Context.MODE_PRIVATE)
         val savedAutoReconnect = prefs.getBoolean("auto_reconnect_proximity", true)
         _isAutoReconnectConfigured.value = savedAutoReconnect
         autoReconnectEnabled = savedAutoReconnect
@@ -483,7 +497,7 @@ class CuktechBleManager @JvmOverloads constructor(
         val updated = _portLoggingMap.value.toMutableMap()
         updated[portId] = enabled
         _portLoggingMap.value = updated
-        context.getSharedPreferences("ble_cuktech_prefs", Context.MODE_PRIVATE)
+        context.getSharedPreferences("cuktech_app_prefs", Context.MODE_PRIVATE)
             .edit()
             .putBoolean("port_logging_$portId", enabled)
             .apply()
@@ -497,7 +511,7 @@ class CuktechBleManager @JvmOverloads constructor(
     fun setTelemetryMasterEnabled(enabled: Boolean) {
         val wasEnabled = _telemetryMasterEnabled.value
         _telemetryMasterEnabled.value = enabled
-        context.getSharedPreferences("ble_cuktech_prefs", Context.MODE_PRIVATE)
+        context.getSharedPreferences("cuktech_app_prefs", Context.MODE_PRIVATE)
             .edit()
             .putBoolean("telemetry_master_enabled", enabled)
             .apply()
@@ -510,7 +524,7 @@ class CuktechBleManager @JvmOverloads constructor(
     fun setLogOnlyWhenPhoneCharging(enabled: Boolean) {
         val wasEnabled = _logOnlyWhenPhoneCharging.value
         _logOnlyWhenPhoneCharging.value = enabled
-        context.getSharedPreferences("ble_cuktech_prefs", Context.MODE_PRIVATE)
+        context.getSharedPreferences("cuktech_app_prefs", Context.MODE_PRIVATE)
             .edit()
             .putBoolean("log_only_when_phone_charging", enabled)
             .apply()
@@ -523,7 +537,7 @@ class CuktechBleManager @JvmOverloads constructor(
     fun setPausePollingWhenScreenLocked(enabled: Boolean) {
         val wasEnabled = _pausePollingWhenScreenLocked.value
         _pausePollingWhenScreenLocked.value = enabled
-        context.getSharedPreferences("ble_cuktech_prefs", Context.MODE_PRIVATE)
+        context.getSharedPreferences("cuktech_app_prefs", Context.MODE_PRIVATE)
             .edit()
             .putBoolean("pause_polling_when_screen_locked", enabled)
             .apply()
@@ -549,7 +563,7 @@ class CuktechBleManager @JvmOverloads constructor(
     fun setAutoReconnectConfigured(enabled: Boolean) {
         _isAutoReconnectConfigured.value = enabled
         autoReconnectEnabled = enabled
-        context.getSharedPreferences("ble_cuktech_prefs", Context.MODE_PRIVATE)
+        context.getSharedPreferences("cuktech_app_prefs", Context.MODE_PRIVATE)
             .edit()
             .putBoolean("auto_reconnect_proximity", enabled)
             .apply()
@@ -796,10 +810,13 @@ class CuktechBleManager @JvmOverloads constructor(
             )) {
                 BleBridgeService.addLogMessage(
                     BleBridgeService.Companion.LogLevel.LEVEL1,
-                    "[Cuktech] Connection to $targetMac timed out after 15s. Charger display may be asleep or out of range."
+                    "[Cuktech] Connection to $targetMac timed out after 15s. Charger display may be asleep at 0W standby or out of range."
                 )
-                _statusMessage.value = "Connection timed out. Wake charger display or verify Bluetooth."
-                disconnectCharger()
+                _statusMessage.value = "Connection timed out. Charger may be in 0W BLE standby or out of range."
+                disconnectCharger(isManual = false)
+                if (_isAutoReconnectConfigured.value && !userManuallyDisconnected) {
+                    scheduleAutoReconnect(targetMac, 3500L)
+                }
             }
         }
 
@@ -808,7 +825,7 @@ class CuktechBleManager @JvmOverloads constructor(
 
     fun switchToCharger(macAddress: String) {
         switchDeviceJob?.cancel()
-        disconnectCharger()
+        disconnectCharger(isManual = false)
         _statusMessage.value = "Disconnecting current device..."
         switchDeviceJob = scope.launch {
             delay(2000L)
@@ -924,33 +941,50 @@ class CuktechBleManager @JvmOverloads constructor(
         }
     }
 
+    fun kickAutoReconnectIfNeeded() {
+        val targetMac = lastConnectedMac
+            ?: credentialStore.activeDevice.value?.mac
+            ?: credentialStore.devices.value.firstOrNull { it.hasValidToken }?.mac
+        if (!_isAutoReconnectConfigured.value || userManuallyDisconnected || targetMac.isNullOrBlank()) return
+        if (_authState.value != CuktechAuthState.DISCONNECTED || _isDisconnectCooldown.value) return
+        BleBridgeService.addLogMessage(
+            BleBridgeService.Companion.LogLevel.LEVEL2,
+            "[Cuktech] Screen wake: kicking proximity auto-reconnect scan for $targetMac..."
+        )
+        scheduleAutoReconnect(targetMac, 400L)
+    }
+
     private fun scheduleAutoReconnect(mac: String, delayMs: Long = 2000L) {
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             delay(delayMs)
             val startTimeMs = SystemClock.elapsedRealtime()
             while (isActive && _isAutoReconnectConfigured.value && !userManuallyDisconnected && _authState.value != CuktechAuthState.AUTHENTICATED) {
+                if (_authState.value != CuktechAuthState.DISCONNECTED) {
+                    delay(3000L)
+                    continue
+                }
                 val btAdapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
                 if (btAdapter == null || !btAdapter.isEnabled) {
                     _statusMessage.value = "Awaiting Bluetooth to be enabled..."
-                    delay(3000L)
+                    delay(4000L)
                     continue
                 }
 
                 val elapsed = SystemClock.elapsedRealtime() - startTimeMs
-                // First 5 minutes: fast discovery (6s scan every 7.5s)
-                // After 5 minutes: low-power standby (4s scan every 20s) to save battery
-                val scanDuration = if (elapsed < 5 * 60 * 1000L) 6000L else 4000L
-                val intervalDelay = if (elapsed < 5 * 60 * 1000L) 7500L else 20000L
+                // Respect Android's 5 scans / 30s quota so ScanManager never blacklists our scans:
+                // First 3 minutes: 8s scan every 15s (~2 scans / 30s)
+                // After 3 minutes: 5s scan every 25s (~1.2 scans / 30s)
+                val scanDuration = if (elapsed < 3 * 60 * 1000L) 8000L else 5000L
+                val intervalDelay = if (elapsed < 3 * 60 * 1000L) 15000L else 25000L
 
-                _statusMessage.value = "Charger disconnected. Awaiting charger power-on..."
+                _statusMessage.value = "Awaiting charger BLE beacon (0W standby or out of range)..."
                 BleBridgeService.addLogMessage(
                     BleBridgeService.Companion.LogLevel.LEVEL2,
-                    "[Cuktech] Auto-reconnect: Listening for $mac (charger unplugged/standby)..."
+                    "[Cuktech] Auto-reconnect: Listening for $mac..."
                 )
 
                 val svc = BleBridgeService.getInstance()
-                // Scan targeting the charger MAC and MiOT service UUID (delivers background callbacks)
                 svc?.startNativeCuktechScan(scanDuration, mac)
 
                 delay(intervalDelay)
@@ -969,7 +1003,7 @@ class CuktechBleManager @JvmOverloads constructor(
             val gattMac = gatt.device.address?.uppercase()?.trim() ?: "Unknown"
             BleBridgeService.addLogMessage(
                 BleBridgeService.Companion.LogLevel.LEVEL1,
-                "[Cuktech] Device $gattMac does not support MiOT Service (0xFE95). BLEBridge only supports CUKTECH 10 Ultra (Model: AD1204, Product ID: 0x660E)."
+                "[Cuktech] Device $gattMac does not support MiOT Service (0xFE95). Cuktech only supports CUKTECH 10 Ultra (Model: AD1204, Product ID: 0x660E)."
             )
             _authState.value = CuktechAuthState.AUTH_FAILED
             _statusMessage.value = "Unsupported device ($gattMac). Only CUKTECH 10 Ultra is supported."
@@ -1937,7 +1971,7 @@ class CuktechBleManager @JvmOverloads constructor(
         curPorts[portId] = updatedPort
         _ports.value = curPorts
 
-        // Feed cable/negotiation anomaly detector
+        // Feed cable/negotiation anomaly detector & voltage-sag diagnostic tracker
         anomalyDetector.onPortSample(
             portId = portId,
             portLabel = updatedPort.portLabel,
@@ -1951,12 +1985,18 @@ class CuktechBleManager @JvmOverloads constructor(
                 BleBridgeService.Companion.LogLevel.LEVEL1,
                 "[Anomaly] ${alert.summary}"
             )
+            val locCtx = context.withAppLocale(prefs.appLanguage)
             ChargingNotificationManager.postAnomalyNotification(
-                context = context,
+                context = locCtx,
                 alert = alert,
                 inQuietHours = prefs.isWithinQuietHours()
             )
         }
+        cableDiagnosticEngine.onPortTelemetry(
+            port = updatedPort,
+            alerts = anomalyDetector.alerts.value,
+            nowMs = nowMs
+        )
 
         // Feed charging completion detector (trickle hysteresis vs quick unplug / dips)
         val currentSessionWh = detector.activeSession?.whAccumulated ?: updatedPort.cumulativeWh
@@ -1969,8 +2009,9 @@ class CuktechBleManager @JvmOverloads constructor(
             nowMs = nowMs,
             prefs = prefs
         )?.let { completionEvent ->
+            val locCtx = context.withAppLocale(prefs.appLanguage)
             ChargingNotificationManager.postCompletionNotification(
-                context = context,
+                context = locCtx,
                 event = completionEvent,
                 portDisplayName = PortTelemetryDecoder.PORT_NAMES[portId] ?: updatedPort.portLabel,
                 soundEnabled = prefs.completionSoundEnabled,
@@ -1978,26 +2019,30 @@ class CuktechBleManager @JvmOverloads constructor(
             )
         }
 
-        val totalW = curPorts.values.sumOf { it.powerW }
+        val totalW = PortTelemetryDecoder.computeEffectiveTotalWatts(curPorts)
         val roundedTotalW = (totalW * 100.0).roundToInt() / 100.0
         val oldTotalW = _totalPowerWatts.value
         _totalPowerWatts.value = roundedTotalW
 
         if (abs(oldTotalW - roundedTotalW) >= 0.5 || System.currentTimeMillis() - lastHistoryWriteMs >= 5000L) {
+            val c3aLog = PortTelemetryDecoder.resolveC3ASharedBus(curPorts)
+            val suffix = if (c3aLog.isSharedActive) ", C3+A_Bus=%.1fW".format(c3aLog.sharedPowerW) else ""
             BleBridgeService.addLogMessage(
                 BleBridgeService.Companion.LogLevel.LEVEL3,
-                "[Cuktech] Telemetry: Total=%.1fW (C1=%.1fW, C2=%.1fW, C3=%.1fW, A=%.1fW)".format(
+                "[Cuktech] Telemetry: Total=%.1fW (C1=%.1fW, C2=%.1fW, C3=%.1fW, A=%.1fW%s)".format(
                     roundedTotalW,
                     curPorts[1]?.powerW ?: 0.0,
                     curPorts[2]?.powerW ?: 0.0,
                     curPorts[3]?.powerW ?: 0.0,
-                    curPorts[4]?.powerW ?: 0.0
+                    curPorts[4]?.powerW ?: 0.0,
+                    suffix
                 )
             )
         }
 
-        // Check per-port charge limit auto-cutoff
+        // Check per-port charge limit auto-cutoff & local automation rules
         checkAndEnforcePortChargeLimit(portId, cumulativeWh)
+        evaluateLocalAutomationRules(nowMs)
 
         // Record chart point & periodic Room history
         recordChartAndHistory(curPorts, roundedTotalW)
@@ -2199,7 +2244,11 @@ class CuktechBleManager @JvmOverloads constructor(
         val point = PowerChartPoint(
             timestampMs = now,
             totalWatts = totalW,
-            portWatts = portsMap.mapValues { it.value.powerW }
+            portWatts = portsMap.mapValues { it.value.powerW },
+            portVolts = portsMap.mapValues { it.value.voltageV },
+            portAmps = portsMap.mapValues { it.value.currentA },
+            portWh = portsMap.mapValues { it.value.cumulativeWh },
+            portProtocols = portsMap.mapValues { it.value.protocolName }
         )
         val chart = _powerChartHistory.value.toMutableList()
         chart.add(point)
@@ -2429,7 +2478,7 @@ class CuktechBleManager @JvmOverloads constructor(
             }
         }
 
-        // Loop 2: 10-second Keepalive (`[00 00 00 00]` on `CHAR_CMD_RECV`)
+        // Loop 2: 10-second Keepalive (`[00 00 00 00]` on `CHAR_CMD_RECV`) & periodic rule eval
         keepaliveJob = scope.launch {
             while (isActive && _authState.value == CuktechAuthState.AUTHENTICATED) {
                 delay(10000L)
@@ -2440,6 +2489,32 @@ class CuktechBleManager @JvmOverloads constructor(
                     CuktechProtocol.KEEPALIVE_PAYLOAD,
                     withResponse = false
                 )
+                evaluateLocalAutomationRules(System.currentTimeMillis())
+            }
+        }
+    }
+
+    private fun evaluateLocalAutomationRules(nowMs: Long = System.currentTimeMillis()) {
+        if (_authState.value != CuktechAuthState.AUTHENTICATED) return
+        val rules = persistence.getAutomationRules()
+        if (rules.none { it.enabled }) return
+        val triggered = localAutomationEngine.evaluate(
+            rules = rules,
+            ports = _ports.value,
+            settings = _settings.value,
+            isAuthenticated = true,
+            nowMs = nowMs
+        )
+        if (triggered.isNotEmpty()) {
+            scope.launch {
+                for (item in triggered) {
+                    persistence.markAutomationRuleTriggered(item.rule.id, item.firedAtMs)
+                    val res = commandDispatcher.dispatch(CommandSource.AUTOMATION_RULE, item.command)
+                    BleBridgeService.addLogMessage(
+                        BleBridgeService.Companion.LogLevel.LEVEL1,
+                        "[Rule:${item.rule.name}] ${res.message}"
+                    )
+                }
             }
         }
     }
@@ -2449,6 +2524,32 @@ class CuktechBleManager @JvmOverloads constructor(
         pollingJob = null
         keepaliveJob?.cancel()
         keepaliveJob = null
+        localAutomationEngine.reset()
+    }
+
+    fun stopAllJobsForServiceDestroy() {
+        connectJob?.cancel()
+        connectJob = null
+        reconnectJob?.cancel()
+        reconnectJob = null
+        connectionTimeoutJob?.cancel()
+        connectionTimeoutJob = null
+        authJob?.cancel()
+        authJob = null
+        switchDeviceJob?.cancel()
+        switchDeviceJob = null
+        disconnectCooldownJob?.cancel()
+        disconnectCooldownJob = null
+        _isDisconnectCooldown.value = false
+        stopBackgroundLoops()
+        for ((_, deferred) in pendingMiotResponses) {
+            deferred.cancel()
+        }
+        pendingMiotResponses.clear()
+        sessionKeys = null
+        if (_authState.value != CuktechAuthState.DISCONNECTED) {
+            _authState.value = CuktechAuthState.DISCONNECTED
+        }
     }
 
     // =========================================================================
@@ -2668,6 +2769,13 @@ class CuktechBleManager @JvmOverloads constructor(
             }
         }
 
+        val locCtx = context.withAppLocale(prefs.appLanguage)
+        val appLocale = resolveLocale(prefs.appLanguage)
+        val unitW = locCtx.getString(R.string.unit_w)
+        val unitV = locCtx.getString(R.string.unit_v)
+        val unitA = locCtx.getString(R.string.unit_a)
+        val unitWh = locCtx.getString(R.string.unit_wh)
+
         // Also advance completion hysteresis ticks while connected
         if (_authState.value == CuktechAuthState.AUTHENTICATED) {
             val portsNow = _ports.value
@@ -2682,7 +2790,7 @@ class CuktechBleManager @JvmOverloads constructor(
                     prefs = prefs
                 )?.let { completionEvent ->
                     ChargingNotificationManager.postCompletionNotification(
-                        context = context,
+                        context = locCtx,
                         event = completionEvent,
                         portDisplayName = PortTelemetryDecoder.PORT_NAMES[pId] ?: p.portLabel,
                         soundEnabled = prefs.completionSoundEnabled,
@@ -2699,14 +2807,14 @@ class CuktechBleManager @JvmOverloads constructor(
         val nearestCountdownEndMs = nearestEndEpochSec?.let { it * 1000L }
 
         if (_authState.value == CuktechAuthState.AUTHENTICATED) {
-            val totalW = _totalPowerWatts.value
             val ports = _ports.value
-            val activePorts = ports.values.filter { it.powerW >= 0.1 }
+            val totalW = PortTelemetryDecoder.computeEffectiveTotalWatts(ports)
+            val c3a = PortTelemetryDecoder.resolveC3ASharedBus(ports)
 
             val title = if (totalW >= 0.1) {
-                String.format(java.util.Locale.US, "⚡ %.1fW Total · CUKTECH 10 Ultra", totalW)
+                String.format(appLocale, locCtx.getString(R.string.notif_total_watts_title_fmt), totalW)
             } else {
-                "⚡ CUKTECH 10 Ultra (Idle)"
+                locCtx.getString(R.string.notif_idle_title)
             }
 
             // Gather active timers (Port timers + USB-A Low Current)
@@ -2721,18 +2829,18 @@ class CuktechBleManager @JvmOverloads constructor(
                     4 -> "A"
                     else -> ports[pId]?.portLabel ?: "P$pId"
                 }
-                timersList.add(String.format(java.util.Locale.US, "%s: %d:%02d", pLabel, m, s))
+                timersList.add(String.format(appLocale, "%s: %d:%02d", pLabel, m, s))
             }
             _usbALowCurrentRemainingSeconds.value?.let { secs ->
                 val h = secs / 3600
                 val m = (secs % 3600) / 60
                 val s = secs % 60
                 val formattedUsbATimer = if (h > 0) {
-                    String.format(java.util.Locale.US, "%dh %02dm", h, m)
+                    String.format(appLocale, locCtx.getString(R.string.time_h_m_fmt), h, m)
                 } else {
-                    String.format(java.util.Locale.US, "%d:%02d", m, s)
+                    String.format(appLocale, "%d:%02d", m, s)
                 }
-                timersList.add("USB-A Trickle: $formattedUsbATimer")
+                timersList.add(String.format(appLocale, locCtx.getString(R.string.notif_usba_trickle_fmt), formattedUsbATimer))
             }
 
             // Gather active Wh limits
@@ -2750,65 +2858,101 @@ class CuktechBleManager @JvmOverloads constructor(
                     4 -> "A"
                     else -> "P${limit.portId}"
                 }
-                whLimitsList.add(String.format(java.util.Locale.US, "%s: %.1f/%.1fWh (%d%%)", pLabel, used, limit.whTarget, pct))
+                whLimitsList.add(String.format(appLocale, "%s: %.1f/%.1f %s (%d%%)", pLabel, used, limit.whTarget, unitWh, pct))
             }
 
             val hasTimers = timersList.isNotEmpty()
             val hasWhLimits = whLimitsList.isNotEmpty()
 
-            // 1-line compact summary for collapsed view: uncluttered!
-            // Shows indicator icons (⏱️ for timer, 🎯 for Wh limit) then active wattage
             val indicatorBadges = buildString {
-                if (hasTimers) append("⏱️ ")
+                if (hasTimers) append("⏱ ")
                 if (hasWhLimits) append("🎯 ")
             }
 
-            val compactWatts = if (activePorts.isNotEmpty()) {
-                activePorts.joinToString(" · ") { port ->
-                    val shortLabel = when (port.portId) {
-                        1 -> "C1"
-                        2 -> "C2"
-                        3 -> "C3"
-                        4 -> "A"
-                        else -> port.portLabel
-                    }
-                    String.format(java.util.Locale.US, "%s: %.1fW", shortLabel, port.powerW)
-                }
+            val compactParts = mutableListOf<String>()
+            ports[1]?.takeIf { it.powerW >= 0.1 }?.let {
+                compactParts.add(String.format(appLocale, "C1 %.1f%s", it.powerW, unitW))
+            }
+            ports[2]?.takeIf { it.powerW >= 0.1 }?.let {
+                compactParts.add(String.format(appLocale, "C2 %.1f%s", it.powerW, unitW))
+            }
+            if (c3a.isSharedActive) {
+                compactParts.add(String.format(appLocale, "C3+A %.1f%s", c3a.sharedPowerW, unitW))
             } else {
-                "All ports idle"
+                ports[3]?.takeIf { it.powerW >= 0.1 }?.let {
+                    compactParts.add(String.format(appLocale, "C3 %.1f%s", it.powerW, unitW))
+                }
+                ports[4]?.takeIf { it.powerW >= 0.1 }?.let {
+                    compactParts.add(String.format(appLocale, "A %.1f%s", it.powerW, unitW))
+                }
+            }
+
+            val sessionWhTotal = _activeSessions.value.values.sumOf { it.whAccumulated }
+                .coerceAtLeast(ports.values.sumOf { it.cumulativeWh })
+            val whSuffix = if (sessionWhTotal >= 0.05) {
+                String.format(appLocale, " · %.1f %s", sessionWhTotal, unitWh)
+            } else ""
+
+            val compactWatts = if (compactParts.isNotEmpty()) {
+                compactParts.joinToString(" · ") + whSuffix
+            } else {
+                locCtx.getString(R.string.notif_all_idle)
             }
             val content = "$indicatorBadges$compactWatts"
 
-            // Multi-line detailed lines for expanded bigText view
-            val bigText = buildString {
-                if (hasTimers) {
-                    append("⏱️ Timers: ").append(timersList.joinToString(" · ")).append("\n")
-                }
-                if (hasWhLimits) {
-                    append("🎯 Wh Limits: ").append(whLimitsList.joinToString(" · ")).append("\n")
-                }
-                if (activePorts.isNotEmpty()) {
-                    activePorts.forEachIndexed { idx, port ->
-                        if (idx > 0) append("\n")
-                        val shortLabel = when (port.portId) {
-                            1 -> "C1"
-                            2 -> "C2"
-                            3 -> "C3"
-                            4 -> "A"
-                            else -> port.portLabel
-                        }
-                        val cleanProto = port.protocolName
-                            .replace(Regex("\\s*\\([0-9.]+V\\)"), "")
-                            .trim()
-                        val protoSuffix = if (cleanProto.isNotBlank() && cleanProto != "Normal" && cleanProto != "Idle") {
-                            " · $cleanProto"
-                        } else ""
-                        append(String.format(java.util.Locale.US, "• %s: %.1fW · %.1fV, %.2fA%s", shortLabel, port.powerW, port.voltageV, port.currentA, protoSuffix))
-                    }
-                } else {
-                    append("All ports idle (No active draw)")
+            val bigLines = mutableListOf<String>()
+            if (hasTimers) {
+                bigLines.add("${locCtx.getString(R.string.notif_timers_prefix)}${timersList.joinToString(" · ")}")
+            }
+            if (hasWhLimits) {
+                bigLines.add("${locCtx.getString(R.string.notif_wh_limits_prefix)}${whLimitsList.joinToString(" · ")}")
+            }
+            listOf(1, 2).forEach { pid ->
+                val port = ports[pid]
+                if (port != null && port.powerW >= 0.1) {
+                    val shortLabel = if (pid == 1) "C1" else "C2"
+                    val cleanProto = port.protocolName.replace(Regex("\\s*\\([0-9.]+V\\)"), "").trim()
+                    val protoSuffix = if (cleanProto.isNotBlank() && cleanProto != "Normal" && cleanProto != "Idle") " · $cleanProto" else ""
+                    val sessWh = _activeSessions.value[pid]?.whAccumulated ?: port.cumulativeWh
+                    val whPart = if (sessWh >= 0.05) String.format(appLocale, " · %.2f %s", sessWh, unitWh) else ""
+                    bigLines.add(
+                        String.format(
+                            appLocale,
+                            "• %s: %.1f %s (%.1f %s / %.2f %s)%s%s",
+                            shortLabel, port.powerW, unitW, port.voltageV, unitV, port.currentA, unitA, protoSuffix, whPart
+                        )
+                    )
                 }
             }
+            if (c3a.isSharedActive) {
+                bigLines.add(
+                    String.format(
+                        appLocale,
+                        "• C3+A (5V Bus): %.1f %s (%.1f %s / %.2f %s) · %s",
+                        c3a.sharedPowerW, unitW, c3a.voltageV, unitV, c3a.currentA, unitA,
+                        locCtx.getString(R.string.port_c3a_shared_badge)
+                    )
+                )
+            } else {
+                listOf(3, 4).forEach { pid ->
+                    val port = ports[pid]
+                    if (port != null && port.powerW >= 0.1) {
+                        val shortLabel = if (pid == 3) "C3" else "A"
+                        val cleanProto = port.protocolName.replace(Regex("\\s*\\([0-9.]+V\\)"), "").trim()
+                        val protoSuffix = if (cleanProto.isNotBlank() && cleanProto != "Normal" && cleanProto != "Idle") " · $cleanProto" else ""
+                        val sessWh = _activeSessions.value[pid]?.whAccumulated ?: port.cumulativeWh
+                        val whPart = if (sessWh >= 0.05) String.format(appLocale, " · %.2f %s", sessWh, unitWh) else ""
+                        bigLines.add(
+                            String.format(
+                                appLocale,
+                                "• %s: %.1f %s (%.1f %s / %.2f %s)%s%s",
+                                shortLabel, port.powerW, unitW, port.voltageV, unitV, port.currentA, unitA, protoSuffix, whPart
+                            )
+                        )
+                    }
+                }
+            }
+            val bigText = if (bigLines.isNotEmpty()) bigLines.joinToString("\n") else locCtx.getString(R.string.notif_all_idle_long)
 
             val activeLimitPct = activeLimits.maxOfOrNull { limit ->
                 val cumWh = ports[limit.portId]?.cumulativeWh ?: 0.0
@@ -2830,12 +2974,12 @@ class CuktechBleManager @JvmOverloads constructor(
                 BleBridgeService.getInstance()?.dismissForegroundNotificationIfIdle()
                 return
             }
-            val title = "⚡ CUKTECH 10 Ultra"
+            val title = "⚡ ${locCtx.getString(R.string.app_full_name)}"
             val content = when (_authState.value) {
                 CuktechAuthState.CONNECTING_GATT, CuktechAuthState.DISCOVERING_SERVICES,
-                CuktechAuthState.PHASE_A_INIT_A4, CuktechAuthState.PHASE_B_HANDSHAKE -> "Connecting to CUKTECH 10 Ultra..."
-                CuktechAuthState.AUTH_FAILED -> "Auth failed · Check credentials"
-                else -> "Ready"
+                CuktechAuthState.PHASE_A_INIT_A4, CuktechAuthState.PHASE_B_HANDSHAKE -> locCtx.getString(R.string.notif_connecting_name)
+                CuktechAuthState.AUTH_FAILED -> locCtx.getString(R.string.notif_auth_failed)
+                else -> locCtx.getString(R.string.notif_ready)
             }
             BleBridgeService.getInstance()?.updateNotificationTelemetry(
                 title = title,

@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +37,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -48,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.R
 import com.example.cuktech.ble.CuktechAuthState
 import com.example.cuktech.ble.CuktechBleManager
 import com.example.cuktech.ble.DiscoveredCuktechDevice
@@ -65,6 +70,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URL
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun XiaomiAccountLoginDialog(
     cloudClient: XiaomiCloudClient,
@@ -72,6 +78,8 @@ fun XiaomiAccountLoginDialog(
     onDismiss: () -> Unit,
     onDevicesSynced: (List<CuktechDeviceCredentials>) -> Unit
 ) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableStateOf(0) } // 0 = Google / Web, 1 = QR Login, 2 = Password, 3 = Manual/JSON
     var selectedRegion by remember { mutableStateOf("cn") }
@@ -79,7 +87,7 @@ fun XiaomiAccountLoginDialog(
     // QR Login state
     var qrSession by remember { mutableStateOf<QrLoginSession?>(null) }
     var qrBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    var qrStatusText by remember { mutableStateOf("Generating Xiaomi Cloud QR session...") }
+    var qrStatusText by remember { mutableStateOf(context.getString(R.string.xiaomi_qr_init)) }
     var isQrLoading by remember { mutableStateOf(false) }
 
     // Password Login state
@@ -101,7 +109,7 @@ fun XiaomiAccountLoginDialog(
 
     suspend fun handleAuthenticatedSession(session: XiaomiAccountSession) {
         credentialStore.saveSession(session)
-        loginStatusText = "Logged in (UID: ${session.userId}). Fetching devices from Xiaomi Cloud..."
+        loginStatusText = context.getString(R.string.xiaomi_logged_in_fetching_fmt, session.userId)
         qrStatusText = loginStatusText
         val devRes = cloudClient.fetchDevicesAndBleKeys(session, searchAllRegionsIfEmpty = true)
         devRes.onSuccess { list ->
@@ -123,12 +131,12 @@ fun XiaomiAccountLoginDialog(
             isQrLoading = true
             qrBitmap = null
             qrSession = null
-            qrStatusText = "Creating secure QR code session for region [${selectedRegion.uppercase()}]..."
+            qrStatusText = context.getString(R.string.xiaomi_qr_creating_fmt, selectedRegion.uppercase())
             val res = cloudClient.startQrLogin(selectedRegion)
             isQrLoading = false
             res.onSuccess { session ->
                 qrSession = session
-                qrStatusText = "Scan with Mi Home or Xiaomi account to confirm login"
+                qrStatusText = context.getString(R.string.xiaomi_qr_scan_prompt)
                 // Download QR image bitmap with bounded timeouts
                 withContext(Dispatchers.IO) {
                     runCatching {
@@ -154,12 +162,12 @@ fun XiaomiAccountLoginDialog(
                             // Continue waiting
                         }
                         is QrPollResult.Timeout -> {
-                            qrStatusText = "QR Code expired. Tap refresh to reload."
+                            qrStatusText = context.getString(R.string.xiaomi_qr_expired)
                             break
                         }
                         is QrPollResult.Requires2FA -> {
                             active2faChallenge = poll.challenge
-                            qrStatusText = "Xiaomi Account 2-Factor Authentication (2FA) required"
+                            qrStatusText = context.getString(R.string.xiaomi_qr_2fa_req)
                             break
                         }
                         is QrPollResult.Success -> {
@@ -167,13 +175,13 @@ fun XiaomiAccountLoginDialog(
                             break
                         }
                         is QrPollResult.Error -> {
-                            qrStatusText = "QR status: ${poll.message}"
+                            qrStatusText = context.getString(R.string.xiaomi_qr_status_fmt, poll.message)
                             break
                         }
                     }
                 }
             }.onFailure { e ->
-                qrStatusText = "Failed to create QR code: ${e.message}"
+                qrStatusText = context.getString(R.string.xiaomi_qr_failed_fmt, e.message ?: "")
             }
         }
     }
@@ -186,7 +194,7 @@ fun XiaomiAccountLoginDialog(
             modifier = Modifier
                 .fillMaxWidth(0.95f)
                 .heightIn(max = 680.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
@@ -201,7 +209,10 @@ fun XiaomiAccountLoginDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
                             imageVector = Icons.Default.AccountCircle,
                             contentDescription = null,
@@ -209,13 +220,15 @@ fun XiaomiAccountLoginDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Xiaomi Cloud Login & Sync",
+                            text = stringResource(R.string.xiaomi_login_title),
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cd_close))
                     }
                 }
 
@@ -223,8 +236,8 @@ fun XiaomiAccountLoginDialog(
                 val currentSession = credentialStore.session.value
                 if (currentSession != null && !currentSession.region.equals("cn", ignoreCase = true)) {
                     Surface(
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -239,7 +252,7 @@ fun XiaomiAccountLoginDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Warning: Active account region is [${currentSession.region.uppercase()}]. CUKTECH 10 Ultra is a Mainland China device (requires Mainland China 'CN' region in Mi Home).",
+                                text = stringResource(R.string.xiaomi_region_warn_fmt, currentSession.region.uppercase()),
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
@@ -261,12 +274,12 @@ fun XiaomiAccountLoginDialog(
                         statusText = loginStatusText,
                         onSendCode = {
                             scope.launch {
-                                loginStatusText = "Requesting verification code..."
+                                loginStatusText = context.getString(R.string.xiaomi_2fa_requesting)
                                 val r = cloudClient.send2faCode(challenge, useEmail2fa)
                                 loginStatusText = if (r.isSuccess) {
-                                    "Code sent! Please enter the 6-digit code received."
+                                    context.getString(R.string.xiaomi_2fa_code_sent)
                                 } else {
-                                    val errStr = r.exceptionOrNull()?.message ?: "Failed to send code. Try web verification below."
+                                    val errStr = r.exceptionOrNull()?.message ?: context.getString(R.string.xiaomi_2fa_send_failed)
                                     XiaomiCloudClient.translateXiaomiError(errStr)
                                 }
                             }
@@ -274,7 +287,7 @@ fun XiaomiAccountLoginDialog(
                         onVerifyCode = {
                             scope.launch {
                                 isLoggingIn = true
-                                loginStatusText = "Verifying 2FA code..."
+                                loginStatusText = context.getString(R.string.xiaomi_2fa_verifying)
                                 when (val res = cloudClient.verify2faCode(challenge, otpCode, useEmail2fa)) {
                                     is XiaomiLoginResult.Success -> handleAuthenticatedSession(res.session)
                                     is XiaomiLoginResult.Error -> loginStatusText = XiaomiCloudClient.translateXiaomiError(res.message)
@@ -286,7 +299,7 @@ fun XiaomiAccountLoginDialog(
                         onWebViewFinishUrl = { finishUrl, webCookies ->
                             scope.launch {
                                 isLoggingIn = true
-                                loginStatusText = "Web 2FA complete, extracting encrypted session..."
+                                loginStatusText = context.getString(R.string.xiaomi_2fa_web_extracting)
                                 val mergedCookies = challenge.identitySessionCookies + webCookies
                                 when (val res = cloudClient.complete2faFinishRedirect(
                                     finishUrl,
@@ -307,26 +320,38 @@ fun XiaomiAccountLoginDialog(
                         }
                     )
                 } else {
-                    TabRow(selectedTabIndex = selectedTab) {
+                    PrimaryTabRow(selectedTabIndex = selectedTab) {
                         Tab(
                             selected = selectedTab == 0,
-                            onClick = { selectedTab = 0 },
-                            text = { Text("Web / Browser", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                selectedTab = 0
+                            },
+                            text = { Text(stringResource(R.string.xiaomi_tab_web), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         )
                         Tab(
                             selected = selectedTab == 1,
-                            onClick = { selectedTab = 1 },
-                            text = { Text("QR Code", fontSize = 11.sp) }
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                selectedTab = 1
+                            },
+                            text = { Text(stringResource(R.string.xiaomi_tab_qr), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         )
                         Tab(
                             selected = selectedTab == 2,
-                            onClick = { selectedTab = 2 },
-                            text = { Text("Password", fontSize = 11.sp) }
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                selectedTab = 2
+                            },
+                            text = { Text(stringResource(R.string.xiaomi_tab_password), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         )
                         Tab(
                             selected = selectedTab == 3,
-                            onClick = { selectedTab = 3 },
-                            text = { Text("Manual", fontSize = 11.sp) }
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                selectedTab = 3
+                            },
+                            text = { Text(stringResource(R.string.xiaomi_tab_manual), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         )
                     }
 
@@ -344,7 +369,7 @@ fun XiaomiAccountLoginDialog(
                                 onPasteFinishUrl = { finishUrl ->
                                     scope.launch {
                                         isLoggingIn = true
-                                        loginStatusText = "Verifying pasted login URL..."
+                                        loginStatusText = context.getString(R.string.xiaomi_web_verifying_url)
                                         when (val res = cloudClient.completeWebLogin(
                                             finishUrl = finishUrl,
                                             cookiesIn = emptyMap(),
@@ -382,11 +407,11 @@ fun XiaomiAccountLoginDialog(
                                         isQrLoading -> CircularProgressIndicator()
                                         qrBitmap != null -> Image(
                                             bitmap = qrBitmap!!,
-                                            contentDescription = "Xiaomi Cloud QR Code",
+                                            contentDescription = stringResource(R.string.xiaomi_tab_qr),
                                             modifier = Modifier.fillMaxSize()
                                         )
                                         else -> Text(
-                                            text = "Tap refresh to load QR code",
+                                            text = stringResource(R.string.xiaomi_qr_tap_refresh),
                                             color = Color.DarkGray,
                                             fontSize = 12.sp
                                         )
@@ -402,13 +427,15 @@ fun XiaomiAccountLoginDialog(
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     OutlinedButton(
                                         onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             qrBitmap = null
                                             qrSession = null
-                                        }
+                                        },
+                                        modifier = Modifier.heightIn(min = 48.dp)
                                     ) {
                                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Refresh QR Code")
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(stringResource(R.string.xiaomi_qr_refresh_btn))
                                     }
                                 }
                             }
@@ -423,7 +450,7 @@ fun XiaomiAccountLoginDialog(
                                 OutlinedTextField(
                                     value = username,
                                     onValueChange = { username = it },
-                                    label = { Text("Xiaomi ID / Phone / Email") },
+                                    label = { Text(stringResource(R.string.xiaomi_pw_user_label)) },
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Email,
@@ -435,7 +462,7 @@ fun XiaomiAccountLoginDialog(
                                 OutlinedTextField(
                                     value = password,
                                     onValueChange = { password = it },
-                                    label = { Text("Password") },
+                                    label = { Text(stringResource(R.string.xiaomi_pw_pass_label)) },
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Password,
@@ -446,7 +473,7 @@ fun XiaomiAccountLoginDialog(
                                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                             Icon(
                                                 imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                                contentDescription = if (passwordVisible) "Hide password" else "Show password"
+                                                contentDescription = stringResource(R.string.cd_toggle_password)
                                             )
                                         }
                                     },
@@ -454,7 +481,7 @@ fun XiaomiAccountLoginDialog(
                                 )
 
                                 Text(
-                                    text = "💡 Bitwarden / Autofill: If autofill doesn't prompt, tap & hold either field -> choose Autofill, or search 'Xiaomi' in Bitwarden.",
+                                    text = stringResource(R.string.xiaomi_pw_autofill_tip),
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     lineHeight = 15.sp
@@ -471,17 +498,18 @@ fun XiaomiAccountLoginDialog(
                                 Button(
                                     onClick = {
                                         if (username.isBlank() || password.isBlank()) {
-                                            loginStatusText = "Please enter username and password"
+                                            loginStatusText = context.getString(R.string.xiaomi_pw_missing_fields)
                                             return@Button
                                         }
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         scope.launch {
                                             isLoggingIn = true
-                                            loginStatusText = "Authenticating with Xiaomi Cloud..."
+                                            loginStatusText = context.getString(R.string.xiaomi_pw_authenticating)
                                             when (val res = cloudClient.loginWithPassword(username, password, selectedRegion)) {
                                                 is XiaomiLoginResult.Success -> handleAuthenticatedSession(res.session)
                                                 is XiaomiLoginResult.Requires2FA -> {
                                                     active2faChallenge = res.challenge
-                                                    loginStatusText = "2-Factor Authentication required. Please complete verification."
+                                                    loginStatusText = context.getString(R.string.xiaomi_pw_2fa_prompt)
                                                 }
                                                 is XiaomiLoginResult.Error -> {
                                                     loginStatusText = XiaomiCloudClient.translateXiaomiError(res.message)
@@ -491,7 +519,9 @@ fun XiaomiAccountLoginDialog(
                                         }
                                     },
                                     enabled = !isLoggingIn,
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
                                 ) {
                                     if (isLoggingIn) {
                                         CircularProgressIndicator(
@@ -501,7 +531,7 @@ fun XiaomiAccountLoginDialog(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                     }
-                                    Text("Sign In & Auto-Extract BLE Key")
+                                    Text(stringResource(R.string.xiaomi_pw_signin_btn))
                                 }
                             }
                         }
@@ -526,7 +556,7 @@ fun XiaomiAccountLoginDialog(
                                             onDevicesSynced(credentialStore.devices.value)
                                             onDismiss()
                                         } else {
-                                            loginStatusText = "Invalid or unsupported JSON credentials file"
+                                            loginStatusText = importContext.getString(R.string.xiaomi_manual_import_invalid)
                                         }
                                     }
                                 }
@@ -539,31 +569,33 @@ fun XiaomiAccountLoginDialog(
                                     onClick = {
                                         importJsonLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                                     },
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
                                 ) {
                                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Import Credentials JSON (File Picker)")
+                                    Text(stringResource(R.string.xiaomi_manual_import_btn))
                                 }
 
                                 OutlinedTextField(
                                     value = manualMac,
                                     onValueChange = { manualMac = it },
-                                    label = { Text("Charger Bluetooth MAC (e.g. AA:BB:CC:11:22:33)") },
+                                    label = { Text(stringResource(R.string.xiaomi_manual_mac_label)) },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 OutlinedTextField(
                                     value = manualToken,
                                     onValueChange = { manualToken = it },
-                                    label = { Text("12-Byte MiOT Token (24 Hex characters)") },
+                                    label = { Text(stringResource(R.string.xiaomi_manual_token_label)) },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 OutlinedTextField(
                                     value = manualBleKey,
                                     onValueChange = { manualBleKey = it },
-                                    label = { Text("16-Byte BLE Key / beaconkey (Optional, 32 Hex characters)") },
+                                    label = { Text(stringResource(R.string.xiaomi_manual_ble_key_label)) },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -577,9 +609,10 @@ fun XiaomiAccountLoginDialog(
                                         val cleanMac = manualMac.trim().uppercase()
                                         val cleanTok = manualToken.trim().lowercase()
                                         if (cleanMac.length < 11 || cleanTok.length != 24) {
-                                            loginStatusText = "Please provide valid MAC address and 24-hex token"
+                                            loginStatusText = context.getString(R.string.xiaomi_manual_invalid_input)
                                             return@Button
                                         }
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         val cred = CuktechDeviceCredentials(
                                             did = "manual_${cleanMac.replace(":", "")}",
                                             name = "CUKTECH 10 Ultra",
@@ -593,9 +626,11 @@ fun XiaomiAccountLoginDialog(
                                         onDevicesSynced(credentialStore.devices.value)
                                         onDismiss()
                                     },
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
                                 ) {
-                                    Text("Save to Android Keystore")
+                                    Text(stringResource(R.string.xiaomi_manual_save_btn))
                                 }
                             }
                         }
@@ -627,16 +662,22 @@ private fun TwoFactorChallengeSection(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
-            text = "Xiaomi Account 2-Factor Authentication (2FA)",
+            text = stringResource(R.string.xiaomi_2fa_title),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
         Text(
             text = buildString {
-                append("Two-factor authentication is enabled for this account.")
-                if (challenge.maskedPhone.isNotBlank()) append(" Linked Phone: ${challenge.maskedPhone}")
-                if (challenge.maskedEmail.isNotBlank()) append(" Linked Email: ${challenge.maskedEmail}")
+                append(stringResource(R.string.xiaomi_2fa_body))
+                if (challenge.maskedPhone.isNotBlank()) {
+                    append(" ")
+                    append(stringResource(R.string.xiaomi_2fa_phone_fmt, challenge.maskedPhone))
+                }
+                if (challenge.maskedEmail.isNotBlank()) {
+                    append(" ")
+                    append(stringResource(R.string.xiaomi_2fa_email_fmt, challenge.maskedEmail))
+                }
             },
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -646,12 +687,12 @@ private fun TwoFactorChallengeSection(
             FilterChip(
                 selected = !useEmail,
                 onClick = { onToggleChannel(false) },
-                label = { Text("SMS / Authenticator") }
+                label = { Text(stringResource(R.string.xiaomi_2fa_channel_sms)) }
             )
             FilterChip(
                 selected = useEmail,
                 onClick = { onToggleChannel(true) },
-                label = { Text("Email Code") }
+                label = { Text(stringResource(R.string.xiaomi_2fa_channel_email)) }
             )
         }
 
@@ -663,12 +704,15 @@ private fun TwoFactorChallengeSection(
             OutlinedTextField(
                 value = otpCode,
                 onValueChange = onOtpChange,
-                label = { Text("6-Digit Verification Code") },
+                label = { Text(stringResource(R.string.xiaomi_2fa_code_label)) },
                 singleLine = true,
                 modifier = Modifier.weight(1f)
             )
-            OutlinedButton(onClick = onSendCode) {
-                Text("Send Code", fontSize = 12.sp)
+            OutlinedButton(
+                onClick = onSendCode,
+                modifier = Modifier.heightIn(min = 48.dp)
+            ) {
+                Text(stringResource(R.string.xiaomi_2fa_send_btn), fontSize = 12.sp)
             }
         }
 
@@ -680,23 +724,38 @@ private fun TwoFactorChallengeSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f)) {
-                Text("Back")
+            OutlinedButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp)
+            ) {
+                Text(stringResource(R.string.cd_back))
             }
             Button(
                 onClick = onVerifyCode,
                 enabled = otpCode.trim().length >= 4,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp)
             ) {
-                Text("Verify & Sign In")
+                Text(stringResource(R.string.xiaomi_2fa_verify_btn))
             }
         }
 
         TextButton(
             onClick = { onToggleWebView(!showWebView) },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
         ) {
-            Text(if (showWebView) "Hide embedded web verification" else "Require captcha or push approval? Expand web verification")
+            Text(
+                if (showWebView) {
+                    stringResource(R.string.xiaomi_2fa_web_collapse)
+                } else {
+                    stringResource(R.string.xiaomi_2fa_web_expand)
+                }
+            )
         }
 
         if (showWebView) {
@@ -805,7 +864,7 @@ private fun XiaomiWebLoginSection(
     fun openBrowserLogin() {
         scope.launch {
             isStartingSession = true
-            browserStatus = "Preparing secure web session for region [${selectedRegion.uppercase()}]..."
+            browserStatus = context.getString(R.string.xiaomi_web_preparing_fmt, selectedRegion.uppercase())
             pollJob?.cancel()
 
             val res = cloudClient.startQrLogin(selectedRegion)
@@ -813,7 +872,7 @@ private fun XiaomiWebLoginSection(
 
             res.onSuccess { session ->
                 activeSession = session
-                browserStatus = "Browser opened. Sign in with Google, Facebook, or Xiaomi, then switch back here."
+                browserStatus = context.getString(R.string.xiaomi_web_browser_opened)
 
                 // Launch default web browser
                 runCatching {
@@ -822,7 +881,7 @@ private fun XiaomiWebLoginSection(
                     }
                     context.startActivity(intent)
                 }.onFailure {
-                    browserStatus = "Could not open browser: ${it.message}"
+                    browserStatus = context.getString(R.string.xiaomi_web_open_failed_fmt, it.message ?: "")
                 }
 
                 // Poll longPolling endpoint in background
@@ -833,27 +892,27 @@ private fun XiaomiWebLoginSection(
                                 // continue polling
                             }
                             is QrPollResult.Timeout -> {
-                                browserStatus = "Web session expired. Tap below to re-open."
+                                browserStatus = context.getString(R.string.xiaomi_web_expired)
                                 break
                             }
                             is QrPollResult.Requires2FA -> {
-                                browserStatus = "2FA required. Please complete verification."
+                                browserStatus = context.getString(R.string.xiaomi_web_2fa_hint)
                                 break
                             }
                             is QrPollResult.Success -> {
-                                browserStatus = "Authentication confirmed! Syncing devices..."
+                                browserStatus = context.getString(R.string.xiaomi_web_confirmed)
                                 onSessionAuthenticated(poll.session)
                                 break
                             }
                             is QrPollResult.Error -> {
-                                browserStatus = "Status: ${poll.message}"
+                                browserStatus = context.getString(R.string.xiaomi_web_status_fmt, poll.message)
                                 break
                             }
                         }
                     }
                 }
             }.onFailure { err ->
-                browserStatus = "Failed to start web session: ${err.message}"
+                browserStatus = context.getString(R.string.xiaomi_web_start_failed_fmt, err.message ?: "")
             }
         }
     }
@@ -869,8 +928,8 @@ private fun XiaomiWebLoginSection(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
         ) {
             Column(
                 modifier = Modifier
@@ -888,13 +947,13 @@ private fun XiaomiWebLoginSection(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "Web & Social Sign-In",
+                            text = stringResource(R.string.xiaomi_web_title),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Opens account.xiaomi.com in your default browser. Sign in using Google, Facebook, or Xiaomi Account, then return here.",
+                            text = stringResource(R.string.xiaomi_web_desc),
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 15.sp
@@ -907,8 +966,8 @@ private fun XiaomiWebLoginSection(
                     enabled = !isStartingSession,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(10.dp)
+                        .heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     if (isStartingSession) {
                         CircularProgressIndicator(
@@ -919,14 +978,18 @@ private fun XiaomiWebLoginSection(
                         Spacer(modifier = Modifier.width(8.dp))
                     } else {
                         Icon(
-                            imageVector = Icons.Default.OpenInNew,
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                     Text(
-                        text = if (activeSession == null) "Open Login in Browser (Google / FB / Xiaomi)" else "Re-open Browser Login",
+                        text = if (activeSession == null) {
+                            stringResource(R.string.xiaomi_web_open_btn)
+                        } else {
+                            stringResource(R.string.xiaomi_web_reopen_btn)
+                        },
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
@@ -935,7 +998,7 @@ private fun XiaomiWebLoginSection(
                 if (activeSession != null) {
                     Surface(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -949,7 +1012,7 @@ private fun XiaomiWebLoginSection(
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = browserStatus.ifBlank { "Waiting for browser login... Return to this app after signing in." },
+                                text = browserStatus.ifBlank { stringResource(R.string.xiaomi_web_waiting) },
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Medium
@@ -987,18 +1050,24 @@ private fun XiaomiWebLoginSection(
                         }
                         context.startActivity(intent)
                     }
-                }
+                },
+                modifier = Modifier.heightIn(min = 48.dp)
             ) {
-                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Open account.xiaomi.com", fontSize = 11.sp)
+                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(stringResource(R.string.xiaomi_web_open_account), fontSize = 11.sp)
             }
 
             TextButton(
-                onClick = { showManualPaste = !showManualPaste }
+                onClick = { showManualPaste = !showManualPaste },
+                modifier = Modifier.heightIn(min = 48.dp)
             ) {
                 Text(
-                    text = if (showManualPaste) "Hide URL paste" else "Paste redirect URL",
+                    text = if (showManualPaste) {
+                        stringResource(R.string.xiaomi_web_paste_hide)
+                    } else {
+                        stringResource(R.string.xiaomi_web_paste_show)
+                    },
                     fontSize = 11.sp
                 )
             }
@@ -1012,7 +1081,7 @@ private fun XiaomiWebLoginSection(
                 OutlinedTextField(
                     value = pastedUrl,
                     onValueChange = { pastedUrl = it },
-                    label = { Text("Pasted STS / Redirect URL or cookies") },
+                    label = { Text(stringResource(R.string.xiaomi_web_paste_label)) },
                     placeholder = { Text("https://sts.api.io.mi.com/sts?d=...") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -1024,9 +1093,11 @@ private fun XiaomiWebLoginSection(
                         }
                     },
                     enabled = pastedUrl.isNotBlank(),
-                    modifier = Modifier.align(Alignment.End)
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .heightIn(min = 48.dp)
                 ) {
-                    Text("Submit URL")
+                    Text(stringResource(R.string.xiaomi_web_submit_url))
                 }
             }
         }
@@ -1094,11 +1165,11 @@ fun CuktechDiscoveryPairingDialog(
         AlertDialog(
             onDismissRequest = { pendingSwitchDevice = null },
             title = {
-                Text("Switch Connected Device?", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(stringResource(R.string.xiaomi_switch_title), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             },
             text = {
                 Text(
-                    text = "Do you want to disconnect the current device and connect to $targetName ($targetMac)?",
+                    text = stringResource(R.string.xiaomi_switch_body_fmt, targetName, targetMac),
                     fontSize = 13.sp
                 )
             },
@@ -1109,14 +1180,18 @@ fun CuktechDiscoveryPairingDialog(
                         bleManager.stopSearchForCuktechChargers()
                         bleManager.switchToCharger(targetMac)
                         onDismiss()
-                    }
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp)
                 ) {
-                    Text("Disconnect & Connect", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.xiaomi_switch_confirm), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingSwitchDevice = null }) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = { pendingSwitchDevice = null },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -1130,7 +1205,7 @@ fun CuktechDiscoveryPairingDialog(
             modifier = Modifier
                 .fillMaxWidth(0.94f)
                 .heightIn(max = 680.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
@@ -1144,7 +1219,10 @@ fun CuktechDiscoveryPairingDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
                             imageVector = Icons.Default.BluetoothSearching,
                             contentDescription = null,
@@ -1152,20 +1230,22 @@ fun CuktechDiscoveryPairingDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Search & Pair CUKTECH 10 Ultra",
+                            text = stringResource(R.string.xiaomi_pair_title),
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cd_close))
                     }
                 }
 
                 if (!isBtEnabled) {
                     Surface(
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1177,13 +1257,13 @@ fun CuktechDiscoveryPairingDialog(
                             Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Bluetooth is turned OFF",
+                                    text = stringResource(R.string.xiaomi_pair_bt_off_title),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                                 Text(
-                                    text = "Please turn on Bluetooth to scan or connect.\n(Note: Location is NOT required on Android 12+).",
+                                    text = stringResource(R.string.xiaomi_pair_bt_off_body),
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
@@ -1193,7 +1273,7 @@ fun CuktechDiscoveryPairingDialog(
                 }
 
                 Text(
-                    text = if (!isBtEnabled) "Bluetooth is disabled. Please turn on Bluetooth." else statusMsg,
+                    text = if (!isBtEnabled) stringResource(R.string.toast_bt_disabled) else statusMsg,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1205,7 +1285,7 @@ fun CuktechDiscoveryPairingDialog(
                 // Saved Xiaomi Cloud credentials quick-connect section
                 if (savedCreds.isNotEmpty()) {
                     Text(
-                        text = "Synced Cloud Devices (Tap to Connect)",
+                        text = stringResource(R.string.xiaomi_pair_synced_header),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -1217,7 +1297,7 @@ fun CuktechDiscoveryPairingDialog(
                                 .clickable {
                                     requestConnectToDevice(cred.mac, cred.name)
                                 },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                         ) {
@@ -1238,7 +1318,7 @@ fun CuktechDiscoveryPairingDialog(
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "${cred.mac}  ·  ${if (cred.hasValidToken) "Token Ready" else "Token Missing"}",
+                                        text = "${cred.mac}  ·  ${if (cred.hasValidToken) stringResource(R.string.xiaomi_pair_token_ready) else stringResource(R.string.xiaomi_pair_token_missing)}",
                                         fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1251,11 +1331,11 @@ fun CuktechDiscoveryPairingDialog(
                                     onClick = {
                                         requestConnectToDevice(cred.mac, cred.name)
                                     },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                    modifier = Modifier.height(32.dp)
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                                    modifier = Modifier.heightIn(min = 48.dp)
                                 ) {
-                                    Text("Connect", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(stringResource(R.string.action_connect), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -1265,7 +1345,7 @@ fun CuktechDiscoveryPairingDialog(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
                 Text(
-                    text = "Discovered Bluetooth Peripherals (${discovered.size})",
+                    text = stringResource(R.string.xiaomi_pair_discovered_fmt, discovered.size),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -1279,7 +1359,7 @@ fun CuktechDiscoveryPairingDialog(
                 ) {
                     if (discovered.isEmpty()) {
                         Text(
-                            text = "No 0xFE95 broadcast packets detected yet. Tip: If the charger display is asleep, press its button or plug in a cable to wake BLE broadcast, or select a saved credential above.",
+                            text = stringResource(R.string.xiaomi_pair_empty),
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 12.dp)
@@ -1290,7 +1370,7 @@ fun CuktechDiscoveryPairingDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { requestConnectToDevice(dev.mac, dev.name) },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(14.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                             ) {
@@ -1311,7 +1391,7 @@ fun CuktechDiscoveryPairingDialog(
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = "${dev.mac}  ·  ${dev.rssi} dBm",
+                                            text = "${dev.mac}  ·  ${dev.rssi} ${stringResource(R.string.unit_dbm)}",
                                             fontSize = 11.sp,
                                             fontFamily = FontFamily.Monospace,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1322,11 +1402,11 @@ fun CuktechDiscoveryPairingDialog(
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Button(
                                         onClick = { requestConnectToDevice(dev.mac, dev.name) },
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                        modifier = Modifier.height(32.dp)
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                                        modifier = Modifier.heightIn(min = 48.dp)
                                     ) {
-                                        Text("Connect", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(stringResource(R.string.action_connect), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1343,16 +1423,20 @@ fun CuktechDiscoveryPairingDialog(
                             if (btManager?.adapter?.isEnabled == true) {
                                 bleManager.startSearchForCuktechChargers(10000L)
                             } else {
-                                android.widget.Toast.makeText(context, "Bluetooth is turned OFF. Please turn on Bluetooth.", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(
+                                    context,
+                                    context.getString(R.string.toast_bt_disabled),
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
                             }
                         },
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                        modifier = Modifier.height(34.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                        modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Rescan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.action_rescan), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

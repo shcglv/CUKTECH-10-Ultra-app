@@ -32,7 +32,7 @@ data class LiveNotificationPayload(
  */
 object ChargingNotificationManager {
 
-    const val CHANNEL_LIVE_TELEMETRY = "BleBridgeServiceChannel"
+    const val CHANNEL_LIVE_TELEMETRY = "CuktechServiceChannel"
     const val CHANNEL_COMPLETION_ALERT = "CuktechCompletionChannel"
     const val CHANNEL_COMPLETION_SILENT = "CuktechCompletionSilentChannel"
     const val CHANNEL_ANOMALY_ALERT = "CuktechAnomalyChannel"
@@ -142,6 +142,7 @@ object ChargingNotificationManager {
             .setSmallIcon(R.drawable.ic_stat_cuktech)
             .setContentTitle(payload.title)
             .setContentText(payload.content)
+            .setSubText(context.getString(R.string.app_name))
             .setContentIntent(openPendingIntent)
             .setOngoing(true)
             .setAutoCancel(false)
@@ -160,13 +161,18 @@ object ChargingNotificationManager {
             compat.setShortCriticalText(formatShortCriticalText(payload.totalWatts, payload.nearestCountdownEndMs, nowMs))
             val pct = payload.activeLimitProgressPct ?: computePowerLoadProgressPct(payload.totalWatts)
             if (Build.VERSION.SDK_INT >= 36 && pct != null) {
+                val segmentColor = when {
+                    payload.totalWatts >= 95.0 -> Color.parseColor("#EF6C00")
+                    payload.totalWatts >= 45.0 -> Color.parseColor("#00ACC1")
+                    else -> Color.parseColor("#00B4D8")
+                }
                 val style = NotificationCompat.ProgressStyle()
                     .setStyledByProgress(true)
                     .setProgress(pct.coerceIn(0, 100))
                     .setProgressSegments(
                         listOf(
                             NotificationCompat.ProgressStyle.Segment(100)
-                                .setColor(Color.parseColor("#00B4D8"))
+                                .setColor(segmentColor)
                         )
                     )
                 compat.setStyle(style)
@@ -237,6 +243,12 @@ object ChargingNotificationManager {
             .setSmallIcon(R.drawable.ic_stat_cuktech)
             .setContentTitle(title)
             .setContentText(body)
+            .setSubText(context.getString(R.string.app_name))
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .setBigContentTitle(title)
+                    .bigText(body)
+            )
             .setAutoCancel(true)
             .setContentIntent(pi)
             .setLocalOnly(true)
@@ -271,11 +283,17 @@ object ChargingNotificationManager {
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val title = context.getString(R.string.notif_anomaly_title)
         val notif = NotificationCompat.Builder(context, CHANNEL_ANOMALY_ALERT)
             .setSmallIcon(R.drawable.ic_stat_cuktech)
-            .setContentTitle(context.getString(R.string.notif_anomaly_title))
+            .setContentTitle(title)
             .setContentText(alert.summary)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(alert.summary))
+            .setSubText(alert.portLabel ?: context.getString(R.string.app_name))
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .setBigContentTitle(title)
+                    .bigText(alert.summary)
+            )
             .setAutoCancel(true)
             .setSilent(inQuietHours)
             .setContentIntent(pi)

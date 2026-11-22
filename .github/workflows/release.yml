@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version name, e.g. 1.0.1 (tag v1.0.1 will be created)"
+        description: "Version name, e.g. 2.0.0 (tag v2.0.0 will be created)"
         required: true
       notes:
         description: "Release notes (optional)"
@@ -37,40 +37,74 @@ jobs:
       - name: Validate Gradle Wrapper
         uses: gradle/wrapper-validation-action@v2
 
-      - name: Decode release keystore
+      - name: Validate & decode release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::KEYSTORE_BASE64 secret missing. Run the 'Setup Release Keystore' workflow first."
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Release signing secrets (KEYSTORE_BASE64, STORE_PASSWORD, KEY_PASSWORD) are missing. Run 'Setup Release Keystore' first."
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           touch .env
 
-      - name: Build signed release APK
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x gradlew
+
+      - name: Run Unit & Robolectric Tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+
+      - name: Build signed release APK and App Bundle (R8 enabled)
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/release.jks
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon \
+          ./gradlew assembleRelease bundleRelease --no-daemon \
             -PappVersionName="${{ inputs.version }}" \
             -PappVersionCode="${{ github.run_number }}"
 
-      - name: Rename APK
+      - name: Cleanup temporary keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Prepare release artifacts & SHA-256 checksum
+        id: artifacts
         run: |
-          mv app/build/outputs/apk/release/app-release.apk \
-             "BLEBridge-Cuktech10-Ultra-v${{ inputs.version }}.apk"
+          APK_NAME="Cuktech-10-Ultra-v${{ inputs.version }}.apk"
+          AAB_NAME="Cuktech-10-Ultra-v${{ inputs.version }}.aab"
+          mv app/build/outputs/apk/release/app-release.apk "$APK_NAME"
+          mv app/build/outputs/bundle/release/app-release.aab "$AAB_NAME"
+          sha256sum "$APK_NAME" > "${APK_NAME}.sha256"
+          sha256sum -c "${APK_NAME}.sha256"
+          APK_SHA256="$(cut -d ' ' -f 1 "${APK_NAME}.sha256")"
+          {
+            echo "apk_name=$APK_NAME"
+            echo "aab_name=$AAB_NAME"
+            echo "sha_file=${APK_NAME}.sha256"
+            echo "apk_sha256=$APK_SHA256"
+          } >> "$GITHUB_OUTPUT"
+          {
+            if [ -n "${{ inputs.notes }}" ]; then
+              printf '%s\n\n' "${{ inputs.notes }}"
+            fi
+            echo "### Integrity Verification"
+            echo "- APK: \`$APK_NAME\`"
+            echo "- SHA-256: \`$APK_SHA256\`"
+          } > release_body.md
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
           name: v${{ inputs.version }}
-          body: ${{ inputs.notes }}
+          body_path: release_body.md
           prerelease: ${{ inputs.prerelease }}
           target_commitish: ${{ github.sha }}
-          files: BLEBridge-Cuktech10-Ultra-v${{ inputs.version }}.apk
+          files: |
+            ${{ steps.artifacts.outputs.apk_name }}
+            ${{ steps.artifacts.outputs.sha_file }}
+            ${{ steps.artifacts.outputs.aab_name }}
           fail_on_unmatched_files: true

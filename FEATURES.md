@@ -1,239 +1,143 @@
-# ⚡ Complete Features & Hardware Capabilities
+# ⚡ Complete Features & Hardware Specification (v2.0.0)
 
-Comprehensive reference of all features, hardware registers, protocols, and automation capabilities in **BLEBridge – CUKTECH 10 Ultra (`AD1204`)**.
-
----
-
-## 📑 Table of Contents
-- [1. Hardware Visual Representation & Deep Linking](#1-hardware-visual-representation--deep-linking)
-- [2. Multi-Line Real-Time Power Curves & Graphs](#2-multi-line-real-time-power-curves--graphs)
-- [3. Soft Port Reset (USB-PD Contract Re-negotiation)](#3-soft-port-reset-usb-pd-contract-re-negotiation)
-- [4. Authentication & Xiaomi Cloud Sync Engine](#4-authentication--xiaomi-cloud-sync-engine)
-- [5. Performance, Battery & Polling Architecture](#5-performance-battery--polling-architecture)
-- [6. Live Telemetry Dashboard](#6-live-telemetry-dashboard)
-- [7. Ports Control & Protocol Toggles](#7-ports-control--protocol-toggles)
-- [8. Session Tracking, Wh Integrators & CSV Export](#8-session-tracking-wh-integrators--csv-export)
-- [9. Charger Hardware Settings & Display Control](#9-charger-hardware-settings--display-control)
-- [10. Persistent Live Notification & Foreground Keepalive](#10-persistent-live-notification--foreground-keepalive)
-- [11. Home Screen Widgets (Soft Glass & Solid Dark)](#11-home-screen-widgets-soft-glass--solid-dark)
-- [12. Dual-Tab Terminal: Console Log & BLE Diagnostics](#12-dual-tab-terminal-console-log--ble-diagnostics)
-- [13. Automation Hub: Tasker Plugin, Webhooks & ADB](#13-automation-hub-tasker-plugin-webhooks--adb)
-- [14. Proximity Auto-Connect, Persistent Reconnect & Toast Alerts](#14-proximity-auto-connect-persistent-reconnect--toast-alerts)
-- [15. Telemetry Engine & Sleep Policies (Granular Power & Logging Controls)](#15-telemetry-engine--sleep-policies-granular-power--logging-controls)
+Technical reference for **Cuktech (`com.joxit.cuktech`) — CUKTECH 10 Ultra (`AD1204`, MiOT PID `0x660E`, `njcuk.fitting.ad1204`)** by **joxit**.
 
 ---
 
-## 1. Hardware Visual Representation & Deep Linking
-- **Physical Charger Faceplate Graphic (`CuktechChargerVisual`):** A custom-drawn, dark obsidian panel on the **Live tab** mirroring the physical port arrangement of the CUKTECH 10 Ultra (`USB-C1`, `USB-C2`, `USB-C3`, `USB-A`).
-- **Interactive Deep-Linked Jump:**
-  - Tapping any port capsule on the graphic triggers an animated scroll to the **Ports tab**.
-  - Automatically scrolls the target port into the viewport using `bringIntoViewRequester`.
-  - Highlights the selected port card with a temporary glowing cyan border for 2 seconds.
+## Table of Contents
+1. [Navigation, Design System, Onboarding & Localization](#1-navigation-design-system-onboarding--localization)
+2. [Interactive Charger Faceplate & Port Controls](#2-interactive-charger-faceplate--port-controls)
+3. [Master Killswitch, Undo Snackbar & Safety Cutoffs](#3-master-killswitch-undo-snackbar--safety-cutoffs)
+4. [Multi-Interval Analytics, Energy Integrator & Session Replay](#4-multi-interval-analytics-energy-integrator--session-replay)
+5. [Day/Night Electricity Tariffs & 30-Day Retention](#5-daynight-electricity-tariffs--30-day-retention)
+6. [Charger Hardware Settings & Charging Profiles](#6-charger-hardware-settings--charging-profiles)
+7. [Android 16+ Live Updates, Completion Alerts & Cable Anomaly Detector](#7-android-16-live-updates-completion-alerts--cable-anomaly-detector)
+8. [Material 3 Expressive / Glance Home Screen Widgets](#8-material-3-expressive--glance-home-screen-widgets)
+9. [Security, Keystore Encryption & Encrypted SAF Backup](#9-security-keystore-encryption--encrypted-saf-backup)
+10. [External Automation (Tasker, ADB, Home Assistant, TCP Gateway)](#10-external-automation-tasker-adb-home-assistant-tcp-gateway)
+11. [Direct In-App GitHub Updater (SHA-256 Enforced)](#11-direct-in-app-github-updater-sha-256-enforced)
+12. [Diagnostics & Redacted Console Log](#12-diagnostics--redacted-console-log)
 
 ---
 
-## 2. Multi-Line Real-Time Power Curves & Graphs
-- **Real-Time Rolling Canvas Graph:**
-  - 60-second rolling history plotted via custom Canvas drawing.
-  - Multi-line color-coded telemetry:
-    - **Total Power:** High-visibility Cyan / White curve
-    - **USB-C1:** Sky Blue
-    - **USB-C2:** Purple / Indigo
-    - **USB-C3:** Orange / Amber
-    - **USB-A:** Emerald Green
-  - Dynamic Y-axis auto-scaling up to 120W (or 100W on 100V–130V AC inputs).
-  - Smooth Bezier cubic interpolation with translucent area fill under the curves.
-- **Home Screen Widget Sparkline:**
-  - The `2x2` compact widget features an embedded sparkline graph (`renderSparklineBitmap`) plotted from live power history.
-  - Only renders when actively charging (`> 0.2W`); automatically hides when idle to eliminate flat lines.
+## 1. Navigation, Design System, Onboarding & Localization
+- **Adaptive Material 3 Expressive Chrome (`CuktechAppRoot`):**
+  - Uses `NavigationBar` on compact phones and `NavigationRail` on `Medium`/`Expanded` width classes (tablets/foldables), full `enableEdgeToEdge()`, spring motion physics, haptic touch feedback, and `WindowInsets.safeDrawing` padding.
+  - **TopAppBar Connection Pill:** Quick pairing (`Search & Pair`) and Connect/Disconnect/Cancel pill sits directly in the top bar; no bulky connection card clutters the `Overview` body.
+  - **4 Primary Destinations:** `Overview` (default launch screen), `Ports`, `Analytics`, `Settings`.
+  - **Secondary Screen:** `Diagnostics` (moved cleanly into `Settings`, absent from the TopAppBar).
+  - **Configurable Start Screen:** Launch directly to `Overview` or `Settings` (Setup).
+- **Theme & Dynamic Color:** Explicit Material You Dynamic Color toggle (`useDynamicColor` on Android 12+ `API 31+`) with Light/Dark/System modes and optional **AMOLED Pure Black** dark surface override; applies consistently across main UI, Tasker config, and Glance Widget Config activity.
+- **First-Install Onboarding (`OnboardingScreen`):** 3-page interactive guide explaining 120W telemetry, Mainland China (`CN`) single-BLE-client constraints, and runtime Bluetooth/Notification permissions; replayable anytime from `Settings`.
+- **Dynamic Runtime Localization (`RU` / `EN` / `System`):** Live switching across Compose screens, Xiaomi 2FA/pairing dialogs, notifications, Tasker plugin, and Glance widgets without restarting the process.
 
 ---
 
-## 3. Soft Port Reset (USB-PD Contract Re-negotiation)
-- **Non-Destructive Protocol Power-Cycle (`PIID 25`):**
-  - Sends a momentary power-switch cycle (`0x00 -> 0x0F`) to the physical DC-DC buck-boost converters.
-  - Forces connected laptops, phones, and power banks to renegotiate fresh USB-PD, PPS, or UFCS contracts without physically unplugging cables or pulling the charger from the wall AC outlet.
-  - Available via:
-    - **Settings Tab:** "Re-negotiate Ports (Soft Reset)" button with safety confirmation dialog.
-    - **Tasker Action:** `Force Soft Port Reset`.
-    - **ADB Broadcast Intent:** `com.cramqin.blecuktech10.FORCE_SOFT_RESET`.
+## 2. Interactive Charger Faceplate & Port Controls
+- **Physical Port Naming:** Uses explicit hardware labels across Overview, Ports, Faceplate, Tasker, and Widgets: **`USB-C1`**, **`USB-C2`**, **`USB-C3`**, and **`USB-A`**, paired with user-editable port aliases.
+- **Faceplate Navigation:** Tapping any port slot on the live CUKTECH 10 Ultra faceplate opens the `Ports` screen scrolled directly to that port card with a focus highlight.
+- **Hardware-Accurate Fast-Charge Protocol Switches:**
+  - `USB-C1` & `USB-C2`: `PD`, `PPS`, `UFCS`.
+  - `USB-C3` & `USB-A`: `UFCS`, `SCP` (no non-existent PD/PPS switches).
+  - `USB-A 4h Low-Current Mode` (`PIID 18`) with persisted wall-clock countdown deadline.
+- **Power Allocation Scenarios (`SIID 2 / PIID 15`):** `AI Mode (1)`, `Hybrid (2)`, `Single Priority (3)`, `Dual High-Power (4)`.
+- **Soft Port Reset (`PIID 25`):** Non-destructive DC-DC switch cycle (`0x00 -> 0x0F`) for PD/PPS contract re-negotiation with confirmation dialog.
+- **Timers & Wh Cutoffs:**
+  - Delay auto-off countdown (`Always On`, presets, or custom duration up to `1440 min`) persisted across app restarts.
+  - Per-port energy cutoff (`Wh` target in `Once` or `Always` mode) enforced in `EnergyTracker` + `CommandDispatcher`.
 
 ---
 
-## 4. Authentication & Xiaomi Cloud Sync Engine
-- **4 Flexible Login Modes:**
-  1. **Google / Web OAuth:** In-app secure WebView for Google-linked Xiaomi accounts.
-  2. **QR Code Scan:** Generate a Xiaomi Cloud QR session; scan with the official Mi Home app on another phone to sign in with zero typing.
-  3. **Password Login with 2FA Challenge:** Native login supporting SMS OTP and Email two-factor verification codes.
-  4. **Manual / JSON Token Import:** Directly paste MAC address, 12-byte MiOT Token, and 16-byte BLE Key offline without connecting to Xiaomi servers.
-- **Multi-Device Credential Storage & Switcher:**
-  - Encrypted local storage supporting multiple CUKTECH chargers. Switch active chargers with 1 tap or use auto-pair scanning.
-- **Cryptographic 2-Phase Handshake:**
-  - **Phase A (`0xA4`):** Exchanges capabilities on `CHAR_AUTH_CTRL` (`00000010`) and `CHAR_AUTH_DATA` (`00000005`).
-  - **Phase B (`0x1500`):** Ephemeral `SECP256R1` ECDH key agreement, `HKDF-SHA256` session key derivation bound to the 12-byte MiOT Token, and mutual `AES-CCM` challenge verification.
+## 3. Master Killswitch, Undo Snackbar & Safety Cutoffs
+- **Master Killswitch (`Overview`):** Executes an explicit confirmation dialog, then dispatches a **sequential** per-port shutdown across ports `1..4` via `PIID 16` and reports per-port outcomes.
+- **Localized Undo & Killswitch Restore (`CommandDispatcher`):**
+  - Successful user actions (`SetPortEnabled`, `SetSceneMode`, `SetScreenTimeout`, `SetPortCountdown`, `SetUsbALowCurrent`, `ApplyChargingProfile`, etc.) emit structured `UndoActionKind` metadata rendered cleanly in RU or EN inside a timed M3 **Undo Snackbar**.
+  - **Safety Invariant:** Whenever an energy limit (`WH_LIMIT`) or port timer safety cutoff fires (`notifySafetyCutoffTriggered`), any pending Undo entry and Killswitch restore snapshot are **immediately invalidated** (`SAFETY_LOCKOUT` / `WH_LIMIT_TRIGGERED`) so automated protections cannot be accidentally bypassed.
 
 ---
 
-## 5. Performance, Battery & Polling Architecture
-- **0.0% CPU & Near-Zero Battery Drain on Idle:**
-  - Uses `< 0.1%` CPU when idle; virtually zero battery impact over open BLE.
-  - **Silent Idle Telemetry Filter:** Unchanged `0.0V 0.0A (Idle)` poll responses are silently dropped—preventing redundant UI recompositions, widget redraws, Tasker broadcasts, and console spam.
-- **Hardware-Aware Hybrid Telemetry:**
-  - **USB-C1 & USB-C2:** Hardware pushes live notifications (`b4 = 0x04`) spontaneously on plug-in or load change. BLEBridge runs **0 polls when idle**, only using a light `3s` backup poll during active charging to catch unplugs.
-  - **USB-C3 & USB-A:** Hardware lacks push frames; BLEBridge polls them every `5s` when idle (instant plug-in detection) and speeds up to `3s` when charging for smooth energy integration.
-- **Sequential Hardware Mutex Queue:**
-  - Funnels all GATT writes through a sequential, non-blocking coroutine queue with automatic 1.8s timeout deadman switches to prevent Telink controller saturation.
+## 4. Multi-Interval Analytics, Energy Integrator & Session Replay
+- **Honest Non-Interpolated Energy Integration (`EnergyTracker`):**
+  - Integrates `Wh` strictly across consecutive confirmed telemetry samples within valid sampling intervals; **never** bridges long BLE disconnects or idle gaps with fabricated energy.
+  - Marks active and completed sessions with exact active duration (`activeDurationSec`), `Wh`, peak `W`, average `W`, protocol badge, and end reason (`UNPLUGGED`, `WH_LIMIT`, `USER_STOP`, `MASTER_KILLSWITCH`, `DISCONNECTED`).
+- **Separated Chart Metrics (`AnalyticsScreen`):**
+  - Intervals: `60s` (live high-rate buffer), `5m`, `30m`, `Session`, `Today`, `Custom` (Room snapshot queries).
+  - Metric selectors: `Power (W)`, `Voltage (V)`, `Current (A)`, `Energy (Wh)`, and `Protocol Timeline`.
+- **Interactive Session Replay (`SessionReplayDialog`):** Replay any recorded session's `W`/`V`/`A`/`Wh` samples using Play/Pause + timeline scrubber slider.
+- **CSV Export (`Analytics`):** Exports filtered history (`Session` / `1h` / `24h` / `7d` / `All Time`; `All` / `Sessions` / `Telemetry`) via Storage/MediaStore.
 
 ---
 
-## 6. Live Telemetry Dashboard
-- **Total Power Hero Card:**
-  - Real-time wattage (`0.0W` to `120.0W`).
-  - Peak Session Wattage badge.
-  - Accumulated Energy (`Wh`).
-  - Bluetooth RSSI signal quality meter with color-coded reception indicator.
-- **Power Allocation Scenarios Dialog:**
-  - Official AD1204 hardware modes:
-    1. **AI Mode (`1`):** Intelligent dynamic power allocation across all 4 ports.
-    2. **Hybrid (`2`):** Balanced allocation between laptops and mobile accessories.
-    3. **Single Device Priority (`3`):** Dedicates maximum power ceiling to USB-C1.
-    4. **Dual High-Power (`4`):** Splits power evenly between USB-C1 and USB-C2.
-- **4 Individual Port Cards:**
-  - Live Voltage (`V`), Current (`A`), and Power (`W`).
-  - Negotiated protocol badge (`PD3.0`, `PPS`, `MiPPS`, `UFCS`, `SCP`, `QC3.0`).
-  - 1-tap port power switch.
-  - **Energy Limit (`Wh`) Cutoff:** Auto-shutoff when target energy is reached (`Once` or `Always`) with presets (`10Wh`, `25Wh`, `50Wh`, `80Wh`, `100Wh`).
-  - **Closure Countdown Timer:** Precision hour/minute wheels + presets (`Always On`, `15m`, `30m`, `1h`, `2h`, `4h`) + second-by-second live countdown ticker badge on the card.
+## 5. Day/Night Electricity Tariffs & 30-Day Retention
+- **Configurable ToU Tariff (`AppPreferences`):** Configure currency (`USD`, `EUR`, `RUB`, `GBP`, `CNY`, etc.), day/flat rate per `kWh`, optional Time-of-Use night rate, and day/night boundary minutes (midnight-wrap safe).
+- **Immutable Session Cost Snapshots:** When a charging session ends, its calculated energy cost and tariff metadata (`estimatedCost`, `currencyCodeSnapshot`, `tariffRateSnapshot`) are persisted inside Room so changing future electricity rates never retroactively rewrites historical bills.
+- **30-Day Automatic Retention Archiving (`CuktechPersistence`):** Sessions older than **30 days** are rolled up into `DailyEnergyAggregateEntity` rows before pruning raw old snapshots/sessions.
 
 ---
 
-## 7. Ports Control & Protocol Toggles
-- **Per-Port Fast-Charge Protocol Switches (`PIID 20–23`):**
-  - **PD (up to 100W):** Standard USB Power Delivery contract.
-  - **PPS (Programmable Power Supply):** Fine-grained voltage/current stepping for Samsung Super Fast Charging and Xiaomi HyperCharge.
-  - **UFCS (Universal Fast Charging Specification):** China's unified fast-charging protocol (Huawei, OPPO, Vivo, Xiaomi).
-  - **Huawei SCP (SuperCharge Protocol 22.5W):** Low-voltage direct charging for Huawei devices.
-- **USB-A Low Current Mode (4h) (`PIID 18`):**
-  - Keeps the USB-A port active for 4 hours without shutting down due to low current draw—ideal for smartwatches, fitness bands, and wireless earbuds.
+## 6. Charger Hardware Settings & Charging Profiles
+- **Hardware Display & Behavior (`Settings`):**
+  - Screen Sleep Timeout (`PIID 6`: Always On / 1m / 5m / 10m / 30m)
+  - Idle Screen-Off (`PIID 19`)
+  - Physical LCD Language (`PIID 13`: Chinese / English)
+  - Orientation Lock & 180° Screen Rotate (`PIID 20` / `PIID 14`)
+  - Charger LCD Page Switching (`PIID 14`: pages 1..5)
+- **Saved Charging Profiles (`ChargingProfileEntity`):** Save and 1-tap apply combinations of Scene Mode, active port bitmap, screen timeout, USB-A low-current mode, idle screen-off, orientation lock, and optional per-port `Wh` limits from the `Overview` dashboard.
 
 ---
 
-## 8. Session Tracking, Wh Integrators & CSV Export
-- **Live & Historical Charging Sessions:**
-  - Automatic session start detection when power exceeds `0.2W`.
-  - Tracks start timestamp, elapsed duration, peak wattage, average wattage, and integrated energy in Watt-hours (`Wh`) using trapezoidal energy integration.
-- **Session Detail Inspector Dialog:** Tap any session card in the History tab to view full charging metrics and time breakdown.
-- **Consolidated Sessions Table Dialog:** Unified chronological spreadsheet view displaying all charging sessions across all ports.
-- **CSV Data Export:**
-  - Filter by timeframe: `24 Hours`, `7 Days`, `30 Days`, `All Time`.
-  - Filter by scope: `All Data`, `Active Only`, `Completed Only`.
-  - Exports directly to `Downloads/cuktech10/history/` on shared storage.
-- **Granular History Clearing Dialog:** Delete completed sessions while keeping active charging sessions intact, or perform a full purge.
+## 7. Android 16+ Live Updates, Completion Alerts & Cable Anomaly Detector
+- **Android Foreground Service (`connectedDevice`) & Promoted Ongoing Notifications (`ChargingNotificationManager`):**
+  - Displays localized live total watts, active per-port wattage breakdown, and concise `shortCriticalText` (`mm:ss` / `XhYm` nearest countdown or live wattage badge) with `NotificationCompat` Promoted Ongoing hints (`API 36+` Android 16 Live Updates) and a quick settings shortcut for `ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS`.
+- **Smart Charging Completion Alerts (`ChargingCompletionDetector`):**
+  - Fires only when power drops from meaningful active load (`>= 2.5W`) into trickle band (`<= completionPowerThresholdW`, default `1.0W`) and stays connected & above `0.05W` for the configurable hysteresis window (`30–300s`, default `60s`). Abrupt cable unplugs (`0.0W`) or safety cutoffs do **not** spuriously trigger completion alerts.
+  - Supports **Quiet Hours** and optional capped repeat reminders.
+- **Cable & BLE Anomaly Detector (`CableAnomalyDetector`):**
+  - Raises localized dismissible alert banners on **3+** rapid `PD -> 5V Normal` renegotiation collapses, **3+** sharp `>= 15W -> <= 0.5W` load-drop loops, or **3+** unplanned BLE disconnect flaps within 3 minutes.
 
 ---
 
-## 9. Charger Hardware Settings & Display Control
-- **Screen Sleep Timeout (`PIID 6`):** Configure charger LCD screen-off timeout: `Always On`, `1 min`, `5 min`, `10 min`, `30 min`.
-- **Idle Screen-Off (`PIID 19`):** Automatically puts the charger's color LCD to sleep when all ports are idle (`0W`), waking immediately when a cable is plugged in.
-- **Physical Screen Language (`PIID 13`):** Toggle the charger's onboard LCD language between `Chinese (中文)` and `English`.
-- **Screen Orientation Rotation (`PIID 20` & `PIID 14`):** Rotate the onboard display 180° (`Normal` vs `Inverted`) so the readout is right-side up regardless of wall outlet orientation.
-- **LCD Page Navigation (`PIID 14`):** Cycle or switch between the charger's onboard display views (Port Telemetry summary, per-port detail).
-- **5 Custom Dark Theme Accent Palettes (In-App):**
-  - `CUKTECH Gunmetal` (Classic deep navy gunmetal with balanced cyan)
-  - `AMOLED Pure Black` (True `#000000` with soft electric cyan)
-  - `Cyberpunk Neon` (Midnight obsidian with neon emerald green)
-  - `Titanium Amber` (Warm dark titanium with industrial hazard amber)
-  - `Deep Ocean Blue` (Midnight navy with cool sapphire blue)
+## 8. Material 3 Expressive / Glance Home Screen Widgets
+- **2 Adaptive Jetpack Glance Widgets (`4x2` Wide & `2x2` Compact):**
+  - Built with `GlanceTheme` Material 3 Dynamic Color tokens (`cornerRadius(26.dp)` outer, `18.dp`/`14.dp` interactive port pills), `updatePeriodMillis="0"`, and RU/EN localization via `context.withAppLocale(...)`.
+  - Features a transparent `ARGB_8888` gradient power sparkline tinted with `GlanceTheme.colors.primary`.
+  - Zero timer alarms: `CuktechWidgetUpdater` deduplicates identical telemetry snapshots and throttles sub-second jitter while dispatching auth-state transitions immediately.
+  - **Per-Widget Customization (`CuktechWidgetConfigActivity`):** Honors `useDynamicColor` & AMOLED black theme, lets you pick emphasized ports, sparkline visibility, cumulative `Wh` summary, and tap-to-open target destination (`Overview`, `Ports`, `Analytics`, `Settings`).
+  - Interactive Glance `ActionCallback` buttons toggle individual ports (`USB-C1`..`USB-A`) or cycle power allocation scenes via `CommandDispatcher`.
 
 ---
 
-## 10. Persistent Live Notification & Foreground Keepalive
-- **Android Foreground Service Notification (`CONNECTED_DEVICE`):**
-  - Keeps the BLE connection and local TCP bridge alive even with aggressive OEM process killers without holding continuous CPU wakelocks.
-  - **Zero 24/7 CPU Wakelocks (Doze & Deep Sleep Friendly):** The CPU wakelock is strictly released, allowing the phone's Application Processor (AP) to enter true deep sleep (Doze mode) overnight while the hardware Bluetooth controller manages BLE packets and GATT indications.
-  - **Notification Auto-Restoration & Sticky Ongoing Mode:** The notification uses `setOngoing(true)`, `setAutoCancel(false)`, and `FOREGROUND_SERVICE_IMMEDIATE`. If the notification is ever accidentally dismissed or cleared by the user or system, it self-heals and automatically restores on the next telemetry tick or whenever the app is opened (`onResume`).
-  - Displays dynamic, live-updating charging metrics directly in the Android status bar and shade:
-    - **Header Status:** Active connection state (`⚡ CUKTECH 10 Ultra · XX.XW` or `Standby`).
-    - **Total Power & Active Ports:** Live total wattage along with concise per-port breakdowns (`C1: 4.8W | C2: 18.2W`).
-    - **1-Tap Quick Action:** Instant tap to launch directly into the full Telemetry dashboard.
-  - Automatically suppresses notification updates when idle (`0.0W`) to prevent unnecessary Android notification redraws.
+## 9. Security, Keystore Encryption & Encrypted SAF Backup
+- **Android Keystore Credential Store (`SecureCredentialStore`):**
+  - Encrypts Xiaomi MiOT device keys, tokens, session secrets, automation Bearer tokens, and HA Webhook Bearer token via `AndroidKeyStore` (`AES-256-GCM`).
+  - Strictly **fail-closed**: zero hardcoded fallback encryption keys; purges any legacy fallback entries on startup.
+- **Backup & Export Hygiene:**
+  - `android:allowBackup="false"`, `backup_rules.xml`, and `data_extraction_rules.xml` exclude sensitive SharedPreferences (`cuktech_app_prefs.xml`), DataStore files, and Room databases from ADB/cloud device backups.
+  - Zero automatic reads from shared `Downloads/` directories.
+- **Password-Protected SAF `.cukbackup` (`SafEncryptedBackupManager`):**
+  - Export and restore preferences, port aliases, profiles, `Wh` limits, session history, and daily aggregates via Android Storage Access Framework using `PBKDF2WithHmacSHA256` (210,000 iterations) + `AES-256-GCM` with versioned AAD.
+  - Device keys/secrets are **excluded by default** (explicit opt-in checkbox with warning). Wrong passphrases or tampered ciphertext fail cleanly (`AEADBadTagException`).
+- **Automatic Log Redaction (`LogSanitizer`):** Masks MAC addresses, Xiaomi `ssecurity`/`serviceToken`/`miToken`/BLE keys, Bearer tokens, URLs with query credentials, and auth payloads across logs and clipboard copies.
 
 ---
 
-## 11. Home Screen Widgets (Soft Glass & Solid Dark)
-4 native home screen widgets in the Android Widget Picker (`updatePeriodMillis="0"` for zero periodic battery drain):
-- **`CUKTECH 10 · 4x2 Soft Glass`:** Translucent frosted slate glass, connection status dot, total wattage, scenario pill (tap to cycle modes), and 4 interactive port capsules (tap to toggle port ON/OFF).
-- **`CUKTECH 10 · 2x2 Soft Glass`:** Compact square tile with total wattage, scenario badge, an uncompressed 2×2 port wattage grid, and a live cyan sparkline graph when charging.
-- **`CUKTECH 10 · 4x2 Solid Dark`:** 100% opaque obsidian dark card with the full 4x2 control center layout.
-- **`CUKTECH 10 · 2x2 Solid Dark`:** 100% opaque obsidian dark card with the compact 2x2 layout.
+## 10. External Automation (Tasker, ADB, Home Assistant, TCP Gateway)
+- All external triggers (`TaskerFireReceiver`, `BleCommandReceiver`, `TcpGatewayServer`) are **disabled by default** in `AutomationAuthManager` and validate requests using constant-time `MessageDigest.isEqual`, per-source exponential failure lockout, and sliding-window rate limits:
+  - **Tasker / MacroDroid Plugin:** Auto-injects the per-install token when editing an action while Tasker opt-in is active; enforces verification inside `TaskerFireReceiver`.
+  - **ADB / Termux Broadcasts (`BleCommandReceiver`):** Listen for `com.joxit.cuktech.*` actions and require `--es auth_token "<token>"` for every action (`CONNECT_CHARGER`, `DISCONNECT_CHARGER`, `SCAN_CHARGER`, `SET_PORT_STATE`, `SET_SCENE_MODE`, `SET_SCREEN_TIMEOUT`, `SET_CHARGE_LIMIT`, `FORCE_SOFT_RESET`, `MASTER_KILLSWITCH`, `UNDO_LAST_COMMAND`, `START_SERVER`, `STOP_SERVER`, `QUERY_STATUS`, and sleep policy toggles).
+  - **Home Assistant HTTP Webhook (`CloudIntegrations`):** Rate-limited (`10s`) JSON POST with Keystore-encrypted Bearer token and plaintext `http://` warning.
+  - **TCP Socket Gateway:** Binds `127.0.0.1:8080` by default; see [docs/TCP_SOCKET_BRIDGE.md](docs/TCP_SOCKET_BRIDGE.md).
 
 ---
 
-## 12. Dual-Tab Terminal: Console Log & BLE Diagnostics
-- **Tab 0 (Console Log):**
-  - 1,000-message scroll-persisted rolling buffer.
-  - 3 Granular Verbosity Levels:
-    - `LEVEL 1: Errors Only`
-    - `LEVEL 2: Connections & Status`
-    - `LEVEL 3: Full Raw Telemetry` (Raw hex, MIoT frames, decrypted buffers)
-  - 1-tap Copy to Clipboard and manual Clear button.
-- **Tab 1 (BLE Diagnostics):**
-  - Fully manual, on-demand hardware diagnostics (never runs automatically).
-  - Audits phone Bluetooth adapter capabilities (LE 2M, Coded PHY, Extended Advertising).
-  - Checks Xiaomi MiOT service UUID (`0xFE95`) discovery.
-  - Displays charger serial number, firmware version, and GATT MTU.
-  - Verifies Android Battery Whitelist and CPU WakeLock keepalive status.
+## 11. Direct In-App GitHub Updater (SHA-256 Enforced)
+- Queries GitHub Releases (`joxit/cuktech-10-ultra`, `releases/latest`), compares semver (`isNewerVersion`), ignoring drafts/prereleases.
+- Downloads the APK over HTTPS into private `cacheDir/updates/` and verifies the computed **SHA-256** digest against the GitHub asset digest, `.sha256` sidecar asset, or release checksum notes.
+- **Fail-Closed:** Refuses updates lacking a valid 64-hex-char SHA-256 and **immediately deletes** any downloaded APK whose digest mismatches.
 
 ---
 
-## 13. Automation Hub: Tasker Plugin, Webhooks & ADB
-- **Tasker / Locale / MacroDroid Plugin (`TaskerEditActivity` & `TaskerFireReceiver`):**
-  - Configure automated actions directly inside Tasker's GUI:
-    1. Connect to Charger
-    2. Disconnect Charger
-    3. Toggle Port Power (`USB-C1`, `USB-C2`, `USB-C3`, `USB-A` ON/OFF)
-    4. Set Power Allocation Scenario (`AI Mode`, `Hybrid`, `Single`, `Dual`)
-    5. Set Charger Screen Timeout (`Always On`, `1m`, `5m`, `10m`, `30m`)
-    6. Set Idle Screen-Off (Sleep LCD when all ports are idle)
-    7. Set USB-A Low Current Mode (4-hour wearable charge)
-    8. Set Port Delay Power-Off Countdown Timer (`0` to `600` minutes)
-    9. Set Port Energy Cutoff Limit (`Wh`)
-    10. Force Soft Port Reset (Re-negotiate all ports)
-    11. Set Proximity Auto-Connect (`ON` / `OFF`)
-- **Tasker Telemetry Broadcast Intent (`com.cramqin.blecuktech10.TELEMETRY_UPDATE`):**
-  - Broadcasts live variables to Tasker: `%total_watts`, `%port_1_v`, `%port_1_a`, `%port_1_w`, `%port_1_protocol`, `%port_1_enabled` (for ports 1..4).
-- **Home Assistant HTTP Webhook Push:**
-  - Pushes JSON telemetry (`total_watts`, per-port `V`/`A`/`W`/`protocol`, `rssi`) to any Home Assistant webhook endpoint.
-- **ADB / Termux / Tasker Broadcast Intent API:**
-  - Send commands via Tasker "Send Intent" or ADB: `CONNECT_CHARGER`, `DISCONNECT_CHARGER`, `SET_AUTO_CONNECT` (`--ez enabled true/false`), `SET_PORT_STATE`, `SET_SCENE_MODE`, `SET_SCREEN_TIMEOUT`, `SET_CHARGE_LIMIT`, `SCAN_CHARGER`.
-- **Raw TCP-to-BLE Socket Gateway (`port 8080`):**
-  - Bridges raw TCP socket connections straight into physical BLE GATT characteristics for low-level protocol development and scripting.
-
----
-
-## 14. Proximity Auto-Connect, Persistent Reconnect & Toast Alerts
-- **Proximity Auto-Connect:**
-  - Automatically searches for and connects to your saved CUKTECH 10 Ultra whenever it comes into Bluetooth range—much like wireless Bluetooth keyboards, mice, or earbuds.
-  - Toggling "Auto-Connect on Proximity" ON inside the Gateway settings immediately initiates a connection/discovery scan and clears any prior manual disconnect flag.
-- **Persistent Unplug & Replug Reconnect:**
-  - When the charger is unplugged from AC power, the foreground service transitions to a low-power standby mode (`⚡ CUKTECH 10 Ultra · Standby`), keeping the Bluetooth listener active even while your phone is locked or the app is in the background.
-  - Uses native Android hardware `ScanFilter` targeting the charger's embedded MAC and MiOT service UUID (`0xFE95`) for instant packet recognition without waking the CPU for irrelevant devices.
-  - Features an automated **5-minute progressive battery backoff**: scans every ~7.5 seconds during the first 5 minutes (for fast socket-swapping), then drops to a relaxed 20-second interval to preserve battery.
-- **Startup Auto-Connect:**
-  - If the app was closed, killed by Android memory pressure, or force-stopped, reopening the app immediately re-initiates connection to the charger if Auto-Connect is configured.
-- **Native Toast Feedback:**
-  - Displays a clean, debounced Android Toast on both connection (`⚡ CUKTECH 10 Ultra Connected`) and disconnection (`🔌 CUKTECH 10 Ultra Disconnected`) across all connection modes (manual, quick connect, proximity, or tasker).
-
----
-
-## 15. Telemetry Engine & Sleep Policies (Granular Power & Logging Controls)
-- **Per-Port History & Wh Logging Switches:**
-  - Each port card on the **Ports tab** features an independent **"History & Wh Logging"** toggle.
-  - When disabled for a specific port (e.g., a 24/7 idle router or home server), live instantaneous voltage and wattage are still read and rendered on the faceplate graphic, but Wh accumulator updates, SQLite snapshot writes, and session history records are completely bypassed.
-- **Global Sleep & Power Policies (Setup Tab):**
-  - **Master Telemetry Switch:** Pauses active BLE background polling on demand while maintaining the connected BLE session.
-  - **Only Log When Host Phone is Charging:** Restricts continuous background polling and history writes to when the host phone itself is plugged into AC power. Takes priority over screen lock: when phone is charging, telemetry logging continues even with the screen off/locked. When on battery, background telemetry pauses to preserve 0% phone drain.
-  - **Pause Polling When Screen Locked:** Automatically suspends BLE polling whenever the screen turns off (maximizing kernel Doze deep sleep when running on battery). Disabled/overridden when "Only Log When Host Phone is Charging" is active and the phone is charging. Instantly resumes telemetry upon unlocking the phone.
-- **Tasker & Broadcast Automation Support:**
-  - All sleep and logging policies are controllable via Tasker plugin actions and broadcast intents (`com.cramqin.blecuktech10.SET_PORT_LOGGING`, `SET_TELEMETRY_ENABLED`, `SET_LOG_ONLY_WHEN_CHARGING`, `SET_PAUSE_POLLING_WHEN_LOCKED`).
-
+## 12. Diagnostics & Redacted Console Log
+- **Dedicated Diagnostics Screen (`DiagnosticsScreen`):** Accessed via `Settings`, kept off the main dashboard and top app bar.
+- **Rolling Console Buffer:** 1,000 entries across `LEVEL 1` (Errors), `LEVEL 2` (Connections & Status), `LEVEL 3` (Sanitized Protocol Frames), with **1-tap sanitized Copy to Clipboard**.
+- **On-Demand BLE Stack Audit (`BleDiagnostics`):** Manually runs checks for BT adapter capabilities (LE 2M PHY, Coded PHY, Extended Advertising), Xiaomi `0xFE95` visibility, GATT MTU, negotiated telemetry stats, Keystore/auth state, and battery optimization exemptions.

@@ -194,3 +194,42 @@ data class ChargingProfileEntity(
     val isBuiltIn: Boolean = false,
     val createdAtMs: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "port_device_presets")
+data class PortDevicePresetEntity(
+    @PrimaryKey
+    val portId: Int, // 1..4
+    val presetType: String, // CUSTOM (kept for backward compatibility)
+    val deviceLabel: String = "",
+    val targetWh: Double = 19.25,
+    val initialSocPct: Int = 20,
+    val capacityMah: Int = 5000,
+    val cellSeriesCount: Int = 1,
+    val updatedAtMs: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "automation_rules",
+    indices = [
+        Index(value = ["enabled"]),
+        Index(value = ["triggerType"])
+    ]
+)
+data class AutomationRuleEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0L,
+    val name: String,
+    val enabled: Boolean = true,
+    val triggerType: String, // LOW_POWER_CUTOFF, DAILY_SCHEDULE, HIGH_LOAD_SCENE
+    val portId: Int = 1, // 1..4
+    val thresholdWatts: Double = 1.5,
+    val holdSeconds: Int = 300,
+    val minuteOfDay: Int = 23 * 60, // Used by DAILY_SCHEDULE (0..1439)
+    val daysMask: Int = 0b1111111, // Mon=bit0 .. Sun=bit6
+    val actionType: String = "PORT_OFF", // PORT_OFF, SET_SCENE_MODE
+    val actionSceneMode: Int = 1,
+    val lastTriggeredMs: Long = 0L,
+    val cooldownMinutes: Int = 30,
+    val createdAtMs: Long = System.currentTimeMillis()
+)
+

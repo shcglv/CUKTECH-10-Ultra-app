@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.os.Build
 import android.provider.MediaStore
+import com.example.cuktech.db.room.AutomationRuleEntity
 import com.example.cuktech.db.room.ChargeSessionEntity
 import com.example.cuktech.db.room.ChargingProfileEntity
 import com.example.cuktech.db.room.CuktechDatabase
@@ -11,6 +12,7 @@ import com.example.cuktech.db.room.DailyEnergyAggregateEntity
 import com.example.cuktech.db.room.DeviceAliasEntity
 import com.example.cuktech.db.room.LegacySqliteMigrator
 import com.example.cuktech.db.room.PortChargeLimitEntity
+import com.example.cuktech.db.room.PortDevicePresetEntity
 import com.example.cuktech.db.room.TelemetrySampleEntity
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.energy.PortChargeLimit
@@ -32,7 +34,11 @@ import kotlin.math.max
 data class PowerChartPoint(
     val timestampMs: Long,
     val totalWatts: Double,
-    val portWatts: Map<Int, Double>
+    val portWatts: Map<Int, Double>,
+    val portVolts: Map<Int, Double> = emptyMap(),
+    val portAmps: Map<Int, Double> = emptyMap(),
+    val portWh: Map<Int, Double> = emptyMap(),
+    val portProtocols: Map<Int, String> = emptyMap()
 )
 
 data class ArchiveSummary(
@@ -57,6 +63,8 @@ class CuktechPersistence @JvmOverloads constructor(
     private val limitDao = db.portChargeLimitDao()
     private val aliasDao = db.deviceAliasDao()
     private val profileDao = db.chargingProfileDao()
+    private val presetDao = db.portDevicePresetDao()
+    private val ruleDao = db.automationRuleDao()
 
     init {
         if (runLegacyMigration) {
@@ -114,6 +122,10 @@ class CuktechPersistence @JvmOverloads constructor(
     fun observeAliases(): Flow<List<DeviceAliasEntity>> = aliasDao.observeAll()
 
     fun observeProfiles(): Flow<List<ChargingProfileEntity>> = profileDao.observeAll()
+
+    fun observePortDevicePresets(): Flow<List<PortDevicePresetEntity>> = presetDao.observeAll()
+
+    fun observeAutomationRules(): Flow<List<AutomationRuleEntity>> = ruleDao.observeAll()
 
     fun recordPortSnapshot(
         ports: Collection<PortTelemetry>,
@@ -385,6 +397,39 @@ class CuktechPersistence @JvmOverloads constructor(
 
     fun getProfiles(): List<ChargingProfileEntity> = runCatching { profileDao.getAll() }.getOrDefault(emptyList())
 
+    // --- Port Device Presets (Charging ETA) ---
+
+    fun savePortDevicePreset(preset: PortDevicePresetEntity) {
+        runCatching { presetDao.upsert(preset) }
+    }
+
+    fun deletePortDevicePreset(portId: Int) {
+        runCatching { presetDao.deleteByPortId(portId) }
+    }
+
+    fun getPortDevicePresets(): List<PortDevicePresetEntity> =
+        runCatching { presetDao.getAll() }.getOrDefault(emptyList())
+
+    // --- Local Automation Rules ---
+
+    fun saveAutomationRule(rule: AutomationRuleEntity): Long =
+        runCatching { ruleDao.upsert(rule) }.getOrDefault(-1L)
+
+    fun setAutomationRuleEnabled(id: Long, enabled: Boolean) {
+        runCatching { ruleDao.setEnabled(id, enabled) }
+    }
+
+    fun markAutomationRuleTriggered(id: Long, triggeredMs: Long) {
+        runCatching { ruleDao.updateLastTriggered(id, triggeredMs) }
+    }
+
+    fun deleteAutomationRule(id: Long) {
+        runCatching { ruleDao.deleteById(id) }
+    }
+
+    fun getAutomationRules(): List<AutomationRuleEntity> =
+        runCatching { ruleDao.getAll() }.getOrDefault(emptyList())
+
     // --- CSV Export (SAF stream + MediaStore API 29+) ---
 
     enum class ExportTimeframe(val label: String) {
@@ -642,6 +687,38 @@ class CuktechPersistence @JvmOverloads constructor(
             }
         } else null
 
+        val presetsArr = JSONArray()
+        for (pr in presetDao.getAll()) {
+            presetsArr.put(JSONObject().apply {
+                put("portId", pr.portId)
+                put("presetType", pr.presetType)
+                put("deviceLabel", pr.deviceLabel)
+                put("targetWh", pr.targetWh)
+                put("initialSocPct", pr.initialSocPct)
+                put("capacityMah", pr.capacityMah)
+                put("cellSeriesCount", pr.cellSeriesCount)
+                put("updatedAtMs", pr.updatedAtMs)
+            })
+        }
+
+        val rulesArr = JSONArray()
+        for (rl in ruleDao.getAll()) {
+            rulesArr.put(JSONObject().apply {
+                put("name", rl.name)
+                put("enabled", rl.enabled)
+                put("triggerType", rl.triggerType)
+                put("portId", rl.portId)
+                put("thresholdWatts", rl.thresholdWatts)
+                put("holdSeconds", rl.holdSeconds)
+                put("minuteOfDay", rl.minuteOfDay)
+                put("daysMask", rl.daysMask)
+                put("actionType", rl.actionType)
+                put("actionSceneMode", rl.actionSceneMode)
+                put("cooldownMinutes", rl.cooldownMinutes)
+                put("createdAtMs", rl.createdAtMs)
+            })
+        }
+
         return BackupPayload(
             createdAtMs = System.currentTimeMillis(),
             includesSecrets = includeSecrets,
@@ -651,7 +728,9 @@ class CuktechPersistence @JvmOverloads constructor(
             chargeLimitsArray = limitsArr,
             aliasesArray = aliasesArr,
             profilesArray = profilesArr,
-            devicesSecretsArray = secretsArr
+            devicesSecretsArray = secretsArr,
+            portPresetsArray = presetsArr,
+            automationRulesArray = rulesArr
         )
     }
 
@@ -663,6 +742,8 @@ class CuktechPersistence @JvmOverloads constructor(
                 limitDao.deleteAll()
                 aliasDao.deleteAll()
                 profileDao.deleteAllCustom()
+                presetDao.deleteAll()
+                ruleDao.deleteAll()
             }
 
             val sessionsToInsert = mutableListOf<ChargeSessionEntity>()
@@ -766,6 +847,49 @@ class CuktechPersistence @JvmOverloads constructor(
                 )
             }
             if (profiles.isNotEmpty()) profileDao.upsertAll(profiles)
+
+            val presets = mutableListOf<PortDevicePresetEntity>()
+            for (i in 0 until payload.portPresetsArray.length()) {
+                val obj = payload.portPresetsArray.optJSONObject(i) ?: continue
+                val restoredWh = obj.optDouble("targetWh", 19.25)
+                val restoredCells = obj.optInt("cellSeriesCount", 1).coerceIn(1, 3)
+                val fallbackMah = ((restoredWh * 1000.0) / (restoredCells * 3.85)).toInt().coerceIn(100, 50_000)
+                presets.add(
+                    PortDevicePresetEntity(
+                        portId = obj.optInt("portId", 1),
+                        presetType = obj.optString("presetType", "CUSTOM"),
+                        deviceLabel = obj.optString("deviceLabel", ""),
+                        targetWh = restoredWh,
+                        initialSocPct = obj.optInt("initialSocPct", 20),
+                        capacityMah = obj.optInt("capacityMah", fallbackMah).coerceIn(100, 50_000),
+                        cellSeriesCount = restoredCells,
+                        updatedAtMs = obj.optLong("updatedAtMs", System.currentTimeMillis())
+                    )
+                )
+            }
+            if (presets.isNotEmpty()) presetDao.upsertAll(presets)
+
+            val rules = mutableListOf<AutomationRuleEntity>()
+            for (i in 0 until payload.automationRulesArray.length()) {
+                val obj = payload.automationRulesArray.optJSONObject(i) ?: continue
+                rules.add(
+                    AutomationRuleEntity(
+                        name = obj.optString("name", "Rule"),
+                        enabled = obj.optBoolean("enabled", true),
+                        triggerType = obj.optString("triggerType", "LOW_POWER_CUTOFF"),
+                        portId = obj.optInt("portId", 1),
+                        thresholdWatts = obj.optDouble("thresholdWatts", 1.5),
+                        holdSeconds = obj.optInt("holdSeconds", 300),
+                        minuteOfDay = obj.optInt("minuteOfDay", 23 * 60),
+                        daysMask = obj.optInt("daysMask", 0b1111111),
+                        actionType = obj.optString("actionType", "PORT_OFF"),
+                        actionSceneMode = obj.optInt("actionSceneMode", 1),
+                        cooldownMinutes = obj.optInt("cooldownMinutes", 30),
+                        createdAtMs = obj.optLong("createdAtMs", System.currentTimeMillis())
+                    )
+                )
+            }
+            if (rules.isNotEmpty()) ruleDao.upsertAll(rules)
         }
     }
 

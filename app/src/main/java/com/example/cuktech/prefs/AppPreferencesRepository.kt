@@ -29,7 +29,9 @@ data class AppPreferences(
     val startDestination: StartDestination = StartDestination.OVERVIEW,
     val appLanguage: String = "system", // "system", "en", "ru"
     val themeMode: String = "system",   // "dark", "light", "system"
+    val useDynamicColor: Boolean = true,
     val darkPalette: String = "CUKTECH_CYAN",
+    val hasCompletedOnboarding: Boolean = false,
     val retentionDays: Int = 30,        // Default 30 days before auto-archiving old sessions
     val sessionStitchGraceSec: Int = 120,
     val tariffRatePerKwh: Double = 0.0,
@@ -73,7 +75,9 @@ data class AppPreferences(
         put("startDestination", startDestination.name)
         put("appLanguage", appLanguage)
         put("themeMode", themeMode)
+        put("useDynamicColor", useDynamicColor)
         put("darkPalette", darkPalette)
+        put("hasCompletedOnboarding", hasCompletedOnboarding)
         put("retentionDays", retentionDays)
         put("sessionStitchGraceSec", sessionStitchGraceSec)
         put("tariffRatePerKwh", tariffRatePerKwh)
@@ -173,7 +177,9 @@ class AppPreferencesRepository(context: Context) {
             startDestination = startDest,
             appLanguage = prefs[KEY_APP_LANGUAGE] ?: "system",
             themeMode = prefs[KEY_THEME_MODE] ?: "system",
+            useDynamicColor = prefs[KEY_USE_DYNAMIC_COLOR] ?: true,
             darkPalette = prefs[KEY_DARK_PALETTE] ?: "CUKTECH_CYAN",
+            hasCompletedOnboarding = prefs[KEY_ONBOARDING_COMPLETED] ?: false,
             retentionDays = (prefs[KEY_RETENTION_DAYS] ?: 30).coerceIn(1, 3650),
             sessionStitchGraceSec = (prefs[KEY_STITCH_GRACE_SEC] ?: 120).coerceIn(0, 600),
             tariffRatePerKwh = (prefs[KEY_TARIFF_PER_KWH] ?: 0.0).coerceAtLeast(0.0),
@@ -213,6 +219,14 @@ class AppPreferencesRepository(context: Context) {
                 it[KEY_DARK_PALETTE] = darkPalette
             }
         }
+    }
+
+    suspend fun updateDynamicColor(enabled: Boolean) {
+        dataStore.edit { it[KEY_USE_DYNAMIC_COLOR] = enabled }
+    }
+
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        dataStore.edit { it[KEY_ONBOARDING_COMPLETED] = completed }
     }
 
     suspend fun updateRetentionDays(days: Int) {
@@ -296,8 +310,14 @@ class AppPreferencesRepository(context: Context) {
                 val t = json.optString("themeMode", "system")
                 if (t in setOf("dark", "light", "system")) edit[KEY_THEME_MODE] = t
             }
+            if (json.has("useDynamicColor")) {
+                edit[KEY_USE_DYNAMIC_COLOR] = json.optBoolean("useDynamicColor", true)
+            }
             if (json.has("darkPalette")) {
                 edit[KEY_DARK_PALETTE] = json.optString("darkPalette", "CUKTECH_CYAN")
+            }
+            if (json.has("hasCompletedOnboarding")) {
+                edit[KEY_ONBOARDING_COMPLETED] = json.optBoolean("hasCompletedOnboarding", false)
             }
             if (json.has("retentionDays")) {
                 edit[KEY_RETENTION_DAYS] = json.optInt("retentionDays", 30).coerceIn(1, 3650)
@@ -370,7 +390,9 @@ class AppPreferencesRepository(context: Context) {
         private val KEY_START_DESTINATION = stringPreferencesKey("start_destination")
         private val KEY_APP_LANGUAGE = stringPreferencesKey("app_language")
         private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        private val KEY_USE_DYNAMIC_COLOR = booleanPreferencesKey("use_dynamic_color")
         private val KEY_DARK_PALETTE = stringPreferencesKey("dark_palette")
+        private val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("has_completed_onboarding")
         private val KEY_RETENTION_DAYS = intPreferencesKey("retention_days")
         private val KEY_STITCH_GRACE_SEC = intPreferencesKey("session_stitch_grace_sec")
         private val KEY_TARIFF_PER_KWH = doublePreferencesKey("tariff_per_kwh")

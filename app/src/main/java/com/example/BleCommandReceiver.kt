@@ -60,18 +60,24 @@ class BleCommandReceiver : BroadcastReceiver() {
         }
 
         when (action) {
-            ACTION_START, ACTION_LEGACY_START -> {
+            ACTION_START -> {
                 val port = intent.getIntExtra("port", intent.getIntExtra(BleBridgeService.EXTRA_PORT, 8080))
                 startServiceWithAction(appCtx, BleBridgeService.ACTION_START_SERVER) {
                     putExtra(BleBridgeService.EXTRA_PORT, port)
                 }
                 return
             }
-            ACTION_STOP, ACTION_LEGACY_STOP -> {
-                val serviceIntent = Intent(appCtx, BleBridgeService::class.java).apply {
-                    this.action = BleBridgeService.ACTION_STOP_SERVER
+            ACTION_STOP -> {
+                val svc = BleBridgeService.getInstance()
+                if (svc != null) {
+                    svc.stopTcpServer()
+                    svc.dismissForegroundNotificationIfIdle()
+                } else {
+                    val serviceIntent = Intent(appCtx, BleBridgeService::class.java).apply {
+                        this.action = BleBridgeService.ACTION_STOP_SERVER
+                    }
+                    appCtx.stopService(serviceIntent)
                 }
-                appCtx.stopService(serviceIntent)
                 return
             }
             ACTION_CONNECT_CHARGER -> {
@@ -177,26 +183,24 @@ class BleCommandReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION_START = "com.cramqin.blecuktech10.START_SERVER"
-        const val ACTION_STOP = "com.cramqin.blecuktech10.STOP_SERVER"
-        const val ACTION_LEGACY_START = "com.example.action.START_SERVER"
-        const val ACTION_LEGACY_STOP = "com.example.action.STOP_SERVER"
+        const val ACTION_START = "com.joxit.cuktech.START_SERVER"
+        const val ACTION_STOP = "com.joxit.cuktech.STOP_SERVER"
 
-        const val ACTION_CONNECT_CHARGER = "com.cramqin.blecuktech10.CONNECT_CHARGER"
-        const val ACTION_DISCONNECT_CHARGER = "com.cramqin.blecuktech10.DISCONNECT_CHARGER"
-        const val ACTION_SCAN_CHARGER = "com.cramqin.blecuktech10.SCAN_CHARGER"
-        const val ACTION_SET_PORT_STATE = "com.cramqin.blecuktech10.SET_PORT_STATE"
-        const val ACTION_SET_SCENE_MODE = "com.cramqin.blecuktech10.SET_SCENE_MODE"
-        const val ACTION_SET_SCREEN_TIMEOUT = "com.cramqin.blecuktech10.SET_SCREEN_TIMEOUT"
-        const val ACTION_SET_CHARGE_LIMIT = "com.cramqin.blecuktech10.SET_CHARGE_LIMIT"
-        const val ACTION_SET_AUTO_CONNECT = "com.cramqin.blecuktech10.SET_AUTO_CONNECT"
-        const val ACTION_SET_PORT_LOGGING = "com.cramqin.blecuktech10.SET_PORT_LOGGING"
-        const val ACTION_SET_TELEMETRY_ENABLED = "com.cramqin.blecuktech10.SET_TELEMETRY_ENABLED"
-        const val ACTION_SET_LOG_ONLY_WHEN_CHARGING = "com.cramqin.blecuktech10.SET_LOG_ONLY_WHEN_CHARGING"
-        const val ACTION_SET_PAUSE_POLLING_WHEN_LOCKED = "com.cramqin.blecuktech10.SET_PAUSE_POLLING_WHEN_LOCKED"
-        const val ACTION_FORCE_SOFT_RESET = "com.cramqin.blecuktech10.FORCE_SOFT_RESET"
-        const val ACTION_MASTER_KILLSWITCH = "com.cramqin.blecuktech10.MASTER_KILLSWITCH"
-        const val ACTION_UNDO_LAST_COMMAND = "com.cramqin.blecuktech10.UNDO_LAST_COMMAND"
-        const val ACTION_QUERY_STATUS = "com.cramqin.blecuktech10.QUERY_STATUS"
+        const val ACTION_CONNECT_CHARGER = "com.joxit.cuktech.CONNECT_CHARGER"
+        const val ACTION_DISCONNECT_CHARGER = "com.joxit.cuktech.DISCONNECT_CHARGER"
+        const val ACTION_SCAN_CHARGER = "com.joxit.cuktech.SCAN_CHARGER"
+        const val ACTION_SET_PORT_STATE = "com.joxit.cuktech.SET_PORT_STATE"
+        const val ACTION_SET_SCENE_MODE = "com.joxit.cuktech.SET_SCENE_MODE"
+        const val ACTION_SET_SCREEN_TIMEOUT = "com.joxit.cuktech.SET_SCREEN_TIMEOUT"
+        const val ACTION_SET_CHARGE_LIMIT = "com.joxit.cuktech.SET_CHARGE_LIMIT"
+        const val ACTION_SET_AUTO_CONNECT = "com.joxit.cuktech.SET_AUTO_CONNECT"
+        const val ACTION_SET_PORT_LOGGING = "com.joxit.cuktech.SET_PORT_LOGGING"
+        const val ACTION_SET_TELEMETRY_ENABLED = "com.joxit.cuktech.SET_TELEMETRY_ENABLED"
+        const val ACTION_SET_LOG_ONLY_WHEN_CHARGING = "com.joxit.cuktech.SET_LOG_ONLY_WHEN_CHARGING"
+        const val ACTION_SET_PAUSE_POLLING_WHEN_LOCKED = "com.joxit.cuktech.SET_PAUSE_POLLING_WHEN_LOCKED"
+        const val ACTION_FORCE_SOFT_RESET = "com.joxit.cuktech.FORCE_SOFT_RESET"
+        const val ACTION_MASTER_KILLSWITCH = "com.joxit.cuktech.MASTER_KILLSWITCH"
+        const val ACTION_UNDO_LAST_COMMAND = "com.joxit.cuktech.UNDO_LAST_COMMAND"
+        const val ACTION_QUERY_STATUS = "com.joxit.cuktech.QUERY_STATUS"
     }
 }

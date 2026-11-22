@@ -1,8 +1,10 @@
 package com.example.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 
 // Light M3 Fallback Palette (Crisp CUKTECH Teal & Slate on clean off-white canvas)
 val MdLightPrimary = Color(0xFF00677D)
@@ -81,11 +83,11 @@ data class CuktechSemanticColors(
     val warning: Color = Color(0xFFB45309),
     val warningContainer: Color = Color(0xFFFEF3C7),
     val onWarningContainer: Color = Color(0xFF451A03),
-    val portC1: Color = Color(0xFF0284C7),
-    val portC2: Color = Color(0xFF0D9488),
-    val portC3: Color = Color(0xFF6366F1),
-    val portA: Color = Color(0xFFD97706),
-    val chargerAccent: Color = Color(0xFF00B8D9),
+    val portC1: Color = Color(0xFF00677D),
+    val portC2: Color = Color(0xFF4B626B),
+    val portC3: Color = Color(0xFF565D7E),
+    val portA: Color = Color(0xFFB45309),
+    val chargerAccent: Color = Color(0xFF00677D),
     val isDark: Boolean = false
 ) {
     fun colorForPort(portId: Int): Color = when (portId) {
@@ -93,6 +95,58 @@ data class CuktechSemanticColors(
         2 -> portC2
         3 -> portC3
         else -> portA
+    }
+
+    companion object {
+        /**
+         * Derives semantic & per-port accents directly from the active Material 3 [ColorScheme]
+         * so Material You Dynamic Color wallpapers flow cohesively across cards, charts, and faceplate.
+         */
+        fun fromColorScheme(colorScheme: ColorScheme, isDark: Boolean, dynamicEnabled: Boolean): CuktechSemanticColors {
+            val baseSuccess = if (isDark) Color(0xFF4ADE80) else Color(0xFF15803D)
+            val baseWarning = if (isDark) Color(0xFFFBBF24) else Color(0xFFB45309)
+
+            val port1 = colorScheme.primary
+            val port2 = if (dynamicEnabled) {
+                colorScheme.tertiary
+            } else {
+                if (isDark) Color(0xFF2DD4BF) else Color(0xFF0D9488)
+            }
+            val port3 = if (dynamicEnabled) {
+                lerp(colorScheme.secondary, colorScheme.primary, 0.35f)
+            } else {
+                colorScheme.tertiary
+            }
+            val port4 = if (dynamicEnabled) {
+                lerp(colorScheme.tertiary, baseWarning, 0.30f)
+            } else {
+                baseWarning
+            }
+
+            return CuktechSemanticColors(
+                success = if (dynamicEnabled) lerp(baseSuccess, colorScheme.primary, 0.14f) else baseSuccess,
+                onSuccess = if (isDark) Color(0xFF052E16) else Color(0xFFFFFFFF),
+                successContainer = if (isDark) {
+                    lerp(Color(0xFF0D3822), colorScheme.primaryContainer, 0.22f)
+                } else {
+                    lerp(Color(0xFFDCFCE7), colorScheme.primaryContainer, 0.18f)
+                },
+                onSuccessContainer = if (isDark) Color(0xFFA7F3D0) else Color(0xFF052E16),
+                warning = baseWarning,
+                warningContainer = if (isDark) {
+                    lerp(Color(0xFF3A2807), colorScheme.tertiaryContainer, 0.20f)
+                } else {
+                    lerp(Color(0xFFFEF3C7), colorScheme.tertiaryContainer, 0.15f)
+                },
+                onWarningContainer = if (isDark) Color(0xFFFDE68A) else Color(0xFF451A03),
+                portC1 = port1,
+                portC2 = port2,
+                portC3 = port3,
+                portA = port4,
+                chargerAccent = colorScheme.primary,
+                isDark = isDark
+            )
+        }
     }
 }
 
@@ -106,11 +160,11 @@ val DarkSemanticColors = CuktechSemanticColors(
     warning = Color(0xFFFBBF24),
     warningContainer = Color(0xFF3A2807),
     onWarningContainer = Color(0xFFFDE68A),
-    portC1 = Color(0xFF38BDF8),
+    portC1 = Color(0xFF5DD5F4),
     portC2 = Color(0xFF2DD4BF),
-    portC3 = Color(0xFFA5B4FC),
+    portC3 = Color(0xFFBEC5EB),
     portA = Color(0xFFFBBF24),
-    chargerAccent = Color(0xFF00E5FF),
+    chargerAccent = Color(0xFF5DD5F4),
     isDark = true
 )
 

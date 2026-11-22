@@ -1,5 +1,5 @@
 {
-  "versionCode": 1,
-  "versionName": "1.0.0",
-  "notes": "Initial release with TUI and auto-update support."
+  "versionCode": 2,
+  "versionName": "2.0.0",
+  "notes": "Material 3 / Pixel UI, RU/EN localization, Room + Keystore security, Glance M3 widgets, Live Updates, encrypted SAF backup, and SHA-256 updater."
 }

@@ -38,9 +38,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.BleBridgeService
 import com.example.R
 import com.example.ui.i18n.LocalizedAppContent
@@ -67,10 +71,11 @@ class CuktechWidgetConfigActivity : ComponentActivity() {
 
         val initialConfig = WidgetConfigStore.loadConfig(this, appWidgetId)
         val mgr = BleBridgeService.ensureCuktechManagersInitialized(applicationContext)
-        val prefs = mgr.preferencesRepository.preferences.value
 
         setContent {
+            val prefs by mgr.preferencesRepository.preferences.collectAsStateWithLifecycle()
             val scope = rememberCoroutineScope()
+            val haptic = LocalHapticFeedback.current
             var selectedPorts by remember { mutableStateOf(initialConfig.emphasizedPorts) }
             var showSparkline by remember { mutableStateOf(initialConfig.showSparkline) }
             var showSessionWh by remember { mutableStateOf(initialConfig.showSessionWh) }
@@ -79,13 +84,18 @@ class CuktechWidgetConfigActivity : ComponentActivity() {
             LocalizedAppContent(appLanguage = prefs.appLanguage) {
                 MyApplicationTheme(
                     themeMode = prefs.themeMode,
-                    useDynamicColor = true,
+                    useDynamicColor = prefs.useDynamicColor,
                     useAmoledBlack = prefs.darkPalette == "AMOLED_BLACK"
                 ) {
                     Scaffold(
                         topBar = {
                             TopAppBar(
-                                title = { Text(stringResource(R.string.widget_config_title)) }
+                                title = {
+                                    Text(
+                                        text = stringResource(R.string.widget_config_title),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             )
                         }
                     ) { innerPadding ->
@@ -100,16 +110,17 @@ class CuktechWidgetConfigActivity : ComponentActivity() {
                         ) {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                                shape = RoundedCornerShape(20.dp),
+                                shape = RoundedCornerShape(24.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(16.dp),
+                                    modifier = Modifier.padding(18.dp),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Text(
                                         text = stringResource(R.string.widget_config_ports_label),
-                                        style = MaterialTheme.typography.titleSmall
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         listOf(
@@ -122,6 +133,7 @@ class CuktechWidgetConfigActivity : ComponentActivity() {
                                             FilterChip(
                                                 selected = isSel,
                                                 onClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                     selectedPorts = if (isSel) {
                                                         if (selectedPorts.size > 1) selectedPorts - pid else selectedPorts
                                                     } else {
@@ -137,44 +149,65 @@ class CuktechWidgetConfigActivity : ComponentActivity() {
 
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                                shape = RoundedCornerShape(20.dp),
+                                shape = RoundedCornerShape(24.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    modifier = Modifier.padding(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(stringResource(R.string.widget_config_sparkline), style = MaterialTheme.typography.bodyMedium)
-                                        Switch(checked = showSparkline, onCheckedChange = { showSparkline = it })
+                                        Text(
+                                            text = stringResource(R.string.widget_config_sparkline),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.weight(1f).padding(end = 12.dp)
+                                        )
+                                        Switch(
+                                            checked = showSparkline,
+                                            onCheckedChange = {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                showSparkline = it
+                                            }
+                                        )
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(stringResource(R.string.widget_config_session_wh), style = MaterialTheme.typography.bodyMedium)
-                                        Switch(checked = showSessionWh, onCheckedChange = { showSessionWh = it })
+                                        Text(
+                                            text = stringResource(R.string.widget_config_session_wh),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.weight(1f).padding(end = 12.dp)
+                                        )
+                                        Switch(
+                                            checked = showSessionWh,
+                                            onCheckedChange = {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                showSessionWh = it
+                                            }
+                                        )
                                     }
                                 }
                             }
 
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                                shape = RoundedCornerShape(20.dp),
+                                shape = RoundedCornerShape(24.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(16.dp),
+                                    modifier = Modifier.padding(18.dp),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Text(
                                         text = stringResource(R.string.widget_config_tap_dest),
-                                        style = MaterialTheme.typography.titleSmall
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         listOf(
@@ -185,7 +218,10 @@ class CuktechWidgetConfigActivity : ComponentActivity() {
                                         ).forEach { (dest, label) ->
                                             FilterChip(
                                                 selected = tapDestination == dest,
-                                                onClick = { tapDestination = dest },
+                                                onClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    tapDestination = dest
+                                                },
                                                 label = { Text(label) }
                                             )
                                         }
@@ -197,10 +233,14 @@ class CuktechWidgetConfigActivity : ComponentActivity() {
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 OutlinedButton(
-                                    onClick = { finish() },
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        finish()
+                                    },
+                                    shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier
                                         .weight(1f)
                                         .heightIn(min = 48.dp)
@@ -209,6 +249,7 @@ class CuktechWidgetConfigActivity : ComponentActivity() {
                                 }
                                 Button(
                                     onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         val cfg = WidgetInstanceConfig(
                                             emphasizedPorts = selectedPorts,
                                             showSparkline = showSparkline,
@@ -225,6 +266,7 @@ class CuktechWidgetConfigActivity : ComponentActivity() {
                                             finish()
                                         }
                                     },
+                                    shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier
                                         .weight(1f)
                                         .heightIn(min = 48.dp)

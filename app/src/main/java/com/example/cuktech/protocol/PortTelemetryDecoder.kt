@@ -85,6 +85,14 @@ data class DecodedMiotFrame(
     val payload: ByteArray
 )
 
+data class C3ASharedBusState(
+    val isSharedActive: Boolean = false,
+    val sharedPowerW: Double = 0.0,
+    val voltageV: Double = 0.0,
+    val currentA: Double = 0.0,
+    val maxWatts: Int = 15
+)
+
 /**
  * Ported directly from `cuktech-ble-server/src/cuktech_ble/state_protocol_v2.py` and `state.py`.
  * Decodes CUKTECH 10 Ultra Protocol v2 8-byte port frames, Mijia PIID 17/18 protocol codes,
@@ -105,6 +113,56 @@ object PortTelemetryDecoder {
         3 to 44,  // USB-C3: 44W Max
         4 to 33   // USB-A:  33W Max
     )
+
+    const val C3A_SHARED_MAX_WATTS = 15
+
+    /**
+     * CUKTECH 10 Ultra (AD1204) ties USB-C3 (port 3) and USB-A (port 4) onto a shared 5V
+     * buck converter rail (15W ceiling) when both cables are plugged in simultaneously.
+     * In this mode the hardware frequently mirrors identical ~5V telemetry across PIID 3 & PIID 4.
+     */
+    fun resolveC3ASharedBus(ports: Map<Int, PortTelemetry>): C3ASharedBusState {
+        val p3 = ports[3]
+        val p4 = ports[4]
+        if (p3 == null || p4 == null ||
+            !p3.enabled || !p4.enabled ||
+            p3.powerW < 0.2 || p4.powerW < 0.2 ||
+            p3.voltageV !in 3.5..6.4 || p4.voltageV !in 3.5..6.4
+        ) {
+            return C3ASharedBusState(isSharedActive = false)
+        }
+
+        val sharedPowerW = if (abs(p3.powerW - p4.powerW) <= 0.8) {
+            round2(maxOf(p3.powerW, p4.powerW))
+        } else {
+            round2((p3.powerW + p4.powerW).coerceAtMost(18.0))
+        }
+        val voltageV = round2(maxOf(p3.voltageV, p4.voltageV))
+        val currentA = round2(sharedPowerW / voltageV.coerceAtLeast(4.5))
+        return C3ASharedBusState(
+            isSharedActive = true,
+            sharedPowerW = sharedPowerW,
+            voltageV = voltageV,
+            currentA = currentA,
+            maxWatts = C3A_SHARED_MAX_WATTS
+        )
+    }
+
+    /**
+     * Computes true charger output power across C1, C2, and (C3 + A), avoiding double-counting
+     * when C3+A operate on their shared 5V bus.
+     */
+    fun computeEffectiveTotalWatts(ports: Map<Int, PortTelemetry>): Double {
+        val c1 = (ports[1]?.powerW ?: 0.0).coerceAtLeast(0.0)
+        val c2 = (ports[2]?.powerW ?: 0.0).coerceAtLeast(0.0)
+        val c3a = resolveC3ASharedBus(ports)
+        val tail = if (c3a.isSharedActive) {
+            c3a.sharedPowerW
+        } else {
+            (ports[3]?.powerW ?: 0.0).coerceAtLeast(0.0) + (ports[4]?.powerW ?: 0.0).coerceAtLeast(0.0)
+        }
+        return round2(c1 + c2 + tail)
+    }
 
     // Exact Mijia protocol code map from `state_protocol_v2.py::MIJIA_PROTOCOL_MAP`
     val MIJIA_PROTOCOL_MAP = mapOf(

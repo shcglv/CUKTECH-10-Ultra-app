@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.BleBridgeService
+import com.example.R
+import com.example.ui.i18n.withAppLocale
 import com.example.cuktech.automation.ChargerCommand
 import com.example.cuktech.automation.CommandDispatcher
 import com.example.cuktech.automation.CommandResult
@@ -14,17 +16,27 @@ import com.example.cuktech.automation.CommandSource
 import com.example.cuktech.ble.CuktechBleManager
 import com.example.cuktech.cloud.XiaomiCloudClient
 import com.example.cuktech.db.CuktechPersistence
+import com.example.cuktech.db.room.AutomationRuleEntity
 import com.example.cuktech.db.room.ChargingProfileEntity
 import com.example.cuktech.db.room.DeviceAliasEntity
+import com.example.cuktech.db.room.PortDevicePresetEntity
 import com.example.cuktech.db.room.TelemetrySampleEntity
 import com.example.cuktech.diagnostics.BleDiagnostics
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.integrations.CloudIntegrations
 import com.example.cuktech.integrations.IntegrationConfig
 import com.example.cuktech.notifications.AnomalyAlert
+import com.example.cuktech.power.EtaEstimate
+import com.example.cuktech.power.EtaEstimator
+import com.example.cuktech.power.PortCableDiagnostic
+import com.example.cuktech.power.PowerBudgetCalculator
+import com.example.cuktech.power.PowerBudgetSnapshot
 import com.example.cuktech.prefs.AppPreferences
 import com.example.cuktech.prefs.AppPreferencesRepository
 import com.example.cuktech.prefs.StartDestination
+import com.example.cuktech.protocol.C3ASharedBusState
+import com.example.cuktech.protocol.PortTelemetry
+import com.example.cuktech.protocol.PortTelemetryDecoder
 import com.example.cuktech.security.CuktechDeviceCredentials
 import com.example.cuktech.security.SafEncryptedBackupManager
 import com.example.cuktech.updater.ReleaseUpdateInfo
@@ -40,6 +52,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -60,6 +73,7 @@ enum class ChartInterval {
 
 enum class ChartMetric {
     TOTAL_W,
+    STACKED_W,
     PER_PORT_W,
     VOLTAGE_V,
     CURRENT_A,
@@ -156,6 +170,50 @@ class DashboardViewModel @JvmOverloads constructor(
 
     val profiles = persistence.observeProfiles()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val portDevicePresets: StateFlow<Map<Int, PortDevicePresetEntity>> =
+        persistence.observePortDevicePresets()
+            .let { flow ->
+                kotlinx.coroutines.flow.flow {
+                    flow.collect { list -> emit(list.associateBy { it.portId }) }
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val automationRules: StateFlow<List<AutomationRuleEntity>> = persistence.observeAutomationRules()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val cableDiagnostics: StateFlow<Map<Int, PortCableDiagnostic>> = cuktechManager.cableDiagnostics
+
+    val powerBudget: StateFlow<PowerBudgetSnapshot> = combine(ports, settings) { portsMap, s ->
+        PowerBudgetCalculator.calculate(portsMap, s.sceneMode)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        PowerBudgetCalculator.calculate(ports.value, settings.value.sceneMode)
+    )
+
+    val c3aSharedBus: StateFlow<C3ASharedBusState> = ports
+        .map { PortTelemetryDecoder.resolveC3ASharedBus(it) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            PortTelemetryDecoder.resolveC3ASharedBus(ports.value)
+        )
+
+    val etaEstimates: StateFlow<Map<Int, EtaEstimate>> = combine(
+        portDevicePresets,
+        ports,
+        activeSessions
+    ) { presetsMap, portsMap, sessionsMap ->
+        buildMap {
+            for ((portId, preset) in presetsMap) {
+                val p = portsMap[portId]
+                val sessWh = sessionsMap[portId]?.whAccumulated ?: (p?.cumulativeWh ?: 0.0)
+                put(portId, EtaEstimator.estimate(preset, p?.powerW ?: 0.0, sessWh))
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val _selectedPortFocus = MutableStateFlow(1)
     val selectedPortFocus: StateFlow<Int> = _selectedPortFocus.asStateFlow()
@@ -256,9 +314,19 @@ class DashboardViewModel @JvmOverloads constructor(
                     pWh[r.portId] = r.cumulativeWh
                     pProto[r.portId] = r.protocolName
                 }
+                val mergedPortsForBucket = pW.mapValues { (pid, w) ->
+                    PortTelemetry(
+                        portId = pid,
+                        portLabel = "",
+                        voltageV = pV[pid] ?: 5.0,
+                        currentA = pA[pid] ?: 0.0,
+                        powerW = w,
+                        enabled = true
+                    )
+                }
                 ChartPointSample(
                     timestampMs = ts,
-                    totalW = pW.values.sum(),
+                    totalW = PortTelemetryDecoder.computeEffectiveTotalWatts(mergedPortsForBucket),
                     portW = pW,
                     portV = pV,
                     portA = pA,
@@ -278,10 +346,10 @@ class DashboardViewModel @JvmOverloads constructor(
                                 timestampMs = lp.timestampMs,
                                 totalW = lp.totalWatts,
                                 portW = lp.portWatts,
-                                portV = curPorts.mapValues { it.value.voltageV },
-                                portA = curPorts.mapValues { it.value.currentA },
-                                portWh = curPorts.mapValues { it.value.cumulativeWh },
-                                portProtocol = curPorts.mapValues { it.value.protocolName }
+                                portV = lp.portVolts.ifEmpty { curPorts.mapValues { it.value.voltageV } },
+                                portA = lp.portAmps.ifEmpty { curPorts.mapValues { it.value.currentA } },
+                                portWh = lp.portWh.ifEmpty { curPorts.mapValues { it.value.cumulativeWh } },
+                                portProtocol = lp.portProtocols.ifEmpty { curPorts.mapValues { it.value.protocolName } }
                             )
                         )
                     }
@@ -534,6 +602,61 @@ class DashboardViewModel @JvmOverloads constructor(
         }
     }
 
+    // --- Pro Features: Device Presets (ETA), Cable Diagnostics, Local Automation Rules ---
+
+    fun savePortDevicePreset(
+        portId: Int,
+        presetType: String,
+        deviceLabel: String,
+        targetWh: Double,
+        initialSocPct: Int,
+        capacityMah: Int = ((targetWh * 1000.0) / 3.85).toInt().coerceIn(100, 50_000),
+        cellSeriesCount: Int = 1
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.savePortDevicePreset(
+                PortDevicePresetEntity(
+                    portId = portId.coerceIn(1, 4),
+                    presetType = presetType,
+                    deviceLabel = deviceLabel.trim().take(32),
+                    targetWh = targetWh.coerceIn(1.0, 500.0),
+                    initialSocPct = initialSocPct.coerceIn(0, 99),
+                    capacityMah = capacityMah.coerceIn(100, 50_000),
+                    cellSeriesCount = cellSeriesCount.coerceIn(1, 3),
+                    updatedAtMs = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun deletePortDevicePreset(portId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.deletePortDevicePreset(portId)
+        }
+    }
+
+    fun resetCableDiagnosticStats(portId: Int) {
+        cuktechManager.cableDiagnosticEngine.resetPortStats(portId)
+    }
+
+    fun saveAutomationRule(rule: AutomationRuleEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.saveAutomationRule(rule)
+        }
+    }
+
+    fun toggleAutomationRuleEnabled(id: Long, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.setAutomationRuleEnabled(id, enabled)
+        }
+    }
+
+    fun deleteAutomationRule(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.deleteAutomationRule(id)
+        }
+    }
+
     private fun dispatchUiCommand(command: ChargerCommand) {
         viewModelScope.launch {
             val res = dispatcher.dispatch(CommandSource.UI, command)
@@ -558,6 +681,18 @@ class DashboardViewModel @JvmOverloads constructor(
                 darkPalette = if (amoledBlack) "AMOLED_BLACK" else "CUKTECH_CYAN"
             )
         }
+    }
+
+    fun updateDynamicColor(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.updateDynamicColor(enabled) }
+    }
+
+    fun completeOnboarding() {
+        viewModelScope.launch { preferencesRepository.setOnboardingCompleted(true) }
+    }
+
+    fun replayOnboarding() {
+        viewModelScope.launch { preferencesRepository.setOnboardingCompleted(false) }
     }
 
     fun updateStartDestination(dest: StartDestination) {
@@ -751,16 +886,17 @@ class DashboardViewModel @JvmOverloads constructor(
     fun syncXiaomiDevices(onDone: (String) -> Unit) {
         val session = accountSession.value ?: return
         viewModelScope.launch {
+            val locCtx = getApplication<Application>().withAppLocale(preferences.value.appLanguage)
             val res = cloudClient.fetchDevicesAndBleKeys(session, searchAllRegionsIfEmpty = true)
             res.onSuccess { list ->
                 if (list.isNotEmpty()) {
                     cuktechManager.credentialStore.saveDevices(list)
-                    onDone("Synced ${list.size} device(s)")
+                    onDone(locCtx.getString(R.string.sync_devices_count_fmt, list.size))
                 } else {
-                    onDone("No CUKTECH / MiOT devices returned")
+                    onDone(locCtx.getString(R.string.sync_no_devices))
                 }
             }.onFailure { err ->
-                onDone("Sync failed: ${err.message}")
+                onDone(locCtx.getString(R.string.sync_failed_fmt, err.message ?: ""))
             }
         }
     }
@@ -837,12 +973,13 @@ class DashboardViewModel @JvmOverloads constructor(
                     }
 
                     cuktechManager.reloadSessionsFromDb()
+                    val locCtx = getApplication<Application>().withAppLocale(preferences.value.appLanguage)
                     val sessCount = payload.sessionsArray.length()
                     val profCount = payload.profilesArray.length()
                     if (credsRestored > 0) {
-                        "Sessions: $sessCount, Profiles: $profCount, BLE keys: $credsRestored"
+                        locCtx.getString(R.string.restore_summary_with_keys_fmt, sessCount, profCount, credsRestored)
                     } else {
-                        "Sessions: $sessCount, Profiles: $profCount"
+                        locCtx.getString(R.string.restore_summary_fmt, sessCount, profCount)
                     }
                 }
             }
@@ -864,6 +1001,7 @@ class DashboardViewModel @JvmOverloads constructor(
     }
 
     override fun onCleared() {
+        _revealedToken.value = null
         replayJob?.cancel()
         super.onCleared()
     }

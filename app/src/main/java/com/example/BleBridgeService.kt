@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,12 +43,14 @@ import com.example.cuktech.notifications.ChargingNotificationManager
 import com.example.cuktech.notifications.LiveNotificationPayload
 import com.example.cuktech.prefs.AppPreferencesRepository
 import com.example.cuktech.protocol.CuktechProtocol
+import com.example.cuktech.protocol.PortTelemetryDecoder
 import com.example.cuktech.security.AutomationAuthManager
 import com.example.cuktech.security.LogSanitizer
 import com.example.cuktech.security.SecureCredentialStore
 import com.example.cuktech.updater.GitHubApkUpdater
 import com.example.cuktech.updater.ReleaseUpdateInfo
 import com.example.cuktech.updater.UpdateDownloadState
+import com.example.ui.i18n.withAppLocale
 
 class BleBridgeService : Service() {
 
@@ -112,7 +115,10 @@ class BleBridgeService : Service() {
     private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_SCREEN_ON -> cuktechManager?.isScreenOn?.value = true
+                Intent.ACTION_SCREEN_ON -> {
+                    cuktechManager?.isScreenOn?.value = true
+                    cuktechManager?.kickAutoReconnectIfNeeded()
+                }
                 Intent.ACTION_SCREEN_OFF -> {
                     cuktechManager?.isScreenOn?.value = false
                     val isChargingPriority = cuktechManager?.logOnlyWhenPhoneCharging?.value == true && cuktechManager?.isPhoneCharging?.value == true
@@ -146,7 +152,12 @@ class BleBridgeService : Service() {
         bluetoothAdapter = bluetoothManager?.adapter
 
         try {
-            registerReceiver(bluetoothStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
+            ContextCompat.registerReceiver(
+                this,
+                bluetoothStateReceiver,
+                IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
         } catch (_: Exception) {}
 
         // Listen for screen lock/unlock and phone charger plug/unplug to power telemetry policies
@@ -155,13 +166,23 @@ class BleBridgeService : Service() {
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_SCREEN_OFF)
             }
-            registerReceiver(screenStateReceiver, screenFilter)
+            ContextCompat.registerReceiver(
+                this,
+                screenStateReceiver,
+                screenFilter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
 
             val powerFilter = IntentFilter().apply {
                 addAction(Intent.ACTION_POWER_CONNECTED)
                 addAction(Intent.ACTION_POWER_DISCONNECTED)
             }
-            registerReceiver(powerStateReceiver, powerFilter)
+            ContextCompat.registerReceiver(
+                this,
+                powerStateReceiver,
+                powerFilter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
 
             // Initial power and screen state sync
             val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { filter ->
@@ -235,10 +256,12 @@ class BleBridgeService : Service() {
         // preserve the foreground service and partial wakelock so the background listener can auto-reconnect
         if (isAutoReconnectConfigured && !isUserManual && hasTargetMac) {
             acquireWakeLock()
+            val lang = cuktechManager?.preferencesRepository?.preferences?.value?.appLanguage ?: "system"
+            val locCtx = applicationContext.withAppLocale(lang)
             updateNotificationTelemetry(
-                title = "⚡ CUKTECH 10 Ultra · Standby",
-                content = "Awaiting charger power-on... (Auto-Reconnect active)",
-                bigText = "Charger unplugged or out of range. Auto-connect is active and will reconnect as soon as power is restored."
+                title = locCtx.getString(R.string.notif_standby_title),
+                content = locCtx.getString(R.string.notif_standby_content),
+                bigText = locCtx.getString(R.string.notif_standby_big)
             )
             return
         }
@@ -267,7 +290,7 @@ class BleBridgeService : Service() {
         try {
             if (wakeLock == null) {
                 val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
-                wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BLEBridge::BackgroundKeepalive")
+                wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Cuktech::BackgroundKeepalive")
                 wakeLock?.setReferenceCounted(false)
             }
             if (wakeLock?.isHeld != true) {
@@ -301,6 +324,7 @@ class BleBridgeService : Service() {
         } catch (_: Exception) {}
         releaseWakeLock()
         cleanupServer()
+        cuktechManager?.stopAllJobsForServiceDestroy()
         closeGattClean(triggerCooldown = false)
         stopBleScan()
         serviceScope.cancel()
@@ -337,13 +361,15 @@ class BleBridgeService : Service() {
     private fun createNotificationChannelAndStartForeground() {
         acquireWakeLock()
         ChargingNotificationManager.ensureChannels(this)
-        val liveEnabled = cuktechManager?.preferencesRepository?.preferences?.value?.liveUpdatesEnabled ?: true
+        val prefs = cuktechManager?.preferencesRepository?.preferences?.value
+        val liveEnabled = prefs?.liveUpdatesEnabled ?: true
+        val locCtx = applicationContext.withAppLocale(prefs?.appLanguage ?: "system")
         val notif = ChargingNotificationManager.buildOngoingNotification(
-            context = this,
+            context = locCtx,
             payload = LiveNotificationPayload(
-                title = "⚡ CUKTECH 10 Ultra",
-                content = "Connecting to charger...",
-                bigText = "Connecting to charger...",
+                title = "⚡ ${locCtx.getString(R.string.app_full_name)}",
+                content = locCtx.getString(R.string.notif_connecting),
+                bigText = locCtx.getString(R.string.notif_connecting),
                 totalWatts = -1.0,
                 nearestCountdownEndMs = null,
                 activeLimitProgressPct = null,
@@ -410,8 +436,10 @@ class BleBridgeService : Service() {
         lastNotifSignature = sig
 
         runCatching {
+            val lang = cuktechManager?.preferencesRepository?.preferences?.value?.appLanguage ?: "system"
+            val locCtx = applicationContext.withAppLocale(lang)
             val notif = ChargingNotificationManager.buildOngoingNotification(
-                context = this,
+                context = locCtx,
                 payload = LiveNotificationPayload(
                     title = title,
                     content = content,
@@ -432,36 +460,46 @@ class BleBridgeService : Service() {
     fun forceRestoreNotification() {
         lastNotifSignature = ""
         cuktechManager?.let { mgr ->
-            val liveEnabled = mgr.preferencesRepository.preferences.value.liveUpdatesEnabled
+            val prefs = mgr.preferencesRepository.preferences.value
+            val liveEnabled = prefs.liveUpdatesEnabled
+            val locCtx = applicationContext.withAppLocale(prefs.appLanguage)
+            val locale = com.example.ui.i18n.resolveLocale(prefs.appLanguage)
+            val unitW = locCtx.getString(R.string.unit_w)
             if (mgr.authState.value == CuktechAuthState.AUTHENTICATED) {
                 val ports = mgr.ports.value
-                val totalW = mgr.totalPowerWatts.value
+                val totalW = PortTelemetryDecoder.computeEffectiveTotalWatts(ports)
+                val c3a = PortTelemetryDecoder.resolveC3ASharedBus(ports)
                 val title = if (totalW > 0.05) {
-                    String.format(java.util.Locale.US, "⚡ CUKTECH 10 Ultra · %.1fW", totalW)
+                    String.format(locale, "⚡ CUKTECH 10 Ultra · %.1f %s", totalW, unitW)
                 } else {
-                    "⚡ CUKTECH 10 Ultra · Standby"
+                    locCtx.getString(R.string.notif_standby_title)
                 }
                 val content = if (totalW > 0.05) {
-                    val activePorts = ports.values.filter { it.powerW > 0.05 }
-                    if (activePorts.isNotEmpty()) {
-                        activePorts.joinToString(", ") { p ->
-                            val label = when (p.portId) {
-                                1 -> "C1"
-                                2 -> "C2"
-                                3 -> "C3"
-                                4 -> "A"
-                                else -> "P${p.portId}"
-                            }
-                            String.format(java.util.Locale.US, "%s: %.1fW", label, p.powerW)
+                    val parts = mutableListOf<String>()
+                    ports[1]?.takeIf { it.powerW > 0.05 }?.let {
+                        parts.add(String.format(locale, "C1: %.1f %s", it.powerW, unitW))
+                    }
+                    ports[2]?.takeIf { it.powerW > 0.05 }?.let {
+                        parts.add(String.format(locale, "C2: %.1f %s", it.powerW, unitW))
+                    }
+                    if (c3a.isSharedActive) {
+                        parts.add(String.format(locale, "C3+A: %.1f %s", c3a.sharedPowerW, unitW))
+                    } else {
+                        ports[3]?.takeIf { it.powerW > 0.05 }?.let {
+                            parts.add(String.format(locale, "C3: %.1f %s", it.powerW, unitW))
                         }
-                    } else "0.0W active output"
-                } else "All ports idle"
+                        ports[4]?.takeIf { it.powerW > 0.05 }?.let {
+                            parts.add(String.format(locale, "A: %.1f %s", it.powerW, unitW))
+                        }
+                    }
+                    if (parts.isNotEmpty()) parts.joinToString(" · ") else locCtx.getString(R.string.notif_active_output_fallback)
+                } else locCtx.getString(R.string.notif_all_idle)
                 updateNotificationTelemetry(title, content, totalWatts = totalW, liveUpdatesEnabled = liveEnabled)
             } else if (mgr.isAutoReconnectConfigured.value && !mgr.userManuallyDisconnected && !mgr.lastConnectedMac.isNullOrBlank()) {
                 updateNotificationTelemetry(
-                    title = "⚡ CUKTECH 10 Ultra · Standby",
-                    content = "Awaiting charger power-on... (Auto-Reconnect active)",
-                    bigText = "Charger unplugged or out of range. Auto-connect is active and will reconnect as soon as power is restored.",
+                    title = locCtx.getString(R.string.notif_standby_title),
+                    content = locCtx.getString(R.string.notif_standby_content),
+                    bigText = locCtx.getString(R.string.notif_standby_big),
                     liveUpdatesEnabled = liveEnabled
                 )
             }
@@ -485,7 +523,9 @@ class BleBridgeService : Service() {
 
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             try {
-                val text = if (isConnected) "⚡ CUKTECH 10 Ultra Connected" else "🔌 CUKTECH 10 Ultra Disconnected"
+                val lang = cuktechManager?.preferencesRepository?.preferences?.value?.appLanguage ?: "system"
+                val locCtx = applicationContext.withAppLocale(lang)
+                val text = locCtx.getString(if (isConnected) R.string.toast_connected else R.string.toast_disconnected)
                 android.widget.Toast.makeText(applicationContext, text, android.widget.Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {}
         }
@@ -604,12 +644,15 @@ class BleBridgeService : Service() {
         scanCallbackInternal = callback
         try {
             val filters = mutableListOf<ScanFilter>()
-            if (!targetMac.isNullOrBlank()) {
+            val cleanMac = targetMac?.uppercase()?.trim()
+            if (!cleanMac.isNullOrBlank()) {
                 try {
-                    filters.add(ScanFilter.Builder().setDeviceAddress(targetMac.uppercase().trim()).build())
+                    filters.add(ScanFilter.Builder().setDeviceAddress(cleanMac).build())
                 } catch (_: Exception) {}
             }
-            filters.add(ScanFilter.Builder().setServiceUuid(ParcelUuid(CuktechProtocol.MI_SERVICE_UUID)).build())
+            if (filters.isEmpty()) {
+                filters.add(ScanFilter.Builder().setServiceUuid(ParcelUuid(CuktechProtocol.MI_SERVICE_UUID)).build())
+            }
 
             val settings = ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -1129,15 +1172,15 @@ class BleBridgeService : Service() {
     // --- Static state mappings & UI contracts ---
 
     companion object {
-        const val ACTION_START_SERVER = "com.example.action.START_SERVER"
-        const val ACTION_STOP_SERVER = "com.example.action.STOP_SERVER"
-        const val ACTION_ENSURE_SERVICE = "com.example.action.ENSURE_SERVICE"
-        const val ACTION_RESTORE_NOTIFICATION = "com.cramqin.blecuktech10.RESTORE_NOTIFICATION"
-        const val ACTION_CONNECT_CUKTECH = "com.cramqin.blecuktech10.CONNECT_CHARGER"
-        const val ACTION_DISCONNECT_CUKTECH = "com.cramqin.blecuktech10.DISCONNECT_CHARGER"
-        const val ACTION_SCAN_CUKTECH = "com.cramqin.blecuktech10.SCAN_CHARGER"
-        const val ACTION_TELEMETRY_UPDATE = "com.cramqin.blecuktech10.TELEMETRY_UPDATE"
-        const val EXTRA_PORT = "com.example.extra.PORT"
+        const val ACTION_START_SERVER = "com.joxit.cuktech.action.START_SERVER"
+        const val ACTION_STOP_SERVER = "com.joxit.cuktech.action.STOP_SERVER"
+        const val ACTION_ENSURE_SERVICE = "com.joxit.cuktech.action.ENSURE_SERVICE"
+        const val ACTION_RESTORE_NOTIFICATION = "com.joxit.cuktech.RESTORE_NOTIFICATION"
+        const val ACTION_CONNECT_CUKTECH = "com.joxit.cuktech.CONNECT_CHARGER"
+        const val ACTION_DISCONNECT_CUKTECH = "com.joxit.cuktech.DISCONNECT_CHARGER"
+        const val ACTION_SCAN_CUKTECH = "com.joxit.cuktech.SCAN_CHARGER"
+        const val ACTION_TELEMETRY_UPDATE = "com.joxit.cuktech.TELEMETRY_UPDATE"
+        const val EXTRA_PORT = "com.joxit.cuktech.extra.PORT"
         const val EXTRA_MAC = "mac"
         const val NOTIFICATION_ID = 10101
 
@@ -1185,7 +1228,7 @@ class BleBridgeService : Service() {
         @Synchronized
         fun ensureCuktechManagersInitialized(context: Context): CuktechBleManager {
             val appCtx = context.applicationContext
-            val prefs = appCtx.getSharedPreferences("ble_cuktech_prefs", Context.MODE_PRIVATE)
+            val prefs = appCtx.getSharedPreferences("cuktech_app_prefs", Context.MODE_PRIVATE)
             val savedLvl = prefs.getString("console_log_level", LogLevel.LEVEL1.name) ?: LogLevel.LEVEL1.name
             _logLevel.value = runCatching { LogLevel.valueOf(savedLvl) }.getOrDefault(LogLevel.LEVEL1)
 
@@ -1408,7 +1451,7 @@ class BleBridgeService : Service() {
             _logLevel.value = level
             updateLogsFlow()
             val ctx = context ?: instance?.applicationContext
-            ctx?.getSharedPreferences("ble_cuktech_prefs", Context.MODE_PRIVATE)
+            ctx?.getSharedPreferences("cuktech_app_prefs", Context.MODE_PRIVATE)
                 ?.edit()
                 ?.putString("console_log_level", level.name)
                 ?.apply()

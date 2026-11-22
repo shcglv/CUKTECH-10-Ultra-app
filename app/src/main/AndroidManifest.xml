@@ -36,19 +36,20 @@
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MyApplication"
+        android:theme="@style/Theme.Cuktech"
         tools:targetApi="36">
         
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.MyApplication"
+            android:theme="@style/Theme.Cuktech"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -68,26 +69,24 @@
             android:enabled="true"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.cramqin.blecuktech10.START_SERVER" />
-                <action android:name="com.cramqin.blecuktech10.STOP_SERVER" />
-                <action android:name="com.cramqin.blecuktech10.CONNECT_CHARGER" />
-                <action android:name="com.cramqin.blecuktech10.DISCONNECT_CHARGER" />
-                <action android:name="com.cramqin.blecuktech10.SCAN_CHARGER" />
-                <action android:name="com.cramqin.blecuktech10.SET_PORT_STATE" />
-                <action android:name="com.cramqin.blecuktech10.SET_SCENE_MODE" />
-                <action android:name="com.cramqin.blecuktech10.SET_SCREEN_TIMEOUT" />
-                <action android:name="com.cramqin.blecuktech10.SET_CHARGE_LIMIT" />
-                <action android:name="com.cramqin.blecuktech10.SET_AUTO_CONNECT" />
-                <action android:name="com.cramqin.blecuktech10.SET_PORT_LOGGING" />
-                <action android:name="com.cramqin.blecuktech10.SET_TELEMETRY_ENABLED" />
-                <action android:name="com.cramqin.blecuktech10.SET_LOG_ONLY_WHEN_CHARGING" />
-                <action android:name="com.cramqin.blecuktech10.SET_PAUSE_POLLING_WHEN_LOCKED" />
-                <action android:name="com.cramqin.blecuktech10.FORCE_SOFT_RESET" />
-                <action android:name="com.cramqin.blecuktech10.MASTER_KILLSWITCH" />
-                <action android:name="com.cramqin.blecuktech10.UNDO_LAST_COMMAND" />
-                <action android:name="com.cramqin.blecuktech10.QUERY_STATUS" />
-                <action android:name="com.example.action.START_SERVER" />
-                <action android:name="com.example.action.STOP_SERVER" />
+                <action android:name="com.joxit.cuktech.START_SERVER" />
+                <action android:name="com.joxit.cuktech.STOP_SERVER" />
+                <action android:name="com.joxit.cuktech.CONNECT_CHARGER" />
+                <action android:name="com.joxit.cuktech.DISCONNECT_CHARGER" />
+                <action android:name="com.joxit.cuktech.SCAN_CHARGER" />
+                <action android:name="com.joxit.cuktech.SET_PORT_STATE" />
+                <action android:name="com.joxit.cuktech.SET_SCENE_MODE" />
+                <action android:name="com.joxit.cuktech.SET_SCREEN_TIMEOUT" />
+                <action android:name="com.joxit.cuktech.SET_CHARGE_LIMIT" />
+                <action android:name="com.joxit.cuktech.SET_AUTO_CONNECT" />
+                <action android:name="com.joxit.cuktech.SET_PORT_LOGGING" />
+                <action android:name="com.joxit.cuktech.SET_TELEMETRY_ENABLED" />
+                <action android:name="com.joxit.cuktech.SET_LOG_ONLY_WHEN_CHARGING" />
+                <action android:name="com.joxit.cuktech.SET_PAUSE_POLLING_WHEN_LOCKED" />
+                <action android:name="com.joxit.cuktech.FORCE_SOFT_RESET" />
+                <action android:name="com.joxit.cuktech.MASTER_KILLSWITCH" />
+                <action android:name="com.joxit.cuktech.UNDO_LAST_COMMAND" />
+                <action android:name="com.joxit.cuktech.QUERY_STATUS" />
             </intent-filter>
         </receiver>
 
@@ -95,7 +94,7 @@
         <activity
             android:name=".tasker.TaskerEditActivity"
             android:icon="@mipmap/ic_launcher"
-            android:label="CUKTECH 10 Ultra"
+            android:label="@string/app_full_name"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.twofortyfouram.locale.intent.action.EDIT_SETTING" />
@@ -125,7 +124,7 @@
         <activity
             android:name=".widget.CuktechWidgetConfigActivity"
             android:exported="true"
-            android:theme="@style/Theme.MyApplication"
+            android:theme="@style/Theme.Cuktech"
             android:label="@string/widget_config_title">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />

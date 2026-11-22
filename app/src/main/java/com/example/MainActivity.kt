@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
             LocalizedAppContent(appLanguage = prefs.appLanguage) {
                 MyApplicationTheme(
                     themeMode = prefs.themeMode,
-                    useDynamicColor = true,
+                    useDynamicColor = prefs.useDynamicColor,
                     useAmoledBlack = prefs.darkPalette == "AMOLED_BLACK"
                 ) {
                     Surface(

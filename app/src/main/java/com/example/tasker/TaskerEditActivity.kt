@@ -20,10 +20,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.BleBridgeService
+import com.example.R
+import com.example.ui.i18n.LocalizedAppContent
 import com.example.ui.theme.MyApplicationTheme
 
 class TaskerEditActivity : ComponentActivity() {
@@ -49,11 +56,17 @@ class TaskerEditActivity : ComponentActivity() {
         val initialLimitMode = existingBundle?.getString("LIMIT_MODE") ?: "once"
 
         setContent {
-            MyApplicationTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+            val prefs by mgr.preferencesRepository.preferences.collectAsStateWithLifecycle()
+            LocalizedAppContent(appLanguage = prefs.appLanguage) {
+                MyApplicationTheme(
+                    themeMode = prefs.themeMode,
+                    useDynamicColor = prefs.useDynamicColor,
+                    useAmoledBlack = prefs.darkPalette == "AMOLED_BLACK"
                 ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
                     TaskerEditScreen(
                         isTaskerOptInEnabled = isTaskerOptInEnabled,
                         initialAction = initialAction,
@@ -88,6 +101,7 @@ class TaskerEditActivity : ComponentActivity() {
                             finish()
                         }
                     )
+                    }
                 }
             }
         }
@@ -109,6 +123,8 @@ fun TaskerEditScreen(
     onCancel: () -> Unit,
     onSave: (action: String, port: Int, state: Boolean, mode: Int, timeout: Int, timerMins: Int, whTarget: Double, limitMode: String, blurb: String) -> Unit
 ) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var selectedAction by remember { mutableStateOf(initialAction) }
     var selectedPort by remember { mutableIntStateOf(initialPort) }
     var selectedPortState by remember { mutableStateOf(initialState) }
@@ -118,57 +134,66 @@ fun TaskerEditScreen(
     var selectedWhText by remember { mutableStateOf(initialWhTarget.toString()) }
     var selectedLimitMode by remember { mutableStateOf(initialLimitMode) }
 
-    val portNames = listOf(1 to "USB-C1", 2 to "USB-C2", 3 to "USB-C3", 4 to "USB-A")
+    val portNames = listOf(
+        1 to stringResource(R.string.port_name_c1),
+        2 to stringResource(R.string.port_name_c2),
+        3 to stringResource(R.string.port_name_c3),
+        4 to stringResource(R.string.port_name_a)
+    )
     val modeNames = mapOf(
-        1 to "AI Mode",
-        2 to "Hybrid",
-        3 to "Single",
-        4 to "Dual"
+        1 to stringResource(R.string.scenario_ai),
+        2 to stringResource(R.string.scenario_hybrid),
+        3 to stringResource(R.string.scenario_single),
+        4 to stringResource(R.string.scenario_dual)
     )
     val timeoutNames = mapOf(
-        4 to "Always On",
-        5 to "1 min",
-        1 to "5 min",
-        2 to "10 min",
-        3 to "30 min"
+        4 to stringResource(R.string.timeout_always),
+        5 to stringResource(R.string.timeout_1m),
+        1 to stringResource(R.string.timeout_5m),
+        2 to stringResource(R.string.timeout_10m),
+        3 to stringResource(R.string.timeout_30m)
     )
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
-                title = { Text("Tasker: CUKTECH 10 Ultra") },
+                title = { Text(stringResource(R.string.tasker_title)) },
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_cancel))
                     }
                 },
                 actions = {
                     IconButton(onClick = {
-                        val portLabel = portNames.firstOrNull { it.first == selectedPort }?.second ?: "Port $selectedPort"
-                        val parsedWh = selectedWhText.toDoubleOrNull()?.coerceIn(0.0, 10000.0) ?: 20.0
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        val portLabel = portNames.firstOrNull { it.first == selectedPort }?.second ?: "USB-$selectedPort"
+                        val parsedWh = selectedWhText.replace(",", ".").toDoubleOrNull()?.coerceIn(0.0, 10000.0) ?: 20.0
+                        val unitWh = context.getString(R.string.unit_wh)
+                        val onLbl = context.getString(R.string.tasker_power_on)
+                        val offLbl = context.getString(R.string.tasker_power_off)
                         val blurb = when (selectedAction) {
-                            "CONNECT" -> "CUKTECH 10: Connect BLE"
-                            "DISCONNECT" -> "CUKTECH 10: Disconnect BLE"
-                            "SET_PORT" -> "CUKTECH 10: $portLabel ${if (selectedPortState) "ON" else "OFF"}"
-                            "SET_MODE" -> "CUKTECH 10: Scenario ${modeNames[selectedMode] ?: "AI Mode"}"
-                            "SET_TIMEOUT" -> "CUKTECH 10: Screen Timeout (${timeoutNames[selectedTimeout] ?: "Always On"})"
-                            "SET_LOW_CURRENT" -> "CUKTECH 10: USB-A Low Current ${if (selectedPortState) "ON (4h)" else "OFF"}"
+                            "CONNECT" -> "Cuktech: ${context.getString(R.string.tasker_act_connect)}"
+                            "DISCONNECT" -> "Cuktech: ${context.getString(R.string.tasker_act_disconnect)}"
+                            "SET_PORT" -> "Cuktech: $portLabel ${if (selectedPortState) onLbl else offLbl}"
+                            "SET_MODE" -> "Cuktech: ${modeNames[selectedMode] ?: context.getString(R.string.scenario_ai)}"
+                            "SET_TIMEOUT" -> "Cuktech: ${context.getString(R.string.tasker_timeout_title)} (${timeoutNames[selectedTimeout] ?: context.getString(R.string.timeout_always)})"
+                            "SET_LOW_CURRENT" -> "Cuktech: ${context.getString(R.string.tasker_low_current_title)} (${if (selectedPortState) onLbl else offLbl})"
                             "SET_PORT_TIMER" -> {
-                                val tLabel = if (selectedTimerMins == 0) "Always On" else "${selectedTimerMins}m"
-                                "CUKTECH 10: $portLabel Timer ($tLabel)"
+                                val tLabel = if (selectedTimerMins == 0) context.getString(R.string.timeout_always) else "${selectedTimerMins}${context.getString(R.string.unit_m)}"
+                                "Cuktech: $portLabel ($tLabel)"
                             }
-                            "SET_CHARGE_LIMIT" -> "CUKTECH 10: $portLabel Wh Limit ${if (selectedPortState) "${parsedWh}Wh ($selectedLimitMode)" else "OFF"}"
-                            "SOFT_RESET" -> "CUKTECH 10: Force Soft Port Reset"
-                            "MASTER_KILLSWITCH" -> "CUKTECH 10: Master Killswitch (All Ports OFF)"
-                            "UNDO_LAST_COMMAND" -> "CUKTECH 10: Undo Last Command"
-                            "SET_IDLE_SCREEN_OFF" -> "CUKTECH 10: Idle Screen-Off ${if (selectedPortState) "ON" else "OFF"}"
-                            "SET_AUTO_CONNECT" -> "CUKTECH 10: Auto-Connect ${if (selectedPortState) "ON" else "OFF"}"
-                            "SET_PORT_LOGGING" -> "CUKTECH 10: $portLabel History Logging ${if (selectedPortState) "ON" else "OFF"}"
-                            "SET_TELEMETRY" -> "CUKTECH 10: Master Telemetry ${if (selectedPortState) "ON" else "PAUSED"}"
-                            "SET_LOG_WHEN_CHARGING" -> "CUKTECH 10: Log Only When Phone Charging ${if (selectedPortState) "ON" else "OFF"}"
-                            "SET_PAUSE_WHEN_LOCKED" -> "CUKTECH 10: Pause Polling When Screen Locked ${if (selectedPortState) "ON" else "OFF"}"
-                            else -> "CUKTECH 10: Action"
+                            "SET_CHARGE_LIMIT" -> "Cuktech: $portLabel ${if (selectedPortState) "${parsedWh}$unitWh ($selectedLimitMode)" else offLbl}"
+                            "SOFT_RESET" -> "Cuktech: ${context.getString(R.string.tasker_soft_reset_title)}"
+                            "MASTER_KILLSWITCH" -> "Cuktech: ${context.getString(R.string.tasker_act_killswitch)}"
+                            "UNDO_LAST_COMMAND" -> "Cuktech: ${context.getString(R.string.tasker_act_undo)}"
+                            "SET_IDLE_SCREEN_OFF" -> "Cuktech: ${context.getString(R.string.settings_idle_screen_off)} (${if (selectedPortState) onLbl else offLbl})"
+                            "SET_AUTO_CONNECT" -> "Cuktech: ${context.getString(R.string.settings_auto_reconnect)} (${if (selectedPortState) onLbl else offLbl})"
+                            "SET_PORT_LOGGING" -> "Cuktech: $portLabel ${context.getString(R.string.tasker_logging_title)} (${if (selectedPortState) onLbl else offLbl})"
+                            "SET_TELEMETRY" -> "Cuktech: ${context.getString(R.string.settings_master_telemetry)} (${if (selectedPortState) onLbl else offLbl})"
+                            "SET_LOG_WHEN_CHARGING" -> "Cuktech: ${context.getString(R.string.settings_log_phone_charging)} (${if (selectedPortState) onLbl else offLbl})"
+                            "SET_PAUSE_WHEN_LOCKED" -> "Cuktech: ${context.getString(R.string.settings_pause_screen_locked)} (${if (selectedPortState) onLbl else offLbl})"
+                            else -> "Cuktech"
                         }
                         onSave(
                             selectedAction,
@@ -182,7 +207,7 @@ fun TaskerEditScreen(
                             blurb
                         )
                     }) {
-                        Icon(Icons.Default.Check, contentDescription = "Save", tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.Check, contentDescription = stringResource(R.string.action_save), tint = MaterialTheme.colorScheme.primary)
                     }
                 }
             )
@@ -207,7 +232,7 @@ fun TaskerEditScreen(
                         Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "Tasker integration is disabled in BLEBridge Security settings. Enable opt-in Tasker automation in the app so this action can execute.",
+                            stringResource(R.string.tasker_disabled_warning),
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -215,26 +240,26 @@ fun TaskerEditScreen(
                 }
             }
 
-            Text("Select Action", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(stringResource(R.string.tasker_select_action), fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
             val actions = listOf(
-                "CONNECT" to "Connect Charger BLE",
-                "DISCONNECT" to "Disconnect Charger BLE",
-                "SET_AUTO_CONNECT" to "Proximity Auto-Connect (On/Off)",
-                "SET_PORT" to "Switch Port Power (On/Off)",
-                "SET_MODE" to "Set Power Allocation Scenario",
-                "SET_TIMEOUT" to "Set Screen Timeout",
-                "SET_IDLE_SCREEN_OFF" to "Idle Screen-Off (Sleep LCD when idle)",
-                "SET_LOW_CURRENT" to "USB-A Low Current Mode (4h)",
-                "SET_PORT_TIMER" to "Set Port Delay Poweroff Timer",
-                "SET_CHARGE_LIMIT" to "Set Port Wh Auto-Cutoff Limit",
-                "SOFT_RESET" to "Force Soft Port Reset (Renegotiate PD)",
-                "MASTER_KILLSWITCH" to "Master Killswitch (Turn All 4 Ports OFF)",
-                "UNDO_LAST_COMMAND" to "Undo Last Hardware Command (within 20s)",
-                "SET_PORT_LOGGING" to "Port History Logging (On/Off)",
-                "SET_TELEMETRY" to "Master Telemetry (On/Paused)",
-                "SET_LOG_WHEN_CHARGING" to "Log Only When Phone Charging (On/Off)",
-                "SET_PAUSE_WHEN_LOCKED" to "Pause Polling When Screen Locked (On/Off)"
+                "CONNECT" to stringResource(R.string.tasker_act_connect),
+                "DISCONNECT" to stringResource(R.string.tasker_act_disconnect),
+                "SET_AUTO_CONNECT" to stringResource(R.string.tasker_act_auto_connect),
+                "SET_PORT" to stringResource(R.string.tasker_act_set_port),
+                "SET_MODE" to stringResource(R.string.tasker_act_set_mode),
+                "SET_TIMEOUT" to stringResource(R.string.tasker_act_set_timeout),
+                "SET_IDLE_SCREEN_OFF" to stringResource(R.string.tasker_act_idle_off),
+                "SET_LOW_CURRENT" to stringResource(R.string.tasker_act_low_current),
+                "SET_PORT_TIMER" to stringResource(R.string.tasker_act_port_timer),
+                "SET_CHARGE_LIMIT" to stringResource(R.string.tasker_act_charge_limit),
+                "SOFT_RESET" to stringResource(R.string.tasker_act_soft_reset),
+                "MASTER_KILLSWITCH" to stringResource(R.string.tasker_act_killswitch),
+                "UNDO_LAST_COMMAND" to stringResource(R.string.tasker_act_undo),
+                "SET_PORT_LOGGING" to stringResource(R.string.tasker_act_port_logging),
+                "SET_TELEMETRY" to stringResource(R.string.tasker_act_telemetry),
+                "SET_LOG_WHEN_CHARGING" to stringResource(R.string.tasker_act_log_charging),
+                "SET_PAUSE_WHEN_LOCKED" to stringResource(R.string.tasker_act_pause_locked)
             )
 
             actions.forEach { (key, label) ->
@@ -242,7 +267,10 @@ fun TaskerEditScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { selectedAction = key }
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            selectedAction = key
+                        }
                         .padding(vertical = 6.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -258,7 +286,7 @@ fun TaskerEditScreen(
             HorizontalDivider()
 
             if (selectedAction == "SET_PORT") {
-                Text("Select Port", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_select_port), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     portNames.forEach { (pId, name) ->
                         FilterChip(
@@ -270,28 +298,28 @@ fun TaskerEditScreen(
                 }
 
                 Spacer(Modifier.height(4.dp))
-                Text("Port Power State", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_port_state), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     FilterChip(
                         selected = selectedPortState,
                         onClick = { selectedPortState = true },
-                        label = { Text("Power ON") }
+                        label = { Text(stringResource(R.string.tasker_power_on)) }
                     )
                     FilterChip(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
-                        label = { Text("Power OFF") }
+                        label = { Text(stringResource(R.string.tasker_power_off)) }
                     )
                 }
             }
 
             if (selectedAction == "SET_MODE") {
-                Text("Power Allocation Scenario", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_scenario_title), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 val modes = listOf(
-                    1 to ("AI Mode" to "Auto-balances power between USB-C and USB-A"),
-                    2 to ("Hybrid" to "Guarantees up to 100W for USB-C1 first"),
-                    3 to ("Single" to "Maximized burst wattage for one device"),
-                    4 to ("Dual" to "Equal 60W/60W or dynamic split across two active ports")
+                    1 to (stringResource(R.string.scenario_ai) to stringResource(R.string.scenario_ai_desc)),
+                    2 to (stringResource(R.string.scenario_hybrid) to stringResource(R.string.scenario_hybrid_desc)),
+                    3 to (stringResource(R.string.scenario_single) to stringResource(R.string.scenario_single_desc)),
+                    4 to (stringResource(R.string.scenario_dual) to stringResource(R.string.scenario_dual_desc))
                 )
                 modes.forEach { (mId, pair) ->
                     val (title, subtitle) = pair
@@ -314,13 +342,13 @@ fun TaskerEditScreen(
             }
 
             if (selectedAction == "SET_TIMEOUT") {
-                Text("Screen Timeout Duration", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_timeout_title), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 val timeouts = listOf(
-                    4 to "Always On",
-                    5 to "1 min",
-                    1 to "5 min",
-                    2 to "10 min",
-                    3 to "30 min"
+                    4 to stringResource(R.string.timeout_always),
+                    5 to stringResource(R.string.timeout_1m),
+                    1 to stringResource(R.string.timeout_5m),
+                    2 to stringResource(R.string.timeout_10m),
+                    3 to stringResource(R.string.timeout_30m)
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     timeouts.forEach { (code, label) ->
@@ -341,9 +369,9 @@ fun TaskerEditScreen(
             }
 
             if (selectedAction == "SET_IDLE_SCREEN_OFF") {
-                Text("Idle Screen-Off", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.settings_idle_screen_off), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    "Turns off the charger's color LCD when all ports are idle.",
+                    stringResource(R.string.tasker_idle_off_desc),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -351,20 +379,20 @@ fun TaskerEditScreen(
                     FilterChip(
                         selected = selectedPortState,
                         onClick = { selectedPortState = true },
-                        label = { Text("Enable") }
+                        label = { Text(stringResource(R.string.action_enable)) }
                     )
                     FilterChip(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
-                        label = { Text("Disable") }
+                        label = { Text(stringResource(R.string.action_disable)) }
                     )
                 }
             }
 
             if (selectedAction == "SET_LOW_CURRENT") {
-                Text("USB-A Low Current Mode (4 Hours)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_low_current_title), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    "Prevents auto-cutoff for low-draw devices like smartwatches and earbuds.",
+                    stringResource(R.string.port_usba_low_current_desc),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -372,18 +400,18 @@ fun TaskerEditScreen(
                     FilterChip(
                         selected = selectedPortState,
                         onClick = { selectedPortState = true },
-                        label = { Text("Enable (4 Hours)") }
+                        label = { Text(stringResource(R.string.tasker_low_current_enable)) }
                     )
                     FilterChip(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
-                        label = { Text("Disable") }
+                        label = { Text(stringResource(R.string.action_disable)) }
                     )
                 }
             }
 
             if (selectedAction == "SET_PORT_TIMER") {
-                Text("Select Port", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_select_port), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     portNames.forEach { (pId, name) ->
                         FilterChip(
@@ -395,14 +423,14 @@ fun TaskerEditScreen(
                 }
 
                 Spacer(Modifier.height(4.dp))
-                Text("Shutoff Countdown Duration", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_timer_duration_title), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 val presets = listOf(
-                    0 to "Always On (Cancel Timer)",
-                    15 to "15 Minutes",
-                    30 to "30 Minutes",
-                    60 to "1 Hour",
-                    120 to "2 Hours",
-                    240 to "4 Hours"
+                    0 to stringResource(R.string.tasker_timer_preset_always),
+                    15 to stringResource(R.string.tasker_timer_preset_15m),
+                    30 to stringResource(R.string.tasker_timer_preset_30m),
+                    60 to stringResource(R.string.tasker_timer_preset_1h),
+                    120 to stringResource(R.string.tasker_timer_preset_2h),
+                    240 to stringResource(R.string.tasker_timer_preset_4h)
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     presets.forEach { (mins, label) ->
@@ -423,18 +451,18 @@ fun TaskerEditScreen(
             }
 
             if (selectedAction == "SOFT_RESET") {
-                Text("Force Soft Port Reset", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_soft_reset_title), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    "Momentarily cycles all 4 ports off and on (0x00 -> 0x0F) to trigger fresh USB-PD, PPS, and UFCS protocol negotiation.",
+                    stringResource(R.string.dialog_soft_reset_body),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
             if (selectedAction == "SET_AUTO_CONNECT") {
-                Text("Proximity Auto-Connect", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.settings_auto_reconnect), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    "Automatically connects to CUKTECH 10 Ultra on proximity/power restoration.",
+                    stringResource(R.string.tasker_auto_connect_desc),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -442,18 +470,18 @@ fun TaskerEditScreen(
                     FilterChip(
                         selected = selectedPortState,
                         onClick = { selectedPortState = true },
-                        label = { Text("Enable Auto-Connect") }
+                        label = { Text(stringResource(R.string.action_enable)) }
                     )
                     FilterChip(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
-                        label = { Text("Disable Auto-Connect") }
+                        label = { Text(stringResource(R.string.action_disable)) }
                     )
                 }
             }
 
             if (selectedAction == "SET_PORT_LOGGING") {
-                Text("Select Port", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_select_port), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     portNames.forEach { (pId, name) ->
                         FilterChip(
@@ -464,25 +492,25 @@ fun TaskerEditScreen(
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                Text("Port History & Wh Logging", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_logging_title), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     FilterChip(
                         selected = selectedPortState,
                         onClick = { selectedPortState = true },
-                        label = { Text("Logging ON") }
+                        label = { Text(stringResource(R.string.tasker_logging_on)) }
                     )
                     FilterChip(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
-                        label = { Text("Logging OFF") }
+                        label = { Text(stringResource(R.string.tasker_logging_off)) }
                     )
                 }
             }
 
             if (selectedAction == "SET_TELEMETRY") {
-                Text("Master Telemetry Switch", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.settings_master_telemetry), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    "Enables or pauses active BLE telemetry polling across all ports.",
+                    stringResource(R.string.tasker_telemetry_desc),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -490,20 +518,20 @@ fun TaskerEditScreen(
                     FilterChip(
                         selected = selectedPortState,
                         onClick = { selectedPortState = true },
-                        label = { Text("Telemetry ON") }
+                        label = { Text(stringResource(R.string.tasker_telemetry_on)) }
                     )
                     FilterChip(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
-                        label = { Text("Pause Telemetry") }
+                        label = { Text(stringResource(R.string.tasker_telemetry_pause)) }
                     )
                 }
             }
 
             if (selectedAction == "SET_LOG_WHEN_CHARGING") {
-                Text("Log Only When Phone Charging", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.settings_log_phone_charging), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    "Restricts history recording to when the host Android phone is plugged into a charger.",
+                    stringResource(R.string.tasker_log_charging_desc),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -511,18 +539,18 @@ fun TaskerEditScreen(
                     FilterChip(
                         selected = selectedPortState,
                         onClick = { selectedPortState = true },
-                        label = { Text("Enable Condition") }
+                        label = { Text(stringResource(R.string.action_enable)) }
                     )
                     FilterChip(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
-                        label = { Text("Disable Condition") }
+                        label = { Text(stringResource(R.string.action_disable)) }
                     )
                 }
             }
 
             if (selectedAction == "SET_CHARGE_LIMIT") {
-                Text("Select Port", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.tasker_select_port), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     portNames.forEach { (pId, name) ->
                         FilterChip(
@@ -535,7 +563,7 @@ fun TaskerEditScreen(
                 OutlinedTextField(
                     value = selectedWhText,
                     onValueChange = { selectedWhText = it },
-                    label = { Text("Energy Limit Target (Wh)") },
+                    label = { Text(stringResource(R.string.tasker_limit_target_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -543,32 +571,32 @@ fun TaskerEditScreen(
                     FilterChip(
                         selected = selectedLimitMode == "once",
                         onClick = { selectedLimitMode = "once" },
-                        label = { Text("Once") }
+                        label = { Text(stringResource(R.string.action_once)) }
                     )
                     FilterChip(
                         selected = selectedLimitMode == "always",
                         onClick = { selectedLimitMode = "always" },
-                        label = { Text("Always") }
+                        label = { Text(stringResource(R.string.action_always)) }
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     FilterChip(
                         selected = selectedPortState,
                         onClick = { selectedPortState = true },
-                        label = { Text("Enable Limit") }
+                        label = { Text(stringResource(R.string.tasker_limit_enable)) }
                     )
                     FilterChip(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
-                        label = { Text("Disable Limit") }
+                        label = { Text(stringResource(R.string.tasker_limit_disable)) }
                     )
                 }
             }
 
             if (selectedAction == "SET_PAUSE_WHEN_LOCKED") {
-                Text("Pause Polling When Screen Locked", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(stringResource(R.string.settings_pause_screen_locked), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    "Suspends BLE polling and database writes when screen is locked (maximizes Doze deep sleep).",
+                    stringResource(R.string.tasker_pause_locked_desc),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -576,12 +604,12 @@ fun TaskerEditScreen(
                     FilterChip(
                         selected = selectedPortState,
                         onClick = { selectedPortState = true },
-                        label = { Text("Pause When Locked") }
+                        label = { Text(stringResource(R.string.tasker_pause_locked_on)) }
                     )
                     FilterChip(
                         selected = !selectedPortState,
                         onClick = { selectedPortState = false },
-                        label = { Text("Continuous Logging") }
+                        label = { Text(stringResource(R.string.tasker_pause_locked_off)) }
                     )
                 }
             }

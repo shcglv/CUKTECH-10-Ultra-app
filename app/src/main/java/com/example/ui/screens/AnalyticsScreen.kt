@@ -34,20 +34,24 @@ import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,18 +63,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.cuktech.db.CuktechPersistence
@@ -78,6 +88,9 @@ import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.ui.components.ClearHistoryDialog
 import com.example.ui.components.ConsolidatedSessionsTableDialog
 import com.example.ui.components.ExportCsvDialog
+import com.example.ui.components.ExpressiveTelemetryChartCard
+import com.example.ui.components.PixelEnergyBreakdownCard
+import com.example.ui.components.buildMonotoneCubicPath
 import com.example.ui.components.explicitPortName
 import com.example.ui.components.formatDurationHms
 import com.example.ui.theme.LocalSemanticColors
@@ -91,6 +104,7 @@ import com.example.ui.viewmodel.SessionReplayState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun AnalyticsScreen(
@@ -108,6 +122,7 @@ fun AnalyticsScreen(
     val portLoggingMap by viewModel.portLoggingMap.collectAsStateWithLifecycle()
     val prefs by viewModel.preferences.collectAsStateWithLifecycle()
     val replayState by viewModel.replayState.collectAsStateWithLifecycle()
+    val ports by viewModel.ports.collectAsStateWithLifecycle()
 
     var showExportDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
@@ -124,7 +139,7 @@ fun AnalyticsScreen(
             viewModel.exportCsvToSafUri(uri, pendingSafTimeframe, pendingSafScope) { ok ->
                 Toast.makeText(
                     context,
-                    if (ok) "CSV exported successfully" else "CSV export failed",
+                    context.getString(if (ok) R.string.toast_csv_ok else R.string.toast_csv_fail),
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -136,7 +151,11 @@ fun AnalyticsScreen(
             onExportDownloads = { tf, sc ->
                 showExportDialog = false
                 viewModel.exportCsvToDownloads(tf, sc) { file ->
-                    Toast.makeText(context, "Saved: ${file.name}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.toast_saved_fmt, file.name),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             },
             onExportSaf = { tf, sc ->
@@ -222,9 +241,9 @@ fun AnalyticsScreen(
             }
         }
 
-        // Separated Multi-Interval & Single-Unit Chart Card
+        // Next-Gen Interactive Bezier / Stacked Telemetry Chart Card
         item {
-            TelemetryChartCard(
+            ExpressiveTelemetryChartCard(
                 interval = chartInterval,
                 metric = chartMetric,
                 samples = chartSamples,
@@ -286,6 +305,15 @@ fun AnalyticsScreen(
             }
         }
 
+        // Pixel Battery-Style Port Energy Distribution Card
+        item {
+            PixelEnergyBreakdownCard(
+                ports = ports,
+                activeSessions = activeSessions,
+                completedSessions = completedSessions
+            )
+        }
+
         // Archived Daily Energy Aggregates (> retentionDays)
         if (dailyAggregates.isNotEmpty()) {
             item {
@@ -312,7 +340,7 @@ fun AnalyticsScreen(
                                     style = MaterialTheme.typography.bodySmall.tabularNums()
                                 )
                                 Text(
-                                    text = String.format(Locale.US, "%.2f Wh", agg.totalWh),
+                                    text = "${String.format(Locale.US, "%.2f", agg.totalWh)} ${stringResource(R.string.unit_wh)}",
                                     style = MaterialTheme.typography.labelMedium.copy(
                                         fontFamily = TelemetryMonoFontFamily
                                     ).tabularNums(),
@@ -377,284 +405,7 @@ fun AnalyticsScreen(
     }
 }
 
-@Composable
-private fun TelemetryChartCard(
-    interval: ChartInterval,
-    metric: ChartMetric,
-    samples: List<ChartPointSample>,
-    onSelectInterval: (ChartInterval) -> Unit,
-    onSelectMetric: (ChartMetric) -> Unit
-) {
-    val semantic = LocalSemanticColors.current
-    val timeFmt = remember(interval) {
-        SimpleDateFormat(
-            if (interval == ChartInterval.SEC_60 || interval == ChartInterval.MIN_5) "HH:mm:ss" else "HH:mm",
-            Locale.US
-        )
-    }
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        shape = RoundedCornerShape(22.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("analytics_chart_card")
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Interval selector row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val intervalLabels = listOf(
-                    ChartInterval.SEC_60 to stringResource(R.string.analytics_interval_60s),
-                    ChartInterval.MIN_5 to stringResource(R.string.analytics_interval_5m),
-                    ChartInterval.MIN_30 to stringResource(R.string.analytics_interval_30m),
-                    ChartInterval.SESSION to stringResource(R.string.analytics_interval_session),
-                    ChartInterval.TODAY to stringResource(R.string.analytics_interval_today),
-                    ChartInterval.CUSTOM to stringResource(R.string.analytics_interval_custom)
-                )
-                intervalLabels.forEach { (iv, label) ->
-                    FilterChip(
-                        selected = interval == iv,
-                        onClick = { onSelectInterval(iv) },
-                        label = { Text(label, style = MaterialTheme.typography.labelMedium.tabularNums()) },
-                        modifier = Modifier.testTag("chart_interval_${iv.name.lowercase()}")
-                    )
-                }
-            }
-
-            // Separated Y-axis metric selector row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val metricLabels = listOf(
-                    ChartMetric.TOTAL_W to stringResource(R.string.analytics_metric_total_w),
-                    ChartMetric.PER_PORT_W to stringResource(R.string.analytics_metric_per_port_w),
-                    ChartMetric.VOLTAGE_V to stringResource(R.string.analytics_metric_voltage_v),
-                    ChartMetric.CURRENT_A to stringResource(R.string.analytics_metric_current_a),
-                    ChartMetric.CUMULATIVE_WH to stringResource(R.string.analytics_metric_cum_wh),
-                    ChartMetric.PROTOCOLS to stringResource(R.string.analytics_metric_protocols)
-                )
-                metricLabels.forEach { (m, label) ->
-                    FilterChip(
-                        selected = metric == m,
-                        onClick = { onSelectMetric(m) },
-                        label = { Text(label) },
-                        modifier = Modifier.testTag("chart_metric_${m.name.lowercase()}")
-                    )
-                }
-            }
-
-            if (samples.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(170.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.analytics_no_samples),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else if (metric == ChartMetric.PROTOCOLS) {
-                // Protocol Timeline Lanes per physical port
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (portId in 1..4) {
-                        val color = semantic.colorForPort(portId)
-                        val latestProto = samples.lastOrNull()?.portProtocol?.get(portId) ?: "Idle"
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = explicitPortName(portId),
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.width(64.dp)
-                            )
-                            Canvas(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(18.dp)
-                            ) {
-                                val segW = size.width / samples.size.coerceAtLeast(1)
-                                samples.forEachIndexed { idx, pt ->
-                                    val p = pt.portProtocol[portId] ?: "Idle"
-                                    val active = p != "Idle" && (pt.portW[portId] ?: 0.0) > 0.2
-                                    val fill = if (active) color.copy(alpha = 0.85f) else color.copy(alpha = 0.12f)
-                                    drawRoundRect(
-                                        color = fill,
-                                        topLeft = Offset(idx * segW, 0f),
-                                        size = Size((segW + 1f).coerceAtMost(size.width - idx * segW), size.height),
-                                        cornerRadius = CornerRadius(3f, 3f)
-                                    )
-                                }
-                            }
-                            Text(
-                                text = latestProto,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.width(76.dp)
-                            )
-                        }
-                    }
-                }
-            } else {
-                val unit = when (metric) {
-                    ChartMetric.TOTAL_W, ChartMetric.PER_PORT_W -> "W"
-                    ChartMetric.VOLTAGE_V -> "V"
-                    ChartMetric.CURRENT_A -> "A"
-                    ChartMetric.CUMULATIVE_WH -> "Wh"
-                    ChartMetric.PROTOCOLS -> ""
-                }
-
-                val maxVal = remember(samples, metric) {
-                    val peak = when (metric) {
-                        ChartMetric.TOTAL_W -> samples.maxOfOrNull { it.totalW } ?: 10.0
-                        ChartMetric.PER_PORT_W -> samples.maxOfOrNull { it.portW.values.maxOrNull() ?: 0.0 } ?: 10.0
-                        ChartMetric.VOLTAGE_V -> samples.maxOfOrNull { it.portV.values.maxOrNull() ?: 0.0 } ?: 20.0
-                        ChartMetric.CURRENT_A -> samples.maxOfOrNull { it.portA.values.maxOrNull() ?: 0.0 } ?: 5.0
-                        ChartMetric.CUMULATIVE_WH -> samples.maxOfOrNull { it.portWh.values.maxOrNull() ?: 0.0 } ?: 1.0
-                        ChartMetric.PROTOCOLS -> 1.0
-                    }
-                    peak.coerceAtLeast(1.0) * 1.1
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.height(170.dp),
-                        verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "${String.format(Locale.US, "%.1f", maxVal)} $unit",
-                            style = MaterialTheme.typography.labelSmall.tabularNums(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "${String.format(Locale.US, "%.1f", maxVal / 2.0)} $unit",
-                            style = MaterialTheme.typography.labelSmall.tabularNums(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "0 $unit",
-                            style = MaterialTheme.typography.labelSmall.tabularNums(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    val totalLineColor = MaterialTheme.colorScheme.primary
-                    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                    Canvas(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(170.dp)
-                    ) {
-                        drawLine(gridColor, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
-                        drawLine(gridColor, Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), 1.dp.toPx())
-                        drawLine(gridColor, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
-
-                        if (samples.size >= 2) {
-                            if (metric == ChartMetric.TOTAL_W) {
-                                val path = Path()
-                                samples.forEachIndexed { idx, s ->
-                                    val x = (idx.toFloat() / (samples.size - 1)) * size.width
-                                    val y = size.height - ((s.totalW / maxVal).toFloat().coerceIn(0f, 1f) * size.height)
-                                    if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                                }
-                                drawPath(
-                                    path = path,
-                                    color = totalLineColor,
-                                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                                )
-                            } else {
-                                for (portId in 1..4) {
-                                    val pColor = semantic.colorForPort(portId)
-                                    val path = Path()
-                                    samples.forEachIndexed { idx, s ->
-                                        val v = when (metric) {
-                                            ChartMetric.PER_PORT_W -> s.portW[portId] ?: 0.0
-                                            ChartMetric.VOLTAGE_V -> s.portV[portId] ?: 0.0
-                                            ChartMetric.CURRENT_A -> s.portA[portId] ?: 0.0
-                                            ChartMetric.CUMULATIVE_WH -> s.portWh[portId] ?: 0.0
-                                            else -> 0.0
-                                        }
-                                        val x = (idx.toFloat() / (samples.size - 1)) * size.width
-                                        val y = size.height - ((v / maxVal).toFloat().coerceIn(0f, 1f) * size.height)
-                                        if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                                    }
-                                    drawPath(
-                                        path = path,
-                                        color = pColor,
-                                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Time X-Axis
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = timeFmt.format(Date(samples.first().timestampMs)),
-                        style = MaterialTheme.typography.labelSmall.tabularNums(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = timeFmt.format(Date(samples[samples.size / 2].timestampMs)),
-                        style = MaterialTheme.typography.labelSmall.tabularNums(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = timeFmt.format(Date(samples.last().timestampMs)),
-                        style = MaterialTheme.typography.labelSmall.tabularNums(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                if (metric != ChartMetric.TOTAL_W) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        for (portId in 1..4) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(semantic.colorForPort(portId))
-                                )
-                                Text(explicitPortName(portId), style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun SessionHistoryCard(
@@ -664,7 +415,10 @@ private fun SessionHistoryCard(
     val semantic = LocalSemanticColors.current
     val accent = semantic.colorForPort(session.portId)
     val portLabel = explicitPortName(session.portId)
-    val dateFmt = remember { SimpleDateFormat("MMM dd · HH:mm", Locale.US) }
+    val activeLocale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val dateFmt = remember(activeLocale) { SimpleDateFormat("d MMM · HH:mm", activeLocale) }
+    val unitW = stringResource(R.string.unit_w)
+    val unitWh = stringResource(R.string.unit_wh)
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -697,13 +451,13 @@ private fun SessionHistoryCard(
                         )
                     }
                     Text(
-                        text = session.protocolUsed,
+                        text = if (session.protocolUsed == "Idle") stringResource(R.string.port_status_idle) else session.protocolUsed,
                         style = MaterialTheme.typography.titleSmall
                     )
                 }
 
                 Text(
-                    text = "${String.format(Locale.US, "%.2f", session.whAccumulated)} Wh",
+                    text = "${String.format(Locale.US, "%.2f", session.whAccumulated)} $unitWh",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = TelemetryMonoFontFamily,
                         fontWeight = FontWeight.Bold
@@ -725,7 +479,9 @@ private fun SessionHistoryCard(
                     )
                     Text(
                         text = buildString {
-                            append("Peak ${String.format(Locale.US, "%.1f", session.peakWatts)}W · Avg ${String.format(Locale.US, "%.1f", session.avgWatts)}W")
+                            append(stringResource(R.string.session_peak_fmt, session.peakWatts, unitW))
+                            append(" · ")
+                            append(stringResource(R.string.session_avg_fmt, session.avgWatts, unitW))
                             if (session.computedCost > 0.0) {
                                 append(" · ${String.format(Locale.US, "%.2f", session.computedCost)} ${session.currencyCode}")
                             }
@@ -781,6 +537,7 @@ private fun StatusBadge(text: String, containerColor: Color) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SessionReplayDialog(
     replayState: SessionReplayState,
@@ -791,188 +548,248 @@ private fun SessionReplayDialog(
     val session = replayState.session ?: return
     val currentSample = replayState.currentSample
     val tsFmt = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(24.dp),
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+        modifier = Modifier.testTag("session_replay_dialog")
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("session_replay_dialog")
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "${stringResource(R.string.replay_title)} · ${explicitPortName(session.portId)}",
-                    style = MaterialTheme.typography.titleMedium
-                )
+            Text(
+                text = "${stringResource(R.string.replay_title)} · ${explicitPortName(session.portId)}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
 
-                when {
-                    replayState.isLoading -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                    replayState.samples.isEmpty() -> {
-                        Text(
-                            text = stringResource(R.string.replay_no_samples),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    else -> {
-                        val samples = replayState.samples
-                        val maxW = (samples.maxOfOrNull { it.powerW } ?: 10.0).coerceAtLeast(5.0)
-                        val lineColor = MaterialTheme.colorScheme.primary
-                        val cursorColor = MaterialTheme.colorScheme.error
-
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(110.dp)
-                        ) {
-                            if (samples.size >= 2) {
-                                val path = Path()
-                                samples.forEachIndexed { idx, s ->
-                                    val x = (idx.toFloat() / (samples.size - 1)) * size.width
-                                    val y = size.height - ((s.powerW / maxW).toFloat().coerceIn(0f, 1f) * (size.height - 8.dp.toPx())) - 4.dp.toPx()
-                                    if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                                }
-                                drawPath(
-                                    path = path,
-                                    color = lineColor,
-                                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
-                                )
-                                val cursorX = (replayState.cursorIndex.toFloat() / (samples.size - 1)) * size.width
-                                drawLine(cursorColor, Offset(cursorX, 0f), Offset(cursorX, size.height), strokeWidth = 2.dp.toPx())
-                            }
-                        }
-
-                        if (currentSample != null) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Text(
-                                        text = "${tsFmt.format(Date(currentSample.timestampMs))} · ${currentSample.protocolName}",
-                                        style = MaterialTheme.typography.labelLarge.tabularNums(),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = String.format(
-                                            Locale.US,
-                                            "%.1f W   ·   %.2f V   ·   %.2f A   ·   %.2f Wh",
-                                            currentSample.powerW,
-                                            currentSample.voltageV,
-                                            currentSample.currentA,
-                                            currentSample.cumulativeWh
-                                        ),
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontFamily = TelemetryMonoFontFamily,
-                                            fontWeight = FontWeight.SemiBold
-                                        ).tabularNums(),
-                                        modifier = Modifier.testTag("replay_sample_readout")
-                                    )
-                                }
-                            }
-                        }
-
-                        if (samples.size > 1) {
-                            Slider(
-                                value = replayState.cursorIndex.toFloat(),
-                                onValueChange = { onScrub(it.toInt()) },
-                                valueRange = 0f..(samples.lastIndex).toFloat(),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("replay_scrubber_slider")
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            FilledTonalButton(
-                                onClick = onTogglePlay,
-                                enabled = samples.size > 1,
-                                modifier = Modifier
-                                    .heightIn(min = 48.dp)
-                                    .testTag("replay_play_pause_button")
-                            ) {
-                                Icon(
-                                    imageVector = if (replayState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = null
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    if (replayState.isPlaying) {
-                                        stringResource(R.string.replay_pause)
-                                    } else {
-                                        stringResource(R.string.replay_play)
-                                    }
-                                )
-                            }
-                            Text(
-                                text = "${replayState.cursorIndex + 1} / ${samples.size}",
-                                style = MaterialTheme.typography.labelMedium.tabularNums()
-                            )
-                        }
+            when {
+                replayState.isLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
                     }
                 }
+                replayState.samples.isEmpty() -> {
+                    Text(
+                        text = stringResource(R.string.replay_no_samples),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                else -> {
+                    val samples = replayState.samples
+                    val maxW = (samples.maxOfOrNull { it.powerW } ?: 10.0).coerceAtLeast(5.0)
+                    val lineColor = MaterialTheme.colorScheme.primary
+                    val cursorColor = MaterialTheme.colorScheme.error
+                    val surfaceHigh = MaterialTheme.colorScheme.surfaceContainerHigh
 
-                HorizontalDivider()
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.cd_close))
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(124.dp)
+                            .pointerInput(samples) {
+                                if (samples.size < 2) return@pointerInput
+                                detectHorizontalDragGestures { change, _ ->
+                                    change.consume()
+                                    val frac = (change.position.x / size.width.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
+                                    onScrub((frac * samples.lastIndex).roundToInt().coerceIn(0, samples.lastIndex))
+                                }
+                            }
+                            .pointerInput(samples) {
+                                if (samples.size < 2) return@pointerInput
+                                detectTapGestures { off ->
+                                    val frac = (off.x / size.width.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
+                                    onScrub((frac * samples.lastIndex).roundToInt().coerceIn(0, samples.lastIndex))
+                                }
+                            }
+                    ) {
+                        if (samples.size >= 2) {
+                            val padY = 6.dp.toPx()
+                            val usableH = (size.height - padY * 2).coerceAtLeast(4f)
+                            val offsets = samples.mapIndexed { idx, s ->
+                                val x = (idx.toFloat() / (samples.size - 1)) * size.width
+                                val y = size.height - padY - ((s.powerW / maxW).toFloat().coerceIn(0f, 1f) * usableH)
+                                Offset(x, y)
+                            }
+                            val curve = buildMonotoneCubicPath(offsets, padY, size.height - padY)
+                            val fill = Path().apply {
+                                addPath(curve)
+                                lineTo(offsets.last().x, size.height)
+                                lineTo(offsets.first().x, size.height)
+                                close()
+                            }
+                            drawPath(
+                                path = fill,
+                                brush = Brush.verticalGradient(
+                                    listOf(lineColor.copy(alpha = 0.25f), lineColor.copy(alpha = 0f))
+                                )
+                            )
+                            drawPath(
+                                path = curve,
+                                color = lineColor,
+                                style = Stroke(width = 2.75.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            )
+                            val cursorPt = offsets[replayState.cursorIndex.coerceIn(0, offsets.lastIndex)]
+                            drawLine(cursorColor, Offset(cursorPt.x, 0f), Offset(cursorPt.x, size.height), strokeWidth = 2.dp.toPx())
+                            drawCircle(surfaceHigh, radius = 5.dp.toPx(), center = cursorPt)
+                            drawCircle(cursorColor, radius = 3.5.dp.toPx(), center = cursorPt)
+                        }
                     }
+
+                    if (currentSample != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                val unitW = stringResource(R.string.unit_w)
+                                val unitV = stringResource(R.string.unit_v)
+                                val unitA = stringResource(R.string.unit_a)
+                                val unitWh = stringResource(R.string.unit_wh)
+                                Text(
+                                    text = "${tsFmt.format(Date(currentSample.timestampMs))} · ${currentSample.protocolName}",
+                                    style = MaterialTheme.typography.labelLarge.tabularNums(),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = String.format(
+                                        Locale.US,
+                                        "%.1f %s   ·   %.2f %s   ·   %.2f %s   ·   %.2f %s",
+                                        currentSample.powerW,
+                                        unitW,
+                                        currentSample.voltageV,
+                                        unitV,
+                                        currentSample.currentA,
+                                        unitA,
+                                        currentSample.cumulativeWh,
+                                        unitWh
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontFamily = TelemetryMonoFontFamily,
+                                        fontWeight = FontWeight.SemiBold
+                                    ).tabularNums(),
+                                    modifier = Modifier.testTag("replay_sample_readout")
+                                )
+                            }
+                        }
+                    }
+
+                    if (samples.size > 1) {
+                        Slider(
+                            value = replayState.cursorIndex.toFloat(),
+                            onValueChange = { onScrub(it.toInt()) },
+                            valueRange = 0f..(samples.lastIndex).toFloat(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("replay_scrubber_slider")
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(
+                            onClick = onTogglePlay,
+                            enabled = samples.size > 1,
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("replay_play_pause_button")
+                        ) {
+                            Icon(
+                                imageVector = if (replayState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = null
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                if (replayState.isPlaying) {
+                                    stringResource(R.string.replay_pause)
+                                } else {
+                                    stringResource(R.string.replay_play)
+                                }
+                            )
+                        }
+                        Text(
+                            text = "${replayState.cursorIndex + 1} / ${samples.size}",
+                            style = MaterialTheme.typography.labelMedium.tabularNums()
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider()
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.cd_close))
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CustomChartRangeDialog(
     onSelectHours: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.analytics_interval_custom)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(1L to "1h", 3L to "3h", 6L to "6h", 12L to "12h", 24L to "24h", 72L to "72h").forEach { (hrs, label) ->
-                    OutlinedButton(
-                        onClick = { onSelectHours(hrs) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                    ) {
-                        Text("Last $label")
-                    }
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.analytics_interval_custom),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = stringResource(R.string.dialog_custom_range_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            listOf(1L, 3L, 6L, 12L, 24L, 72L).forEach { hrs ->
+                OutlinedButton(
+                    onClick = { onSelectHours(hrs) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                ) {
+                    Text(stringResource(R.string.chart_last_hours_fmt, hrs.toInt()))
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.action_cancel))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             }
         }
-    )
+    }
 }

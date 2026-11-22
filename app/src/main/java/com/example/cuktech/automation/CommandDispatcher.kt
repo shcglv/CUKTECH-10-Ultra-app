@@ -95,11 +95,25 @@ data class KillswitchSnapshot(
     val invalidationReason: String? = null
 )
 
+sealed interface UndoActionKind {
+    data class PortToggle(val portId: Int, val targetEnabled: Boolean) : UndoActionKind
+    data class SceneMode(val targetMode: Int) : UndoActionKind
+    object ScreenTimeout : UndoActionKind
+    data class PortTimer(val portId: Int) : UndoActionKind
+    object UsbALowCurrent : UndoActionKind
+    object IdleScreenOff : UndoActionKind
+    object ChargerLanguage : UndoActionKind
+    object OrientationLock : UndoActionKind
+    data class ProfileApplied(val profileName: String) : UndoActionKind
+    object KillswitchRestore : UndoActionKind
+}
+
 data class UndoAvailability(
     val sequenceId: Long,
     val label: String,
     val createdAtMs: Long,
-    val portId: Int? = null
+    val portId: Int? = null,
+    val undoAction: UndoActionKind? = null
 )
 
 sealed class CommandResult {
@@ -202,6 +216,7 @@ class CommandDispatcher(
         val label: String,
         val createdAtMs: Long,
         val portId: Int?,
+        val undoAction: UndoActionKind? = null,
         val restoreBlock: suspend () -> Boolean
     )
 
@@ -436,6 +451,7 @@ class CommandDispatcher(
                         label = "Undo Port ${command.portId} -> ${if (prevEnabled) "ON" else "OFF"}",
                         createdAtMs = now,
                         portId = command.portId,
+                        undoAction = UndoActionKind.PortToggle(command.portId, prevEnabled),
                         restoreBlock = {
                             val curBitmap = adapter.currentSettings().portSwitchBitmap
                             val bit = 1 shl (command.portId - 1)
@@ -454,6 +470,7 @@ class CommandDispatcher(
                         label = "Undo Scene -> ${CuktechProtocol.SCENE_MODES[prevScene] ?: prevScene}",
                         createdAtMs = now,
                         portId = null,
+                        undoAction = UndoActionKind.SceneMode(prevScene),
                         restoreBlock = { adapter.writeSceneMode(prevScene) }
                     )
                 }
@@ -467,6 +484,7 @@ class CommandDispatcher(
                         label = "Undo Screen Timeout",
                         createdAtMs = now,
                         portId = null,
+                        undoAction = UndoActionKind.ScreenTimeout,
                         restoreBlock = { adapter.writeScreenTimeout(prevTimeout) }
                     )
                 }
@@ -480,6 +498,7 @@ class CommandDispatcher(
                         label = "Undo Port ${command.portId} Timer",
                         createdAtMs = now,
                         portId = command.portId,
+                        undoAction = UndoActionKind.PortTimer(command.portId),
                         restoreBlock = { adapter.writePortCountdown(command.portId, prevMins) }
                     )
                 }
@@ -493,6 +512,7 @@ class CommandDispatcher(
                         label = "Undo USB-A Low Current",
                         createdAtMs = now,
                         portId = 4,
+                        undoAction = UndoActionKind.UsbALowCurrent,
                         restoreBlock = { adapter.writeUsbALowCurrent(prev) }
                     )
                 }
@@ -506,6 +526,7 @@ class CommandDispatcher(
                         label = "Undo Idle Screen Off",
                         createdAtMs = now,
                         portId = null,
+                        undoAction = UndoActionKind.IdleScreenOff,
                         restoreBlock = { adapter.writeIdleScreenOff(prev) }
                     )
                 }
@@ -519,6 +540,7 @@ class CommandDispatcher(
                         label = "Undo Charger Language",
                         createdAtMs = now,
                         portId = null,
+                        undoAction = UndoActionKind.ChargerLanguage,
                         restoreBlock = { adapter.writeLanguage(prev) }
                     )
                 }
@@ -532,6 +554,7 @@ class CommandDispatcher(
                         label = "Undo Orientation Lock",
                         createdAtMs = now,
                         portId = null,
+                        undoAction = UndoActionKind.OrientationLock,
                         restoreBlock = { adapter.writeOrientationLock(prev) }
                     )
                 }
@@ -577,6 +600,7 @@ class CommandDispatcher(
                         label = "Undo Profile '${command.name}'",
                         createdAtMs = now,
                         portId = null,
+                        undoAction = UndoActionKind.ProfileApplied(command.name),
                         restoreBlock = {
                             adapter.writeSceneMode(settingsBefore.sceneMode) &&
                                 adapter.writePortBitmap(settingsBefore.portSwitchBitmap and 0x0F) &&
@@ -595,7 +619,7 @@ class CommandDispatcher(
         if (ok) {
             pendingUndoAction = nextUndo
             _undoAvailability.value = nextUndo?.let {
-                UndoAvailability(it.sequenceId, it.label, it.createdAtMs, it.portId)
+                UndoAvailability(it.sequenceId, it.label, it.createdAtMs, it.portId, it.undoAction)
             }
             if (command is ChargerCommand.SetPortEnabled || command is ChargerCommand.SoftReset) {
                 _lastKillswitchSnapshot.value = _lastKillswitchSnapshot.value?.copy(
@@ -666,6 +690,7 @@ class CommandDispatcher(
                 label = "Restore ports from Killswitch snapshot",
                 createdAtMs = now,
                 portId = null,
+                undoAction = UndoActionKind.KillswitchRestore,
                 restoreBlock = {
                     val snap = _lastKillswitchSnapshot.value
                     if (snap != null && !snap.invalidated) {
@@ -676,7 +701,7 @@ class CommandDispatcher(
                 }
             )
             pendingUndoAction = undoEntry
-            _undoAvailability.value = UndoAvailability(seq, undoEntry.label, now, null)
+            _undoAvailability.value = UndoAvailability(seq, undoEntry.label, now, null, undoEntry.undoAction)
         }
 
         val succeededPorts = outcomes.filter { it.succeeded }.joinToString(",") { "P${it.portId}" }

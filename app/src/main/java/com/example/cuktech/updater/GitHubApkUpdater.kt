@@ -46,9 +46,9 @@ sealed class UpdateDownloadState {
 object GitHubApkUpdater {
 
     const val RELEASES_LATEST_API =
-        "https://api.github.com/repos/cramqin/BLEBridge-Cuktech10-Ultra/releases/latest"
+        "https://api.github.com/repos/joxit/cuktech-10-ultra/releases/latest"
     const val RELEASES_PAGE_URL =
-        "https://github.com/cramqin/BLEBridge-Cuktech10-Ultra/releases/latest"
+        "https://github.com/joxit/cuktech-10-ultra/releases/latest"
 
     private val SHA256_REGEX = Regex("([0-9a-fA-F]{64})")
     private val SHA256_LABELED_REGEX = Regex("(?:sha-?256|checksum|digest)[^0-9a-fA-F]{0,32}([0-9a-fA-F]{64})", RegexOption.IGNORE_CASE)
@@ -66,7 +66,7 @@ object GitHubApkUpdater {
             val req = Request.Builder()
                 .url(RELEASES_LATEST_API)
                 .header("Accept", "application/vnd.github.v3+json")
-                .header("User-Agent", "BLEBridge-Cuktech10-Ultra/$currentVersion")
+                .header("User-Agent", "Cuktech-10-Ultra/$currentVersion")
                 .build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) {
@@ -241,7 +241,7 @@ object GitHubApkUpdater {
         // Clean stale APKs before downloading
         updatesDir.listFiles()?.forEach { runCatching { it.delete() } }
 
-        val safeName = (release.apkName ?: "cuktech10_update.apk")
+        val safeName = (release.apkName ?: "cuktech_update.apk")
             .replace(Regex("[^a-zA-Z0-9._-]"), "_")
         val destFile = File(updatesDir, safeName)
 
@@ -249,7 +249,7 @@ object GitHubApkUpdater {
             onState(UpdateDownloadState.Downloading(0L, release.apkSizeBytes))
             val req = Request.Builder()
                 .url(url)
-                .header("User-Agent", "BLEBridge-Cuktech10-Ultra/${BuildConfig.VERSION_NAME}")
+                .header("User-Agent", "Cuktech-10-Ultra/${BuildConfig.VERSION_NAME}")
                 .build()
 
             client.newCall(req).execute().use { resp ->

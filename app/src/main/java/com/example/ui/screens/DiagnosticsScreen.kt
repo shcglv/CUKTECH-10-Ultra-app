@@ -4,7 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,19 +41,26 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.BleBridgeService
 import com.example.R
+import com.example.cuktech.security.LogSanitizer
 import com.example.ui.theme.TelemetryMonoFontFamily
 import com.example.ui.theme.tabularNums
 import com.example.ui.viewmodel.DashboardViewModel
+import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -64,9 +71,22 @@ fun DiagnosticsScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    BackHandler(onBack = onNavigateBack)
+    var backProgress by remember { mutableFloatStateOf(0f) }
+
+    PredictiveBackHandler(enabled = true) { progressFlow ->
+        try {
+            progressFlow.collect { backEvent ->
+                backProgress = backEvent.progress
+            }
+            backProgress = 0f
+            onNavigateBack()
+        } catch (_: CancellationException) {
+            backProgress = 0f
+        }
+    }
 
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val currentLevel by viewModel.currentLogLevel.collectAsStateWithLifecycle()
     val logs by viewModel.logs.collectAsStateWithLifecycle()
     val diagStatus by viewModel.diagStatus.collectAsStateWithLifecycle()
@@ -74,14 +94,26 @@ fun DiagnosticsScreen(
     val timeFmt = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
 
     fun copyText(label: String, text: String) {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         cb?.setPrimaryClip(ClipData.newPlainText(label, text))
-        Toast.makeText(context, "Copied: $label", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.toast_copied_fmt, label), Toast.LENGTH_SHORT).show()
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
+            .graphicsLayer {
+                val scale = 1f - (backProgress * 0.10f)
+                scaleX = scale
+                scaleY = scale
+                translationX = backProgress * 44f
+                alpha = 1f - (backProgress * 0.12f)
+                if (backProgress > 0f) {
+                    clip = true
+                    shape = RoundedCornerShape((backProgress * 28f).dp)
+                }
+            }
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .testTag("diagnostics_screen"),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -175,7 +207,10 @@ fun DiagnosticsScreen(
                 Text(stringResource(R.string.diag_stack_title), style = MaterialTheme.typography.titleSmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { viewModel.runDiagnostics() },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.runDiagnostics()
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 48.dp)
@@ -187,14 +222,17 @@ fun DiagnosticsScreen(
                     }
                     if (diagStatus.lastDiagnosticOutput.isNotBlank()) {
                         OutlinedButton(
-                            onClick = { copyText("BLE Diagnostics", diagStatus.lastDiagnosticOutput) },
+                            onClick = { copyText(context.getString(R.string.diag_stack_title), diagStatus.lastDiagnosticOutput) },
                             contentPadding = PaddingValues(horizontal = 12.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.action_copy), modifier = Modifier.size(16.dp))
                         }
                         OutlinedButton(
-                            onClick = { viewModel.clearDiagnostics() },
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.clearDiagnostics()
+                            },
                             contentPadding = PaddingValues(horizontal = 12.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
@@ -247,14 +285,17 @@ fun DiagnosticsScreen(
                         IconButton(
                             onClick = {
                                 val raw = logs.joinToString("\n") { "${timeFmt.format(Date(it.timestamp))} [${it.level}] ${it.message}" }
-                                copyText("Console Logs", raw)
+                                copyText(context.getString(R.string.diag_console_title), LogSanitizer.sanitize(raw, maskNetworkIdentifiers = true))
                             },
                             modifier = Modifier.size(48.dp)
                         ) {
                             Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.action_copy))
                         }
                         IconButton(
-                            onClick = { viewModel.clearConsoleLogs() },
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.clearConsoleLogs()
+                            },
                             modifier = Modifier.size(48.dp)
                         ) {
                             Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.action_clear))
@@ -265,19 +306,28 @@ fun DiagnosticsScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(
                         selected = currentLevel == BleBridgeService.Companion.LogLevel.LEVEL1,
-                        onClick = { viewModel.setConsoleLogLevel(BleBridgeService.Companion.LogLevel.LEVEL1) },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.setConsoleLogLevel(BleBridgeService.Companion.LogLevel.LEVEL1)
+                        },
                         label = { Text(stringResource(R.string.diag_level_1)) },
                         modifier = Modifier.testTag("diag_level_1")
                     )
                     FilterChip(
                         selected = currentLevel == BleBridgeService.Companion.LogLevel.LEVEL2,
-                        onClick = { viewModel.setConsoleLogLevel(BleBridgeService.Companion.LogLevel.LEVEL2) },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.setConsoleLogLevel(BleBridgeService.Companion.LogLevel.LEVEL2)
+                        },
                         label = { Text(stringResource(R.string.diag_level_2)) },
                         modifier = Modifier.testTag("diag_level_2")
                     )
                     FilterChip(
                         selected = currentLevel == BleBridgeService.Companion.LogLevel.LEVEL3,
-                        onClick = { viewModel.setConsoleLogLevel(BleBridgeService.Companion.LogLevel.LEVEL3) },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.setConsoleLogLevel(BleBridgeService.Companion.LogLevel.LEVEL3)
+                        },
                         label = { Text(stringResource(R.string.diag_level_3)) },
                         modifier = Modifier.testTag("diag_level_3")
                     )
