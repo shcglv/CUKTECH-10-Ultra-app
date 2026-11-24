@@ -22,6 +22,9 @@ import java.util.Calendar
 
 enum class StartDestination {
     OVERVIEW,
+    PORTS,
+    ANALYTICS,
+    SETTINGS,
     GATEWAY
 }
 
@@ -51,7 +54,10 @@ data class AppPreferences(
     val quietHoursStartMinute: Int = 23 * 60,
     val quietHoursEndMinute: Int = 7 * 60,
     val liveUpdatesEnabled: Boolean = true,
-    val consoleLogLevel: String = "LEVEL1"
+    val consoleLogLevel: String = "LEVEL1",
+    val thresholdAlertsEnabled: Boolean = false,
+    val highLoadAlertWatts: Double = 105.0,
+    val lowPowerDropAlertWatts: Double = 1.5
 ) {
     fun isWithinQuietHours(minuteOfDay: Int = currentLocalMinuteOfDay()): Boolean {
         if (!quietHoursEnabled) return false
@@ -98,6 +104,9 @@ data class AppPreferences(
         put("quietHoursEndMinute", quietHoursEndMinute)
         put("liveUpdatesEnabled", liveUpdatesEnabled)
         put("consoleLogLevel", consoleLogLevel)
+        put("thresholdAlertsEnabled", thresholdAlertsEnabled)
+        put("highLoadAlertWatts", highLoadAlertWatts)
+        put("lowPowerDropAlertWatts", lowPowerDropAlertWatts)
     }
 
     companion object {
@@ -137,11 +146,15 @@ class AppPreferencesRepository(context: Context) {
     private val _preferences = MutableStateFlow(AppPreferences())
     val preferences: StateFlow<AppPreferences> = _preferences.asStateFlow()
 
+    private val _isLoaded = MutableStateFlow(false)
+    val isLoaded: StateFlow<Boolean> = _isLoaded.asStateFlow()
+
     init {
         scope.launch {
             migrateLegacyPrefsIfNeeded()
             dataStore.data.collect { prefs ->
                 _preferences.value = mapFromDataStore(prefs)
+                _isLoaded.value = true
             }
         }
     }
@@ -199,7 +212,10 @@ class AppPreferencesRepository(context: Context) {
             quietHoursStartMinute = (prefs[KEY_QUIET_START_MIN] ?: (23 * 60)).coerceIn(0, 1439),
             quietHoursEndMinute = (prefs[KEY_QUIET_END_MIN] ?: (7 * 60)).coerceIn(0, 1439),
             liveUpdatesEnabled = prefs[KEY_LIVE_UPDATES_ENABLED] ?: true,
-            consoleLogLevel = prefs[KEY_CONSOLE_LOG_LEVEL] ?: "LEVEL1"
+            consoleLogLevel = prefs[KEY_CONSOLE_LOG_LEVEL] ?: "LEVEL1",
+            thresholdAlertsEnabled = prefs[KEY_THRESHOLD_ALERTS_ENABLED] ?: false,
+            highLoadAlertWatts = (prefs[KEY_HIGH_LOAD_ALERT_W] ?: 105.0).coerceIn(40.0, 120.0),
+            lowPowerDropAlertWatts = (prefs[KEY_LOW_POWER_DROP_ALERT_W] ?: 1.5).coerceIn(0.5, 15.0)
         )
     }
 
@@ -294,6 +310,26 @@ class AppPreferencesRepository(context: Context) {
         dataStore.edit { it[KEY_CONSOLE_LOG_LEVEL] = levelName }
     }
 
+    suspend fun updateThresholdAlerts(
+        enabled: Boolean,
+        highLoadWatts: Double,
+        lowPowerDropWatts: Double
+    ) {
+        val clampedHigh = highLoadWatts.coerceIn(40.0, 120.0)
+        val clampedLow = lowPowerDropWatts.coerceIn(0.5, 15.0)
+        _preferences.value = _preferences.value.copy(
+            thresholdAlertsEnabled = enabled,
+            highLoadAlertWatts = clampedHigh,
+            lowPowerDropAlertWatts = clampedLow
+        )
+        val updated = dataStore.edit {
+            it[KEY_THRESHOLD_ALERTS_ENABLED] = enabled
+            it[KEY_HIGH_LOAD_ALERT_W] = clampedHigh
+            it[KEY_LOW_POWER_DROP_ALERT_W] = clampedLow
+        }
+        _preferences.value = mapFromDataStore(updated)
+    }
+
     suspend fun applyFromBackupJson(json: JSONObject) {
         if (json.length() == 0) return
         dataStore.edit { edit ->
@@ -379,6 +415,15 @@ class AppPreferencesRepository(context: Context) {
             if (json.has("consoleLogLevel")) {
                 edit[KEY_CONSOLE_LOG_LEVEL] = json.optString("consoleLogLevel", "LEVEL1")
             }
+            if (json.has("thresholdAlertsEnabled")) {
+                edit[KEY_THRESHOLD_ALERTS_ENABLED] = json.optBoolean("thresholdAlertsEnabled", false)
+            }
+            if (json.has("highLoadAlertWatts")) {
+                edit[KEY_HIGH_LOAD_ALERT_W] = json.optDouble("highLoadAlertWatts", 105.0).coerceIn(40.0, 120.0)
+            }
+            if (json.has("lowPowerDropAlertWatts")) {
+                edit[KEY_LOW_POWER_DROP_ALERT_W] = json.optDouble("lowPowerDropAlertWatts", 1.5).coerceIn(0.5, 15.0)
+            }
             edit[KEY_MIGRATED_LEGACY] = true
         }
         val refreshed = mapFromDataStore(dataStore.data.first())
@@ -413,5 +458,8 @@ class AppPreferencesRepository(context: Context) {
         private val KEY_QUIET_END_MIN = intPreferencesKey("quiet_hours_end_min")
         private val KEY_LIVE_UPDATES_ENABLED = booleanPreferencesKey("live_updates_enabled")
         private val KEY_CONSOLE_LOG_LEVEL = stringPreferencesKey("console_log_level")
+        private val KEY_THRESHOLD_ALERTS_ENABLED = booleanPreferencesKey("threshold_alerts_enabled")
+        private val KEY_HIGH_LOAD_ALERT_W = doublePreferencesKey("high_load_alert_watts")
+        private val KEY_LOW_POWER_DROP_ALERT_W = doublePreferencesKey("low_power_drop_alert_watts")
     }
 }

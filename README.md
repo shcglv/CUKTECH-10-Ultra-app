@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>Native Android Material 3 Expressive Controller, Live Telemetry Dashboard, Glance Widgets &amp; Hardened Automation Hub for CUKTECH 10 Ultra (120W GaN, MiOT PID <code>0x660E</code>, <code>njcuk.fitting.ad1204</code>)</b><br/>
-  Package: <code>com.joxit.cuktech</code> · Author: <b>joxit</b>
+  Package: <code>com.joxit.cuktech</code> · Author: <b>Joxit</b>
 </p>
 
 <p align="center">
@@ -19,14 +19,14 @@
 - **[Complete v2.0.0 Features & Hardware Guide (FEATURES.md)](FEATURES.md)** — Detailed reference for telemetry, protocols, safety cutoffs, Glance widgets, Live Updates, backups, and automation.
 - **[Hardened TCP JSON Gateway Guide (docs/TCP_SOCKET_BRIDGE.md)](docs/TCP_SOCKET_BRIDGE.md)** — Loopback-first (`127.0.0.1:8080`) token-authenticated TCP socket protocol and ADB forwarding instructions.
 - **[Releases & Signed APKs + `.sha256`](../../releases)** — Signed releases (`Cuktech-10-Ultra-v*.apk`) built via GitHub Actions with SHA-256 verification sidecars.
-- **[Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.joxit.cuktech%22%2C%22url%22%3A%22https%3A//github.com/joxit/cuktech-10-ultra%22%2C%22author%22%3A%22joxit%22%2C%22name%22%3A%22Cuktech%20-%20CUKTECH%2010%20Ultra%22%7D)** — Background update tracking directly from GitHub Releases.
+- **[Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.joxit.cuktech%22%2C%22url%22%3A%22https%3A//github.com/joxit/cuktech-10-ultra%22%2C%22author%22%3A%22Joxit%22%2C%22name%22%3A%22Cuktech%20-%20CUKTECH%2010%20Ultra%22%7D)** — Background update tracking directly from GitHub Releases.
 - **[OEM Background Guide (dontkillmyapp.com)](https://dontkillmyapp.com/)** — Exempt background BLE services on aggressive OEM ROMs.
 
 ---
 
 ## 🙏 Acknowledgments & Heritage
 
-**Cuktech (`com.joxit.cuktech`)** for **CUKTECH 10 Ultra (`njcuk.fitting.ad1204`, Product ID `0x660E`)** is an independent app built by **joxit**, utilizing MiOT BLE protocol findings from:
+**Cuktech (`com.joxit.cuktech`)** for **CUKTECH 10 Ultra (`njcuk.fitting.ad1204`, Product ID `0x660E`)** is an independent app built by **Joxit**, utilizing MiOT BLE protocol findings from:
 
 1. **[`kairui1108/cuktech-ble-server`](https://github.com/kairui1108/cuktech-ble-server)** *(and [`kairui1108/cuktech-ble-ha`](https://github.com/kairui1108/cuktech-ble-ha))* — Xiaomi MiOT BLE v5 + CUKTECH Extended v2 protocol specification, 2-phase `SECP256R1` ECDH + `HKDF-SHA256` + `AES-CCM` handshake, 8-byte port telemetry decoding, and hardware SIID/PIID definitions.
 2. **[`woldphone/BLEBridge`](https://github.com/woldphone/BLEBridge)** — Early Foreground Service & sequential GATT queue pattern inspiration.
@@ -89,4 +89,4 @@ cd cuktech-10-ultra
 
 ## 📄 License & Disclaimer
 
-Independent open-source community application by **joxit**; **not** affiliated with, endorsed by, or sponsored by CUKTECH or Xiaomi Corporation. Hardware control and automation features are provided as-is; always verify electrical safety limits for your connected devices.
+Independent open-source community application by **Joxit**; **not** affiliated with, endorsed by, or sponsored by CUKTECH or Xiaomi Corporation. Hardware control and automation features are provided as-is; always verify electrical safety limits for your connected devices.

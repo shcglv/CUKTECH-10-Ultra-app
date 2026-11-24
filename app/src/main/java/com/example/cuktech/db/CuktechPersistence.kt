@@ -468,7 +468,7 @@ class CuktechPersistence @JvmOverloads constructor(
 
         if (scope == ExportScope.ALL || scope == ExportScope.SESSIONS_ONLY) {
             sb.appendLine("\n# Charging Sessions")
-            sb.appendLine("session_id,port,start_time,end_time,active_duration_sec,gap_duration_sec,energy_wh,peak_watts,avg_watts,protocol,end_reason,cost,currency")
+            sb.appendLine("session_id,port,start_time,end_time,active_duration_sec,gap_duration_sec,fast_boost_sec,taper_sec,energy_wh,peak_watts,avg_watts,protocol,end_reason,cost,currency")
             val sessions = runCatching { sessionDao.getCompletedSince(minStartSec, 2000) }.getOrDefault(emptyList())
             for (s in sessions) {
                 val startStr = fmt.format(Date((s.startTimeSec * 1000).toLong()))
@@ -477,13 +477,15 @@ class CuktechPersistence @JvmOverloads constructor(
                 sb.appendLine(
                     String.format(
                         Locale.US,
-                        "%d,%s,%s,%s,%d,%d,%.3f,%.2f,%.2f,%s,%s,%.4f,%s",
+                        "%d,%s,%s,%s,%d,%d,%d,%d,%.3f,%.2f,%.2f,%s,%s,%.4f,%s",
                         s.id,
                         csvSafe(s.portLabel),
                         startStr,
                         endStr,
                         activeDur,
                         s.gapDurationSec,
+                        s.fastBoostDurationSec,
+                        s.taperDurationSec,
                         s.whAccumulated,
                         s.peakWatts,
                         s.avgWatts,
@@ -602,6 +604,8 @@ class CuktechPersistence @JvmOverloads constructor(
                 put("lastSampleTimeSec", s.lastSampleTimeSec)
                 put("activeDurationSec", s.activeDurationSec)
                 put("gapDurationSec", s.gapDurationSec)
+                put("fastBoostDurationSec", s.fastBoostDurationSec)
+                put("taperDurationSec", s.taperDurationSec)
                 put("whAccumulated", s.whAccumulated)
                 put("peakWatts", s.peakWatts)
                 put("avgWatts", s.avgWatts)
@@ -767,7 +771,9 @@ class CuktechPersistence @JvmOverloads constructor(
                         endReason = obj.optString("endReason", "").ifBlank { null },
                         tariffPerKwhSnapshot = obj.optDouble("tariffPerKwhSnapshot", 0.0),
                         currencyCode = obj.optString("currencyCode", "USD"),
-                        computedCost = obj.optDouble("computedCost", 0.0)
+                        computedCost = obj.optDouble("computedCost", 0.0),
+                        fastBoostDurationSec = obj.optLong("fastBoostDurationSec", 0L),
+                        taperDurationSec = obj.optLong("taperDurationSec", 0L)
                     )
                 )
             }

@@ -1,6 +1,6 @@
 # ⚡ Complete Features & Hardware Specification (v2.0.0)
 
-Technical reference for **Cuktech (`com.joxit.cuktech`) — CUKTECH 10 Ultra (`AD1204`, MiOT PID `0x660E`, `njcuk.fitting.ad1204`)** by **joxit**.
+Technical reference for **Cuktech (`com.joxit.cuktech`) — CUKTECH 10 Ultra (`AD1204`, MiOT PID `0x660E`, `njcuk.fitting.ad1204`)** by **Joxit**.
 
 ---
 

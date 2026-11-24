@@ -136,6 +136,7 @@ object ChargingNotificationManager {
         ensureChannels(context)
 
         val hasCountdown = payload.nearestCountdownEndMs != null && payload.nearestCountdownEndMs > nowMs
+        val hasActiveLoadOrProgress = payload.totalWatts >= 0.85 || hasCountdown || payload.activeLimitProgressPct != null
         val whenMs = if (hasCountdown) payload.nearestCountdownEndMs!! else payload.serviceStartTimeMs
 
         val compat = NotificationCompat.Builder(context, CHANNEL_LIVE_TELEMETRY)
@@ -150,12 +151,18 @@ object ChargingNotificationManager {
             .setOnlyAlertOnce(true)
             .setWhen(whenMs)
             .setShowWhen(true)
-            .setPriority(if (payload.liveUpdatesEnabled && Build.VERSION.SDK_INT >= 36) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_LOW)
+            .setPriority(
+                if (payload.liveUpdatesEnabled && hasActiveLoadOrProgress && Build.VERSION.SDK_INT >= 36) {
+                    NotificationCompat.PRIORITY_DEFAULT
+                } else {
+                    NotificationCompat.PRIORITY_LOW
+                }
+            )
             .setLocalOnly(true)
             .setSortKey("cuktech_gateway")
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, context.getString(R.string.action_disconnect), disconnectPendingIntent)
 
-        if (payload.liveUpdatesEnabled) {
+        if (payload.liveUpdatesEnabled && hasActiveLoadOrProgress) {
             compat.setCategory(NotificationCompat.CATEGORY_PROGRESS)
             compat.setRequestPromotedOngoing(true)
             compat.setShortCriticalText(formatShortCriticalText(payload.totalWatts, payload.nearestCountdownEndMs, nowMs))

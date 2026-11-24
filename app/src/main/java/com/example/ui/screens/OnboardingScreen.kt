@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.R
+import com.example.ui.components.PortManualReferenceContent
 import com.example.ui.theme.LocalSemanticColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -87,7 +88,7 @@ fun OnboardingScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(pageCount = { 3 })
+    val pagerState = rememberPagerState(pageCount = { 4 })
 
     val requiredPermissions = remember {
         buildList {
@@ -168,7 +169,7 @@ fun OnboardingScreen(
                         text = stringResource(
                             R.string.onboarding_page_indicator_fmt,
                             pagerState.currentPage + 1,
-                            3
+                            4
                         ),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
@@ -222,7 +223,7 @@ fun OnboardingScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                repeat(3) { index ->
+                repeat(4) { index ->
                     val selected = pagerState.currentPage == index
                     val width by animateDpAsState(
                         targetValue = if (selected) 28.dp else 8.dp,
@@ -257,7 +258,7 @@ fun OnboardingScreen(
                     .padding(bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (pagerState.currentPage < 2) {
+                if (pagerState.currentPage < 3) {
                     Button(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -336,7 +337,7 @@ private fun OnboardingPageContent(
             .verticalScroll(scroll)
             .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = if (page == 1) Arrangement.Top else Arrangement.Center
     ) {
         when (page) {
             0 -> {
@@ -410,6 +411,28 @@ private fun OnboardingPageContent(
             }
 
             1 -> {
+                Text(
+                    text = stringResource(R.string.onboarding_ports_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.onboarding_ports_subtitle),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                PortManualReferenceContent(
+                    compact = true,
+                    modifier = Modifier.testTag("onboarding_port_manual_card")
+                )
+            }
+
+            2 -> {
                 ElevatedCard(
                     shape = RoundedCornerShape(36.dp),
                     colors = CardDefaults.elevatedCardColors(

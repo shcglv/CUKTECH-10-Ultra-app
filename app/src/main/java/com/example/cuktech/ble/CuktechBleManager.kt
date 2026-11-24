@@ -22,10 +22,13 @@ import com.example.cuktech.energy.AdaptiveEnergyIntegrator
 import com.example.cuktech.energy.ChargeSessionDetector
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.energy.PortChargeLimit
+import com.example.cuktech.energy.SmartLoadTracker
 import com.example.cuktech.power.CableDiagnosticEngine
 import com.example.cuktech.power.PortCableDiagnostic
 import com.example.cuktech.notifications.AnomalyAlert
 import com.example.cuktech.notifications.CableAnomalyDetector
+import com.example.cuktech.notifications.ChargerEventLog
+import com.example.cuktech.notifications.ChargerEventType
 import com.example.cuktech.notifications.ChargingCompletionDetector
 import com.example.cuktech.notifications.ChargingNotificationManager
 import com.example.cuktech.notifications.PersistedTimerStore
@@ -142,6 +145,9 @@ class CuktechBleManager @JvmOverloads constructor(
 
     private var authJob: Job? = null
     private var pollingJob: Job? = null
+    @Volatile
+    private var wasPolling = false
+    private val wakeLockSyncLock = Any()
     private var keepaliveJob: Job? = null
     private var reconnectJob: Job? = null
     private var connectionTimeoutJob: Job? = null
@@ -221,6 +227,10 @@ class CuktechBleManager @JvmOverloads constructor(
     )
     val ports: StateFlow<Map<Int, PortTelemetry>> = _ports.asStateFlow()
 
+    private val smartLoadTracker = SmartLoadTracker()
+    private val _isSmartCharging = MutableStateFlow(false)
+    val isSmartCharging: StateFlow<Boolean> = _isSmartCharging.asStateFlow()
+
     private val _totalPowerWatts = MutableStateFlow(0.0)
     val totalPowerWatts: StateFlow<Double> = _totalPowerWatts.asStateFlow()
 
@@ -252,6 +262,7 @@ class CuktechBleManager @JvmOverloads constructor(
     val completionDetector = ChargingCompletionDetector()
     val anomalyDetector = CableAnomalyDetector()
     val anomalyAlerts: StateFlow<List<AnomalyAlert>> = anomalyDetector.alerts
+    val eventLog = ChargerEventLog()
     val cableDiagnosticEngine = CableDiagnosticEngine()
     val cableDiagnostics: StateFlow<Map<Int, PortCableDiagnostic>> = cableDiagnosticEngine.diagnostics
     val localAutomationEngine = LocalAutomationEngine()
@@ -519,6 +530,7 @@ class CuktechBleManager @JvmOverloads constructor(
         if (wasEnabled && !enabled) {
             finalizeAllActiveSessions()
         }
+        syncWakeLockWithPollingState()
     }
 
     fun setLogOnlyWhenPhoneCharging(enabled: Boolean) {
@@ -532,6 +544,7 @@ class CuktechBleManager @JvmOverloads constructor(
         if (!wasEnabled && enabled && !isPhoneCharging.value) {
             finalizeAllActiveSessions()
         }
+        syncWakeLockWithPollingState()
     }
 
     fun setPausePollingWhenScreenLocked(enabled: Boolean) {
@@ -545,6 +558,7 @@ class CuktechBleManager @JvmOverloads constructor(
         if (!wasEnabled && enabled && !isScreenOn.value) {
             finalizeAllActiveSessions()
         }
+        syncWakeLockWithPollingState()
     }
 
     fun shouldPollNow(): Boolean {
@@ -558,6 +572,22 @@ class CuktechBleManager @JvmOverloads constructor(
         // When not restricted to phone charging, check screen lock policy
         if (_pausePollingWhenScreenLocked.value && !isScreenOn.value) return false
         return true
+    }
+
+    internal fun syncWakeLockWithPollingState(): Boolean {
+        synchronized(wakeLockSyncLock) {
+            val shouldHold = (_authState.value == CuktechAuthState.AUTHENTICATED) &&
+                (pollingJob?.isActive == true) &&
+                shouldPollNow()
+            if (shouldHold && !wasPolling) {
+                BleBridgeService.getInstance()?.acquireWakeLock()
+                wasPolling = true
+            } else if (!shouldHold && wasPolling) {
+                BleBridgeService.getInstance()?.releaseWakeLock()
+                wasPolling = false
+            }
+            return shouldHold
+        }
     }
 
     fun setAutoReconnectConfigured(enabled: Boolean) {
@@ -838,6 +868,8 @@ class CuktechBleManager @JvmOverloads constructor(
         connectionTimeoutJob?.cancel()
         authJob?.cancel()
         stopBackgroundLoops()
+        smartLoadTracker.reset()
+        _isSmartCharging.value = false
         _authState.value = CuktechAuthState.DISCONNECTED
         _statusMessage.value = reason
         BleBridgeService.getInstance()?.dismissForegroundNotificationIfIdle()
@@ -853,6 +885,8 @@ class CuktechBleManager @JvmOverloads constructor(
             autoReconnectEnabled = false
             finalizeAllActiveSessions("USER_DISCONNECT")
         }
+        smartLoadTracker.reset()
+        _isSmartCharging.value = false
         completionDetector.notifyBleDisconnected()
         lastDisconnectMs = SystemClock.elapsedRealtime()
         switchDeviceJob?.cancel()
@@ -911,8 +945,15 @@ class CuktechBleManager @JvmOverloads constructor(
                         BleBridgeService.Companion.LogLevel.LEVEL1,
                         "[Anomaly] ${alert.summary}"
                     )
+                    val locCtx = context.withAppLocale(preferencesRepository.preferences.value.appLanguage)
+                    eventLog.addEvent(
+                        type = ChargerEventType.ANOMALY,
+                        title = locCtx.getString(R.string.event_anomaly_title_fmt, alert.portLabel),
+                        detail = alert.summary,
+                        portId = alert.portId ?: 0
+                    )
                     ChargingNotificationManager.postAnomalyNotification(
-                        context = context,
+                        context = locCtx,
                         alert = alert,
                         inQuietHours = preferencesRepository.preferences.value.isWithinQuietHours()
                     )
@@ -1956,12 +1997,16 @@ class CuktechBleManager @JvmOverloads constructor(
             val updatedActive = _activeSessions.value.toMutableMap()
             val curActive = detector.activeSession
             if (curActive != null) {
+                val isMeaningfulActive = curActive.whAccumulated >= 0.02 || curActive.activeDurationSec >= 8L
                 val wasAbsent = !updatedActive.containsKey(portId)
                 updatedActive[portId] = curActive
-                if (wasAbsent) {
+                if (wasAbsent && isMeaningfulActive) {
                     persistence.upsertActiveSession(curActive)
                 }
             } else {
+                if (finishedSession == null && updatedActive.containsKey(portId)) {
+                    persistence.clearActiveSessionForPort(portId)
+                }
                 updatedActive.remove(portId)
             }
             _activeSessions.value = updatedActive
@@ -1986,6 +2031,13 @@ class CuktechBleManager @JvmOverloads constructor(
                 "[Anomaly] ${alert.summary}"
             )
             val locCtx = context.withAppLocale(prefs.appLanguage)
+            eventLog.addEvent(
+                type = ChargerEventType.ANOMALY,
+                title = locCtx.getString(R.string.event_anomaly_title_fmt, alert.portLabel),
+                detail = alert.summary,
+                portId = alert.portId ?: 0,
+                timestampMs = nowMs
+            )
             ChargingNotificationManager.postAnomalyNotification(
                 context = locCtx,
                 alert = alert,
@@ -2010,10 +2062,18 @@ class CuktechBleManager @JvmOverloads constructor(
             prefs = prefs
         )?.let { completionEvent ->
             val locCtx = context.withAppLocale(prefs.appLanguage)
+            val portName = PortTelemetryDecoder.PORT_NAMES[portId] ?: updatedPort.portLabel
+            eventLog.addEvent(
+                type = ChargerEventType.CHARGING_COMPLETE,
+                title = locCtx.getString(R.string.event_completion_title_fmt, portName),
+                detail = locCtx.getString(R.string.event_completion_detail_fmt, completionEvent.sessionWh, completionEvent.peakWatts),
+                portId = portId,
+                timestampMs = nowMs
+            )
             ChargingNotificationManager.postCompletionNotification(
                 context = locCtx,
                 event = completionEvent,
-                portDisplayName = PortTelemetryDecoder.PORT_NAMES[portId] ?: updatedPort.portLabel,
+                portDisplayName = portName,
                 soundEnabled = prefs.completionSoundEnabled,
                 vibrationEnabled = prefs.completionVibrationEnabled
             )
@@ -2023,6 +2083,7 @@ class CuktechBleManager @JvmOverloads constructor(
         val roundedTotalW = (totalW * 100.0).roundToInt() / 100.0
         val oldTotalW = _totalPowerWatts.value
         _totalPowerWatts.value = roundedTotalW
+        _isSmartCharging.value = smartLoadTracker.update(roundedTotalW, nowSec)
 
         if (abs(oldTotalW - roundedTotalW) >= 0.5 || System.currentTimeMillis() - lastHistoryWriteMs >= 5000L) {
             val c3aLog = PortTelemetryDecoder.resolveC3ASharedBus(curPorts)
@@ -2040,9 +2101,39 @@ class CuktechBleManager @JvmOverloads constructor(
             )
         }
 
-        // Check per-port charge limit auto-cutoff & local automation rules
+        // Check per-port charge limit auto-cutoff, threshold alerts & local automation rules
         checkAndEnforcePortChargeLimit(portId, cumulativeWh)
         evaluateLocalAutomationRules(nowMs)
+        if (prefs.thresholdAlertsEnabled) {
+            val locCtx = context.withAppLocale(prefs.appLanguage)
+            val appLocale = resolveLocale(prefs.appLanguage)
+            eventLog.evaluateThresholds(
+                enabled = true,
+                totalWatts = roundedTotalW,
+                highLoadThresholdW = prefs.highLoadAlertWatts,
+                portPowers = curPorts.mapValues { it.value.powerW },
+                lowDropThresholdW = prefs.lowPowerDropAlertWatts,
+                nowMs = nowMs,
+                highLoadTitleBuilder = { curW, thrW ->
+                    locCtx.getString(R.string.event_high_load_title) to
+                        String.format(appLocale, locCtx.getString(R.string.event_high_load_detail_fmt), curW, thrW)
+                },
+                lowDropTitleBuilder = { pid, curW, thrW ->
+                    val pName = PortTelemetryDecoder.PORT_NAMES[pid] ?: "P$pid"
+                    locCtx.getString(R.string.event_low_drop_title_fmt, pName) to
+                        String.format(appLocale, locCtx.getString(R.string.event_low_drop_detail_fmt), curW, thrW)
+                }
+            )
+        } else {
+            eventLog.evaluateThresholds(
+                enabled = false,
+                totalWatts = roundedTotalW,
+                highLoadThresholdW = prefs.highLoadAlertWatts,
+                portPowers = emptyMap(),
+                lowDropThresholdW = prefs.lowPowerDropAlertWatts,
+                nowMs = nowMs
+            )
+        }
 
         // Record chart point & periodic Room history
         recordChartAndHistory(curPorts, roundedTotalW)
@@ -2269,9 +2360,11 @@ class CuktechBleManager @JvmOverloads constructor(
                     retentionDays = prefs.retentionDays
                 )
             }
-            _activeSessions.value.values.forEach { session ->
-                persistence.upsertActiveSession(session)
-            }
+            _activeSessions.value.values
+                .filter { it.whAccumulated >= 0.02 || it.activeDurationSec >= 8L }
+                .forEach { session ->
+                    persistence.upsertActiveSession(session)
+                }
         }
     }
 
@@ -2437,46 +2530,60 @@ class CuktechBleManager @JvmOverloads constructor(
         BleBridgeService.getInstance()?.requestGattRssi()
     }
 
-    private fun startBackgroundLoops() {
+    @androidx.annotation.VisibleForTesting
+    internal fun startBackgroundLoops() {
         stopBackgroundLoops()
 
         // Loop 1: Smart Port Polling (C1/C2 push hardware notifications on plug-in; C3/A require GET)
         pollingJob = scope.launch {
             var cycle = 0
-            while (isActive && _authState.value == CuktechAuthState.AUTHENTICATED) {
-                val anyPortActive = _totalPowerWatts.value > 0.0 || _activeSessions.value.isNotEmpty()
-                delay(if (anyPortActive) 3000L else 5000L)
-                if (_authState.value != CuktechAuthState.AUTHENTICATED) break
+            try {
+                syncWakeLockWithPollingState()
+                while (isActive && _authState.value == CuktechAuthState.AUTHENTICATED) {
+                    val anyPortActive = _totalPowerWatts.value > 0.0 || _activeSessions.value.isNotEmpty()
+                    delay(if (anyPortActive) 3000L else 5000L)
+                    if (_authState.value != CuktechAuthState.AUTHENTICATED) break
 
-                // If user policy disables polling (e.g. phone not charging or screen locked), sleep without waking CPU/radio
-                if (!shouldPollNow()) {
-                    continue
-                }
+                    // If user policy disables polling (e.g. phone not charging or screen locked), sleep without waking CPU/radio
+                    val shouldPoll = syncWakeLockWithPollingState()
+                    if (!shouldPoll) {
+                        continue
+                    }
 
-                // C3 and USB-A never push BLE notifications from hardware; poll them to detect plug-in/load
-                sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_C3, isSet = false, timeoutMs = 1800L)
-                sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_A, isSet = false, timeoutMs = 1800L)
+                    // C3 and USB-A never push BLE notifications from hardware; poll them to detect plug-in/load
+                    sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_C3, isSet = false, timeoutMs = 1800L)
+                    sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_A, isSet = false, timeoutMs = 1800L)
 
-                // C1 and C2 push hardware notifications (b4 = 0x04) automatically on plug-in;
-                // only poll them when currently active to catch any missed unplug event.
-                val c1Active = (_ports.value[1]?.powerW ?: 0.0) > 0.0 || _activeSessions.value.containsKey(1)
-                val c2Active = (_ports.value[2]?.powerW ?: 0.0) > 0.0 || _activeSessions.value.containsKey(2)
-                if (c1Active) {
-                    sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_C1, isSet = false, timeoutMs = 1800L)
-                }
-                if (c2Active) {
-                    sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_C2, isSet = false, timeoutMs = 1800L)
-                }
+                    // C1 and C2 push hardware notifications (b4 = 0x04) automatically on plug-in;
+                    // only poll them when currently active to catch any missed unplug event.
+                    val c1Active = (_ports.value[1]?.powerW ?: 0.0) > 0.0 || _activeSessions.value.containsKey(1)
+                    val c2Active = (_ports.value[2]?.powerW ?: 0.0) > 0.0 || _activeSessions.value.containsKey(2)
+                    if (c1Active) {
+                        sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_C1, isSet = false, timeoutMs = 1800L)
+                    }
+                    if (c2Active) {
+                        sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_C2, isSet = false, timeoutMs = 1800L)
+                    }
 
-                if (cycle % 2 == 0) {
-                    BleBridgeService.getInstance()?.requestGattRssi()
+                    if (cycle % 2 == 0) {
+                        BleBridgeService.getInstance()?.requestGattRssi()
+                    }
+                    if (cycle % 6 == 0) {
+                        sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_SW_BITMAP, isSet = false, timeoutMs = 1800L)
+                    }
+                    cycle++
                 }
-                if (cycle % 6 == 0) {
-                    sendMiotCommand(CuktechProtocol.SIID_CHARGER, CuktechProtocol.PIID_PORT_SW_BITMAP, isSet = false, timeoutMs = 1800L)
+            } finally {
+                // Clean up wake lock when polling loop exits or is cancelled
+                synchronized(wakeLockSyncLock) {
+                    if (wasPolling) {
+                        BleBridgeService.getInstance()?.releaseWakeLock()
+                        wasPolling = false
+                    }
                 }
-                cycle++
             }
         }
+        syncWakeLockWithPollingState()
 
         // Loop 2: 10-second Keepalive (`[00 00 00 00]` on `CHAR_CMD_RECV`) & periodic rule eval
         keepaliveJob = scope.launch {
@@ -2507,9 +2614,17 @@ class CuktechBleManager @JvmOverloads constructor(
         )
         if (triggered.isNotEmpty()) {
             scope.launch {
+                val locCtx = context.withAppLocale(preferencesRepository.preferences.value.appLanguage)
                 for (item in triggered) {
                     persistence.markAutomationRuleTriggered(item.rule.id, item.firedAtMs)
                     val res = commandDispatcher.dispatch(CommandSource.AUTOMATION_RULE, item.command)
+                    eventLog.addEvent(
+                        type = ChargerEventType.AUTOMATION_TRIGGERED,
+                        title = locCtx.getString(R.string.event_automation_title_fmt, item.rule.name),
+                        detail = res.message,
+                        portId = item.rule.portId,
+                        timestampMs = item.firedAtMs
+                    )
                     BleBridgeService.addLogMessage(
                         BleBridgeService.Companion.LogLevel.LEVEL1,
                         "[Rule:${item.rule.name}] ${res.message}"
@@ -2525,6 +2640,12 @@ class CuktechBleManager @JvmOverloads constructor(
         keepaliveJob?.cancel()
         keepaliveJob = null
         localAutomationEngine.reset()
+        synchronized(wakeLockSyncLock) {
+            if (wasPolling) {
+                BleBridgeService.getInstance()?.releaseWakeLock()
+                wasPolling = false
+            }
+        }
     }
 
     fun stopAllJobsForServiceDestroy() {
@@ -2727,6 +2848,15 @@ class CuktechBleManager @JvmOverloads constructor(
                 _ports.value = curPorts
                 commandDispatcher.notifySafetyCutoffTriggered(pId, "COUNTDOWN_EXPIRED")
                 finalizeActiveSessionForPort(pId, "COUNTDOWN_EXPIRED")
+                val locCtx = context.withAppLocale(prefs.appLanguage)
+                val portName = PortTelemetryDecoder.PORT_NAMES[pId] ?: "P$pId"
+                eventLog.addEvent(
+                    type = ChargerEventType.TIMER_EXPIRED,
+                    title = locCtx.getString(R.string.event_timer_expired_title_fmt, portName),
+                    detail = locCtx.getString(R.string.event_timer_expired_detail),
+                    portId = pId,
+                    timestampMs = nowMs
+                )
             }
         }
         _countdownRemainingSeconds.value = remMap
@@ -2789,10 +2919,18 @@ class CuktechBleManager @JvmOverloads constructor(
                     nowMs = nowMs,
                     prefs = prefs
                 )?.let { completionEvent ->
+                    val portName = PortTelemetryDecoder.PORT_NAMES[pId] ?: p.portLabel
+                    eventLog.addEvent(
+                        type = ChargerEventType.CHARGING_COMPLETE,
+                        title = locCtx.getString(R.string.event_completion_title_fmt, portName),
+                        detail = locCtx.getString(R.string.event_completion_detail_fmt, completionEvent.sessionWh, completionEvent.peakWatts),
+                        portId = pId,
+                        timestampMs = nowMs
+                    )
                     ChargingNotificationManager.postCompletionNotification(
                         context = locCtx,
                         event = completionEvent,
-                        portDisplayName = PortTelemetryDecoder.PORT_NAMES[pId] ?: p.portLabel,
+                        portDisplayName = portName,
                         soundEnabled = prefs.completionSoundEnabled,
                         vibrationEnabled = prefs.completionVibrationEnabled
                     )
@@ -2809,6 +2947,8 @@ class CuktechBleManager @JvmOverloads constructor(
         if (_authState.value == CuktechAuthState.AUTHENTICATED) {
             val ports = _ports.value
             val totalW = PortTelemetryDecoder.computeEffectiveTotalWatts(ports)
+            val isSmartActive = smartLoadTracker.update(totalW, nowSecDouble)
+            _isSmartCharging.value = isSmartActive
             val c3a = PortTelemetryDecoder.resolveC3ASharedBus(ports)
 
             val title = if (totalW >= 0.1) {
@@ -2863,6 +3003,12 @@ class CuktechBleManager @JvmOverloads constructor(
 
             val hasTimers = timersList.isNotEmpty()
             val hasWhLimits = whLimitsList.isNotEmpty()
+
+            // Suppress idle notification ("Все порты без нагрузки" & 0.0W chip) unless charging or a timer/limit is active
+            if (!isSmartActive && !hasTimers && !hasWhLimits) {
+                BleBridgeService.getInstance()?.dismissConnectedIdleNotification()
+                return
+            }
 
             val indicatorBadges = buildString {
                 if (hasTimers) append("⏱ ")
@@ -3315,7 +3461,16 @@ class CuktechBleManager @JvmOverloads constructor(
             map[portId] = updatedLimit
             _chargeLimits.value = map
 
-            _statusMessage.value = "Port ${PortTelemetryDecoder.PORT_NAMES[portId]} reached limit (${"%.1f".format(limit.whTarget)} Wh) - auto cut off"
+            val locCtx = context.withAppLocale(preferencesRepository.preferences.value.appLanguage)
+            val portName = PortTelemetryDecoder.PORT_NAMES[portId] ?: "P$portId"
+            eventLog.addEvent(
+                type = ChargerEventType.WH_LIMIT_CUTOFF,
+                title = locCtx.getString(R.string.event_wh_cutoff_title_fmt, portName),
+                detail = locCtx.getString(R.string.event_wh_cutoff_detail_fmt, limit.whTarget),
+                portId = portId
+            )
+
+            _statusMessage.value = "Port $portName reached limit (${"%.1f".format(limit.whTarget)} Wh) - auto cut off"
             scope.launch {
                 commandDispatcher.dispatch(
                     CommandSource.INTERNAL_SAFETY,
@@ -3336,6 +3491,8 @@ class CuktechBleManager @JvmOverloads constructor(
             com.example.cuktech.db.CuktechPersistence.ClearHistoryOption.CLEAR_ALL -> {
                 sessionDetectors.values.forEach { it.reset() }
                 energyIntegrators.values.forEach { it.reset() }
+                smartLoadTracker.reset()
+                _isSmartCharging.value = false
                 _activeSessions.value = emptyMap()
                 _powerChartHistory.value = emptyList()
                 val updated = _ports.value.toMutableMap()

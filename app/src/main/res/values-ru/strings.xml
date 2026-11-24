@@ -47,7 +47,7 @@
     <string name="topbar_cancel_short">Отмена</string>
     <string name="topbar_pairing_cd">Поиск и привязка устройств</string>
     <string name="topbar_killswitch_cd">Аварийное отключение</string>
-    <string name="onboarding_badge_author">CUKTECH 10 Ultra · от joxit</string>
+    <string name="onboarding_badge_author">CUKTECH 10 Ultra · от Joxit</string>
     <string name="onboarding_skip">Пропустить</string>
     <string name="onboarding_next">Далее</string>
     <string name="onboarding_start">Начать работу</string>
@@ -236,6 +236,7 @@
     <string name="settings_idle_screen_off_desc">Автоматически выключает дисплей блока при отсутствии нагрузки</string>
     <string name="settings_hw_language">Язык дисплея зарядного</string>
     <string name="settings_orientation_lock">Блокировка ориентации</string>
+    <string name="settings_orientation_lock_desc">Фиксирует текущую ориентацию ЖК-экрана зарядного устройства</string>
     <string name="settings_rotate_180">Повернуть экран на 180°</string>
     <string name="settings_lcd_page">Активная страница экрана зарядного</string>
     <string name="settings_soft_reset">Мягкий сброс портов (перезапуск PD)</string>
@@ -250,9 +251,10 @@
     <string name="settings_lang_system">Как в системе</string>
     <string name="settings_lang_en">English</string>
     <string name="settings_lang_ru">Русский</string>
-    <string name="settings_start_screen">Стартовый экран</string>
-    <string name="settings_start_overview">Экран обзора</string>
-    <string name="settings_start_gateway">Центр подключений и шлюз</string>
+    <string name="settings_start_screen">Стартовый экран при запуске</string>
+    <string name="settings_start_screen_hint">Какая вкладка открывается автоматически при следующем запуске</string>
+    <string name="settings_start_overview">Обзор</string>
+    <string name="settings_start_gateway">Настройки</string>
 
     <string name="settings_section_retention">Хранение данных, склейка и тариф</string>
     <string name="settings_retention_days">Срок хранения перед архивацией</string>
@@ -709,4 +711,106 @@
     <string name="weekday_fri">Пт</string>
     <string name="weekday_sat">Сб</string>
     <string name="weekday_sun">Вс</string>
+    <string name="analytics_multi_metric_hint">Выберите несколько метрик (Вт, В, А, Вт·ч) для наложения на один график</string>
+    <string name="port_short_c1">C1</string>
+    <string name="port_short_c2">C2</string>
+    <string name="port_short_c3">C3</string>
+    <string name="port_short_a">A</string>
+
+    <!-- Event Center & Threshold Alerts -->
+    <string name="event_center_title">Журнал событий</string>
+    <string name="event_center_cd">Открыть журнал событий зарядки</string>
+    <string name="event_center_mark_read">Прочитать все</string>
+    <string name="event_center_clear">Очистить</string>
+    <string name="event_center_empty">Событий пока нет. Здесь появятся отсечки по Вт·ч, таймеры, завершения зарядки, сбои, правила и пороги.</string>
+    <string name="event_high_load_title">Порог высокой нагрузки</string>
+    <string name="event_high_load_detail_fmt">Общая мощность %1$.1f Вт (&gt;= %2$.0f Вт)</string>
+    <string name="event_low_drop_title_fmt">%1$s: спад мощности</string>
+    <string name="event_low_drop_detail_fmt">Снижение до %1$.1f Вт (&lt;= %2$.1f Вт)</string>
+    <string name="event_wh_cutoff_title_fmt">%1$s: лимит Вт·ч</string>
+    <string name="event_wh_cutoff_detail_fmt">Достигнут лимит %1$.1f Вт·ч — порт отключён</string>
+    <string name="event_timer_expired_title_fmt">%1$s: таймер завершён</string>
+    <string name="event_timer_expired_detail">Аппаратный таймер отключения сработал</string>
+    <string name="event_completion_title_fmt">%1$s: зарядка завершена</string>
+    <string name="event_completion_detail_fmt">Отдано %1$.2f Вт·ч · Пик %2$.1f Вт</string>
+    <string name="event_anomaly_title_fmt">%1$s: сбой</string>
+    <string name="event_automation_title_fmt">Правило: %1$s</string>
+
+    <!-- Settings Threshold Alert Sliders & Widget Gallery -->
+    <string name="settings_threshold_alerts_enable">Оповещения по порогу Вт</string>
+    <string name="settings_threshold_high_load_fmt">Порог перегрузки: %1$.0f Вт</string>
+    <string name="settings_threshold_low_drop_fmt">Порог спада нагрузки: %1$.1f Вт</string>
+    <string name="settings_widget_gallery_title">Виджеты рабочего стола</string>
+    <string name="settings_widget_gallery_desc">Виджеты Material 3 с динамическими цветами, переключением сценариев и закреплением в 1 касание.</string>
+    <string name="widget_preview_control_title">Панель управления (4×2)</string>
+    <string name="widget_preview_compact_title">Компактная сетка (2×2)</string>
+    <string name="widget_pin_btn">На экран</string>
+    <string name="widget_pin_unsupported">Лаунчер не поддерживает закрепление из приложения — добавьте через меню виджетов.</string>
+    <string name="widget_pin_requested">Запрос на добавление виджета отправлен</string>
+
+    <!-- Expressive Charts, Weekly/Monthly Summary, 10-Day Bars & 24h Timeline -->
+    <string name="chart_style_curve">Кривая</string>
+    <string name="chart_style_bars">Столбцы</string>
+    <string name="chart_pill_min_fmt">Мин %1$s</string>
+    <string name="chart_pill_max_fmt">Макс %1$s</string>
+    <string name="chart_stat_avg">Среднее</string>
+    <string name="chart_stat_min">Минимум</string>
+    <string name="chart_stat_max">Максимум</string>
+    <string name="summary_title">Сводка за период</string>
+    <string name="summary_period_week">Неделя</string>
+    <string name="summary_period_month">Месяц</string>
+    <string name="summary_score_label">Индекс зарядки</string>
+    <string name="summary_score_excellent">Стабильный цикл</string>
+    <string name="summary_score_good">Нормальный режим</string>
+    <string name="summary_score_fair">Были обрывы</string>
+    <string name="summary_empty_period">Нет записанных сессий за этот период</string>
+    <string name="summary_stat_total_wh">Энергия</string>
+    <string name="summary_stat_sessions">Сессии</string>
+    <string name="summary_stat_peak">Пик / Сред.</string>
+    <string name="summary_stat_boost">Быстрая фаза</string>
+    <string name="summary_stat_top_port">Топ порт</string>
+    <string name="summary_stat_cost">Расход</string>
+    <string name="analytics_daily_bars_title">Энергия за 10 дней</string>
+    <string name="analytics_daily_bars_total">Всего Вт·ч</string>
+    <string name="analytics_daily_bars_peak">Пик Вт</string>
+    <string name="analytics_daily_bars_sessions">Сессии</string>
+    <string name="analytics_timeline_24h_title">Активность портов за 24 ч</string>
+    <string name="analytics_timeline_24h_empty">За последние 24 часа нагрузки на порты не было</string>
+    <string name="analytics_group_today">Сегодня</string>
+    <string name="analytics_group_yesterday">Вчера</string>
+    <string name="analytics_group_earlier">Ранее</string>
+    <string name="session_charged_for_fmt">Заряжалось %1$s</string>
+    <string name="session_phase_boost_fmt">Разгон %1$s</string>
+    <string name="session_phase_taper_fmt">Спад %1$s</string>
+    <string name="session_phase_boost_label">Разгон</string>
+    <string name="session_phase_taper_label">Дозаряд</string>
+    <string name="session_active_now">Идёт сейчас</string>
+    <string name="overview_port_peak_fmt">▲ %1$.1f</string>
+    <string name="overview_port_min_fmt">▼ %1$.1f</string>
+
+    <!-- Official CUKTECH 10 Ultra Port Architecture & Manual Reference -->
+    <string name="onboarding_ports_title">Как работают порты БП</string>
+    <string name="onboarding_ports_subtitle">Официальная архитектура CUKTECH 10 Ultra (AD1204)</string>
+    <string name="settings_port_manual_btn">Справка по портам БП (AD1204)</string>
+    <string name="settings_port_manual_desc">Лимиты портов, общая шина C3+A 5В/15Вт, лимиты 110В/220В и сценарии ADC 2.0</string>
+    <string name="settings_about_author_fmt">Автор: Joxit · Пакет %1$s</string>
+    <string name="port_manual_sheet_title">Справка по портам CUKTECH 10 Ultra</string>
+    <string name="port_manual_sheet_subtitle">Аппаратные лимиты AD1204U / AD1204 и логика ADC 2.0 из мануала</string>
+    <string name="port_manual_ac_header">Входная сеть и общий лимит</string>
+    <string name="port_manual_ac_220">200–240В~ 50/60Гц: до 120 Вт суммарно (до 120 Вт на C1 или C2 с кабелем 6А)</string>
+    <string name="port_manual_ac_110">100–130В~ 50/60Гц: до 110 Вт суммарно (потолок одного порта C1/C2 — 100 Вт)</string>
+    <string name="port_manual_single_header">Мощность отдельных портов</string>
+    <string name="port_manual_c1c2_badge">ДО 120 ВТ</string>
+    <string name="port_manual_c1c2_desc">PD 3.1/3.0 (до 100 Вт · 20В⎓5А), PPS, UFCS, QC и Xiaomi 120W HyperCharge (20В⎓6А при 220В). Два независимых мощных канала ADC 2.0.</string>
+    <string name="port_manual_c3_badge">ДО 44 ВТ</string>
+    <string name="port_manual_c3_desc">5В⎓3А, 9В⎓3А, 12В⎓2.5А, 15В⎓2А, 11В⎓4А (PD 3.0, PPS, UFCS, SCP). Быстрая зарядка смартфонов и планшетов, пока порт USB-A свободен.</string>
+    <string name="port_manual_a_badge">ДО 33 ВТ</string>
+    <string name="port_manual_a_desc">5В⎓3А, 9В⎓2А, 12В⎓1.5А, 11В⎓3А (UFCS, SCP/FCP, QC, AFC). Есть режим малого тока (2ч/4ч) для наушников, часов и браслетов.</string>
+    <string name="port_manual_c3a_title">Общая шина USB-C3 + USB-A (5В⎓3А · макс. 15 Вт)</string>
+    <string name="port_manual_c3a_body">Аппаратно USB-C3 и USB-A подключены к одному вторичному преобразователю. По отдельности каждый выдаёт полную быструю зарядку (44 Вт / 33 Вт). При ОДНОВРЕМЕННОМ подключении к C3 и USB-A оба переходят на общую линию 5В / 15 Вт — приложение объединяет их в общую карточку C3+A без задвоения мощности.</string>
+    <string name="port_manual_multi_header">Распределение при нескольких устройствах</string>
+    <string name="port_manual_multi_2p">• C1 + C2: динамически делят до 120 Вт (например 60 Вт + 60 Вт или приоритет ноутбука)\n• C1/C2 + C3 (или USB-A): основной порт держит до 90 Вт + вторичный до 30 Вт</string>
+    <string name="port_manual_multi_34p">• C1 + C2 + C3: например 45 Вт + 45 Вт + 30 Вт (до 120 Вт суммарно)\n• Все 4 порта (C1+C2+C3+A): до 110–120 Вт всего, при этом C3+A работают в режиме 5В / 15 Вт</string>
+    <string name="port_manual_scenarios_header">Сценарии мощности ADC 2.0 (BLE)</string>
+    <string name="port_manual_scenarios_body">• AI-режим: автоматическая балансировка мощности между всеми активными портами.\n• Гибрид: удерживает повышенный бюджет для ноутбука на USB-C1.\n• Одиночный: максимум мощности на один основной порт.\n• Двойной: сбалансированное разделение мощности между C1 и C2 с минимумом переподключений.</string>
 </resources>

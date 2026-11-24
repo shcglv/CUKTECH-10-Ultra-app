@@ -27,7 +27,9 @@ data class ChargeSessionRecord(
     val computedCost: Double = 0.0,
     val isArchived: Boolean = false,
     val sampleCount: Int = 0,
-    val wattsSum: Double = 0.0
+    val wattsSum: Double = 0.0,
+    val fastBoostDurationSec: Long = 0L,
+    val taperDurationSec: Long = 0L
 ) {
     /**
      * Honest active charging duration in seconds, excluding BLE drop / pause gaps.
@@ -160,6 +162,8 @@ class ChargeSessionDetector(
     private var sampleCount: Int = 0
     private var activeSecondsDouble: Double = 0.0
     private var gapSecondsDouble: Double = 0.0
+    private var fastBoostSecondsDouble: Double = 0.0
+    private var taperSecondsDouble: Double = 0.0
 
     fun onSample(
         watts: Double,
@@ -278,13 +282,21 @@ class ChargeSessionDetector(
         }
 
         // Accumulate active metrics only when actually transferring energy or above idle threshold
+        val nextPeak = max(current.peakWatts, watts)
         if (watts >= UNPLUG_THRESHOLD_W || step.deltaWh > 0.0) {
             sampleSumWatts += watts
             sampleCount++
             activeSecondsDouble += step.dtActiveSec
+            if (step.dtActiveSec > 0.0) {
+                val boostThresholdW = max(nextPeak * 0.50, 5.0)
+                if (watts >= boostThresholdW) {
+                    fastBoostSecondsDouble += step.dtActiveSec
+                } else {
+                    taperSecondsDouble += step.dtActiveSec
+                }
+            }
         }
         val nextWh = current.whAccumulated + step.deltaWh
-        val nextPeak = max(current.peakWatts, watts)
         val nextActiveSec = activeSecondsDouble.roundToLong()
         val nextAvg = computeHonestAvgWatts(nextWh)
         val nextProto = pickProtocol(protocolName, current.protocolUsed)
@@ -306,7 +318,9 @@ class ChargeSessionDetector(
             currencyCode = curCode,
             computedCost = computeCost(nextWh, rate),
             sampleCount = sampleCount,
-            wattsSum = sampleSumWatts
+            wattsSum = sampleSumWatts,
+            fastBoostDurationSec = fastBoostSecondsDouble.roundToLong(),
+            taperDurationSec = taperSecondsDouble.roundToLong()
         )
 
         // Check end condition: unplug (pFast < 0.15W) or sustained trickle (pSlow < 0.30W)
@@ -353,7 +367,9 @@ class ChargeSessionDetector(
             pauseReason = reason,
             lastSampleTimeSec = max(current.lastSampleTimeSec, timestampSec),
             activeDurationSec = activeSecondsDouble.roundToLong(),
-            gapDurationSec = gapSecondsDouble.roundToLong()
+            gapDurationSec = gapSecondsDouble.roundToLong(),
+            fastBoostDurationSec = fastBoostSecondsDouble.roundToLong(),
+            taperDurationSec = taperSecondsDouble.roundToLong()
         )
         activeSession = updated
         return updated
@@ -405,6 +421,8 @@ class ChargeSessionDetector(
         sampleCount = max(1, record.sampleCount)
         activeSecondsDouble = record.activeDurationSec.toDouble()
         gapSecondsDouble = record.gapDurationSec.toDouble()
+        fastBoostSecondsDouble = record.fastBoostDurationSec.toDouble()
+        taperSecondsDouble = record.taperDurationSec.toDouble()
         lowPowerStartSec = null
         fastWindow.clear()
         slowWindow.clear()
@@ -417,6 +435,8 @@ class ChargeSessionDetector(
         sampleCount = 0
         activeSecondsDouble = 0.0
         gapSecondsDouble = 0.0
+        fastBoostSecondsDouble = 0.0
+        taperSecondsDouble = 0.0
         fastWindow.clear()
         slowWindow.clear()
     }
@@ -434,6 +454,8 @@ class ChargeSessionDetector(
         sampleCount = 1
         activeSecondsDouble = 0.0
         gapSecondsDouble = 0.0
+        fastBoostSecondsDouble = 0.0
+        taperSecondsDouble = 0.0
         lowPowerStartSec = null
         val rate = max(0.0, tariffPerKwh)
         activeSession = ChargeSessionRecord(
@@ -454,7 +476,9 @@ class ChargeSessionDetector(
             currencyCode = currencyCode.ifBlank { "USD" },
             computedCost = computeCost(deltaWh, rate),
             sampleCount = 1,
-            wattsSum = watts
+            wattsSum = watts,
+            fastBoostDurationSec = 0L,
+            taperDurationSec = 0L
         )
     }
 
@@ -465,6 +489,8 @@ class ChargeSessionDetector(
     ): ChargeSessionRecord? {
         val activeSec = max(record.activeDurationSec, activeSecondsDouble.roundToLong())
         val gapSec = max(record.gapDurationSec, gapSecondsDouble.roundToLong())
+        val boostSec = max(record.fastBoostDurationSec, fastBoostSecondsDouble.roundToLong())
+        val taperSec = max(record.taperDurationSec, taperSecondsDouble.roundToLong())
         val resolvedAvg = if (activeSec > 0L && record.whAccumulated > 0.0) {
             (record.whAccumulated * 3600.0) / activeSec.toDouble()
         } else if (sampleCount > 0) {
@@ -482,9 +508,14 @@ class ChargeSessionDetector(
             isPaused = false,
             pauseReason = null,
             endReason = endReason,
-            computedCost = computeCost(record.whAccumulated, record.tariffPerKwhSnapshot)
+            computedCost = computeCost(record.whAccumulated, record.tariffPerKwhSnapshot),
+            fastBoostDurationSec = boostSec,
+            taperDurationSec = taperSec
         )
-        return if (activeSec >= MIN_SESSION_DURATION_SEC || finished.whAccumulated >= 0.005) {
+        return if (
+            finished.whAccumulated >= MIN_MEANINGFUL_WH ||
+            (activeSec >= MIN_SESSION_DURATION_SEC && finished.peakWatts >= MIN_MEANINGFUL_PEAK_W)
+        ) {
             finished
         } else {
             null
@@ -526,11 +557,74 @@ class ChargeSessionDetector(
     }
 
     companion object {
-        private const val START_THRESHOLD_W = 0.50
-        private const val TRICKLE_END_W = 0.30
+        private const val START_THRESHOLD_W = 0.95
+        private const val TRICKLE_END_W = 0.40
         private const val UNPLUG_THRESHOLD_W = 0.15
-        private const val UNPLUG_CONFIRM_SEC = 1.5
+        private const val UNPLUG_CONFIRM_SEC = 4.0
         private const val TRICKLE_CONFIRM_SEC = 30.0
-        private const val MIN_SESSION_DURATION_SEC = 3L
+        private const val MIN_SESSION_DURATION_SEC = 10L
+        private const val MIN_MEANINGFUL_WH = 0.025
+        private const val MIN_MEANINGFUL_PEAK_W = 1.5
+    }
+}
+
+/**
+ * Smart hysteresis filter distinguishing real sustained charging from idle or brief ~0.5W
+ * maintenance/wake-up pings emitted by already-charged devices.
+ */
+class SmartLoadTracker {
+    private var isActive = false
+    private var aboveStartSinceSec: Double? = null
+    private var belowIdleSinceSec: Double? = null
+
+    fun update(effectiveWatts: Double, timestampSec: Double = System.currentTimeMillis() / 1000.0): Boolean {
+        if (!isActive) {
+            when {
+                effectiveWatts >= INSTANT_ACTIVE_W -> {
+                    isActive = true
+                    aboveStartSinceSec = null
+                    belowIdleSinceSec = null
+                }
+                effectiveWatts >= SUSTAINED_ACTIVE_W -> {
+                    val start = aboveStartSinceSec ?: timestampSec.also { aboveStartSinceSec = it }
+                    if (timestampSec - start >= SUSTAINED_CONFIRM_SEC) {
+                        isActive = true
+                        aboveStartSinceSec = null
+                        belowIdleSinceSec = null
+                    }
+                }
+                else -> {
+                    aboveStartSinceSec = null
+                }
+            }
+        } else {
+            if (effectiveWatts < IDLE_DROP_W) {
+                val dropStart = belowIdleSinceSec ?: timestampSec.also { belowIdleSinceSec = it }
+                if (timestampSec - dropStart >= IDLE_CONFIRM_SEC) {
+                    isActive = false
+                    belowIdleSinceSec = null
+                    aboveStartSinceSec = null
+                }
+            } else {
+                belowIdleSinceSec = null
+            }
+        }
+        return isActive
+    }
+
+    fun current(): Boolean = isActive
+
+    fun reset() {
+        isActive = false
+        aboveStartSinceSec = null
+        belowIdleSinceSec = null
+    }
+
+    companion object {
+        private const val INSTANT_ACTIVE_W = 2.0
+        private const val SUSTAINED_ACTIVE_W = 0.85
+        private const val SUSTAINED_CONFIRM_SEC = 4.0
+        private const val IDLE_DROP_W = 0.60
+        private const val IDLE_CONFIRM_SEC = 5.0
     }
 }

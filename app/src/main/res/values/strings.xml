@@ -47,7 +47,7 @@
     <string name="topbar_cancel_short">Cancel</string>
     <string name="topbar_pairing_cd">Search &amp; Pair Devices</string>
     <string name="topbar_killswitch_cd">Master Killswitch</string>
-    <string name="onboarding_badge_author">CUKTECH 10 Ultra · by joxit</string>
+    <string name="onboarding_badge_author">CUKTECH 10 Ultra · by Joxit</string>
     <string name="onboarding_skip">Skip</string>
     <string name="onboarding_next">Next</string>
     <string name="onboarding_start">Get Started</string>
@@ -236,6 +236,7 @@
     <string name="settings_idle_screen_off_desc">Automatically sleeps the charger screen when all ports are idle</string>
     <string name="settings_hw_language">Charger LCD Language</string>
     <string name="settings_orientation_lock">Orientation Lock</string>
+    <string name="settings_orientation_lock_desc">Locks the charger LCD orientation to the current position</string>
     <string name="settings_rotate_180">Rotate Display 180°</string>
     <string name="settings_lcd_page">Active Charger LCD Screen Page</string>
     <string name="settings_soft_reset">Soft Port Reset (Renegotiate PD)</string>
@@ -250,9 +251,10 @@
     <string name="settings_lang_system">Follow System</string>
     <string name="settings_lang_en">English</string>
     <string name="settings_lang_ru">Русский</string>
-    <string name="settings_start_screen">Default Start Screen</string>
-    <string name="settings_start_overview">Overview Dashboard</string>
-    <string name="settings_start_gateway">Connection &amp; Gateway Hub</string>
+    <string name="settings_start_screen">Start Screen on Launch</string>
+    <string name="settings_start_screen_hint">Choose which tab opens automatically on next app launch</string>
+    <string name="settings_start_overview">Overview</string>
+    <string name="settings_start_gateway">Settings</string>
 
     <string name="settings_section_retention">Data Retention, Energy &amp; Tariff</string>
     <string name="settings_retention_days">Archive Retention Window</string>
@@ -709,4 +711,106 @@
     <string name="weekday_fri">Fri</string>
     <string name="weekday_sat">Sat</string>
     <string name="weekday_sun">Sun</string>
+    <string name="analytics_multi_metric_hint">Tap multiple metrics (W, V, A, Wh) to overlay them on one chart</string>
+    <string name="port_short_c1">C1</string>
+    <string name="port_short_c2">C2</string>
+    <string name="port_short_c3">C3</string>
+    <string name="port_short_a">A</string>
+
+    <!-- Event Center & Threshold Alerts -->
+    <string name="event_center_title">Charger Event Center</string>
+    <string name="event_center_cd">Open charger event log</string>
+    <string name="event_center_mark_read">Mark all read</string>
+    <string name="event_center_clear">Clear</string>
+    <string name="event_center_empty">No charger events yet. Limit cutoffs, timer completions, anomalies, automation triggers, and threshold alerts appear here.</string>
+    <string name="event_high_load_title">High Load Threshold</string>
+    <string name="event_high_load_detail_fmt">Total output reached %1$.1f W (&gt;= %2$.0f W)</string>
+    <string name="event_low_drop_title_fmt">%1$s Low Power Drop</string>
+    <string name="event_low_drop_detail_fmt">Sustained drop to %1$.1f W (&lt;= %2$.1f W)</string>
+    <string name="event_wh_cutoff_title_fmt">%1$s Wh Limit Cutoff</string>
+    <string name="event_wh_cutoff_detail_fmt">Reached %1$.1f Wh target — port switched OFF</string>
+    <string name="event_timer_expired_title_fmt">%1$s Timer Expired</string>
+    <string name="event_timer_expired_detail">Scheduled hardware countdown finished</string>
+    <string name="event_completion_title_fmt">%1$s Charging Complete</string>
+    <string name="event_completion_detail_fmt">Delivered %1$.2f Wh · Peak %2$.1f W</string>
+    <string name="event_anomaly_title_fmt">%1$s Anomaly</string>
+    <string name="event_automation_title_fmt">Rule: %1$s</string>
+
+    <!-- Settings Threshold Alert Sliders & Widget Gallery -->
+    <string name="settings_threshold_alerts_enable">Power Threshold Alerts</string>
+    <string name="settings_threshold_high_load_fmt">High Load Alert: %1$.0f W</string>
+    <string name="settings_threshold_low_drop_fmt">Low-Power Drop Alert: %1$.1f W</string>
+    <string name="settings_widget_gallery_title">Home Screen Widgets</string>
+    <string name="settings_widget_gallery_desc">Clean Material 3 dynamic widgets with live telemetry, scene switching, and 1-tap pinning to your home screen.</string>
+    <string name="widget_preview_control_title">Control Panel (4×2)</string>
+    <string name="widget_preview_compact_title">Compact Grid (2×2)</string>
+    <string name="widget_pin_btn">Add to Home</string>
+    <string name="widget_pin_unsupported">Launcher pinning is unavailable on this device. Add via launcher Widgets menu.</string>
+    <string name="widget_pin_requested">Widget pin prompt sent to launcher</string>
+
+    <!-- Expressive Charts, Weekly/Monthly Summary, 10-Day Bars & 24h Timeline -->
+    <string name="chart_style_curve">Curve</string>
+    <string name="chart_style_bars">Bars</string>
+    <string name="chart_pill_min_fmt">Min %1$s</string>
+    <string name="chart_pill_max_fmt">Max %1$s</string>
+    <string name="chart_stat_avg">Average</string>
+    <string name="chart_stat_min">Minimum</string>
+    <string name="chart_stat_max">Maximum</string>
+    <string name="summary_title">Charging Summary</string>
+    <string name="summary_period_week">Week</string>
+    <string name="summary_period_month">Month</string>
+    <string name="summary_score_label">Charging Quality</string>
+    <string name="summary_score_excellent">Optimal Stability</string>
+    <string name="summary_score_good">Healthy Delivery</string>
+    <string name="summary_score_fair">Minor Interruptions</string>
+    <string name="summary_empty_period">No charging sessions recorded in this period</string>
+    <string name="summary_stat_total_wh">Delivered</string>
+    <string name="summary_stat_sessions">Sessions</string>
+    <string name="summary_stat_peak">Peak / Avg</string>
+    <string name="summary_stat_boost">Fast Boost</string>
+    <string name="summary_stat_top_port">Top Port</string>
+    <string name="summary_stat_cost">Est. Cost</string>
+    <string name="analytics_daily_bars_title">Last 10 Days Energy</string>
+    <string name="analytics_daily_bars_total">Total Energy</string>
+    <string name="analytics_daily_bars_peak">Peak Power</string>
+    <string name="analytics_daily_bars_sessions">Sessions</string>
+    <string name="analytics_timeline_24h_title">24h Port Activity</string>
+    <string name="analytics_timeline_24h_empty">No port activity recorded in the last 24 hours</string>
+    <string name="analytics_group_today">Today</string>
+    <string name="analytics_group_yesterday">Yesterday</string>
+    <string name="analytics_group_earlier">Earlier</string>
+    <string name="session_charged_for_fmt">Charged for %1$s</string>
+    <string name="session_phase_boost_fmt">Fast %1$s</string>
+    <string name="session_phase_taper_fmt">Taper %1$s</string>
+    <string name="session_phase_boost_label">Fast Boost</string>
+    <string name="session_phase_taper_label">Taper</string>
+    <string name="session_active_now">Active</string>
+    <string name="overview_port_peak_fmt">▲ %1$.1f</string>
+    <string name="overview_port_min_fmt">▼ %1$.1f</string>
+
+    <!-- Official CUKTECH 10 Ultra Port Architecture & Manual Reference -->
+    <string name="onboarding_ports_title">Ports &amp; Power Distribution</string>
+    <string name="onboarding_ports_subtitle">CUKTECH 10 Ultra (AD1204) Official Manual</string>
+    <string name="settings_port_manual_btn">Port &amp; Power Manual (AD1204)</string>
+    <string name="settings_port_manual_desc">Single-port limits, C3+A shared 5V rail, 110V/220V caps, and ADC 2.0 modes</string>
+    <string name="settings_about_author_fmt">Developed by Joxit · Package %1$s</string>
+    <string name="port_manual_sheet_title">CUKTECH 10 Ultra Port Manual</string>
+    <string name="port_manual_sheet_subtitle">Official AD1204U / AD1204 power architecture &amp; ADC 2.0 rules</string>
+    <string name="port_manual_ac_header">AC Input &amp; Total Ceiling</string>
+    <string name="port_manual_ac_220">200–240V~ 50/60Hz: up to 120W total output (120W peak on C1 or C2 with 6A cable)</string>
+    <string name="port_manual_ac_110">100–130V~ 50/60Hz: up to 110W total output (100W single-port cap on C1/C2)</string>
+    <string name="port_manual_single_header">Individual Port Ratings</string>
+    <string name="port_manual_c1c2_badge">120W MAX</string>
+    <string name="port_manual_c1c2_desc">PD 3.1/3.0 (up to 100W · 20V⎓5A), PPS, UFCS, QC &amp; Xiaomi 120W HyperCharge (20V⎓6A on 220V). Independent high-power ADC 2.0 channels.</string>
+    <string name="port_manual_c3_badge">44W MAX</string>
+    <string name="port_manual_c3_desc">5V⎓3A, 9V⎓3A, 12V⎓2.5A, 15V⎓2A, 11V⎓4A (PD 3.0, PPS, UFCS, SCP). Ideal for smartphones and tablets when USB-A is idle.</string>
+    <string name="port_manual_a_badge">33W MAX</string>
+    <string name="port_manual_a_desc">5V⎓3A, 9V⎓2A, 12V⎓1.5A, 11V⎓3A (UFCS, SCP/FCP, QC, AFC). Supports 2h/4h Low-Current Mode for earbuds and watches.</string>
+    <string name="port_manual_c3a_title">Shared USB-C3 + USB-A Rail (5V⎓3A · 15W Max)</string>
+    <string name="port_manual_c3a_body">Physically, USB-C3 and USB-A share one secondary buck rail. Used alone, each delivers full fast charge (44W / 33W). When BOTH C3 and USB-A are plugged in at the same time, fast charge steps down to a shared 5V / 15W rail — Cuktech merges them into a unified C3+A card to prevent double-counting.</string>
+    <string name="port_manual_multi_header">Multi-Port &amp; ADC 2.0 Distribution</string>
+    <string name="port_manual_multi_2p">• C1 + C2: dynamically splits up to 120W (e.g., 60W + 60W or priority laptop + phone)\n• C1/C2 + C3 (or USB-A): keeps primary C1/C2 fast-charging (up to 90W) + secondary 30W</string>
+    <string name="port_manual_multi_34p">• C1 + C2 + C3: balanced 3-port split (e.g., 45W + 45W + 30W)\n• All 4 ports (C1+C2+C3+A): up to 110–120W total with C3+A locked to 5V / 15W shared</string>
+    <string name="port_manual_scenarios_header">ADC 2.0 Power Scenarios (App Control)</string>
+    <string name="port_manual_scenarios_body">• AI Mode: adaptive balancing across all active ports in real time.\n• Hybrid: reserves high-wattage laptop budget on USB-C1 first.\n• Single: dedicates full charger ceiling to a single high-draw port.\n• Dual: reserves balanced dual-laptop power across C1 &amp; C2 to reduce handshake resets.</string>
 </resources>

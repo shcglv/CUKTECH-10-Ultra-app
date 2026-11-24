@@ -52,6 +52,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.ByteArrayInputStream
@@ -394,7 +395,8 @@ class Stage5RegressionAndSecurityTest {
         lang.value = "ru"
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithText("Настройки").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("nav_settings").assertIsDisplayed()
+        assertTrue(composeTestRule.onAllNodesWithText("Настройки").fetchSemanticsNodes().size >= 2)
         composeTestRule.onNodeWithTag("dynamic_color_switch").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("replay_onboarding_button").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("saf_backup_export_button").performScrollTo().assertIsDisplayed()
@@ -441,6 +443,9 @@ class Stage5RegressionAndSecurityTest {
         composeTestRule.onNodeWithTag("onboarding_screen").assertIsDisplayed()
         composeTestRule.onNodeWithTag("onboarding_next_button").performClick()
         composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("onboarding_port_manual_card").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("onboarding_next_button").performClick()
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("onboarding_next_button").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("onboarding_perm_button").assertIsDisplayed()
@@ -448,5 +453,109 @@ class Stage5RegressionAndSecurityTest {
         composeTestRule.waitForIdle()
 
         assertTrue(finished)
+    }
+
+    @Test
+    fun conditionalWakeLockOnlyHeldDuringActivePollingAndReleasedOnScreenOffUnplugDisconnect() {
+        val controller = Robolectric.buildService(BleBridgeService::class.java).create()
+        val service = controller.get()
+        val mgr = BleBridgeService.ensureCuktechManagersInitialized(app)
+
+        try {
+            // Standby / idle service must not hold WakeLock
+            service.startForegroundForBleConnection()
+            service.dismissForegroundNotificationIfIdle()
+            assertFalse(service.isWakeLockHeld())
+
+            // Simulate authenticated charger & active polling while phone is charging
+            mgr.setTelemetryMasterEnabled(true)
+            mgr.setLogOnlyWhenPhoneCharging(true)
+            mgr.setPausePollingWhenScreenLocked(false)
+            mgr.isPhoneCharging.value = false
+            mgr.setAuthStateForTest(CuktechAuthState.AUTHENTICATED)
+            mgr.startBackgroundLoops()
+            assertFalse("WakeLock must stay released when logOnlyWhenPhoneCharging=true and phone is unplugged", service.isWakeLockHeld())
+
+            // Plugging phone into AC power starts active polling and acquires WakeLock
+            service.sendBroadcast(Intent(Intent.ACTION_POWER_CONNECTED))
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            assertTrue(mgr.isPhoneCharging.value)
+            assertTrue("WakeLock must be held when actively polling and phone is charging", service.isWakeLockHeld())
+
+            // Unplugging phone releases WakeLock immediately
+            service.sendBroadcast(Intent(Intent.ACTION_POWER_DISCONNECTED))
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            assertFalse("WakeLock must be released immediately on ACTION_POWER_DISCONNECTED", service.isWakeLockHeld())
+
+            // Screen lock policy releases WakeLock on ACTION_SCREEN_OFF and reacquires on ACTION_SCREEN_ON
+            mgr.setLogOnlyWhenPhoneCharging(false)
+            mgr.setPausePollingWhenScreenLocked(true)
+            mgr.isScreenOn.value = true
+            mgr.syncWakeLockWithPollingState()
+            assertTrue(service.isWakeLockHeld())
+
+            service.sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            assertFalse("WakeLock must be released immediately on ACTION_SCREEN_OFF", service.isWakeLockHeld())
+
+            service.sendBroadcast(Intent(Intent.ACTION_SCREEN_ON))
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            assertTrue("WakeLock must reacquire when screen turns back on during active polling", service.isWakeLockHeld())
+
+            // Disconnecting / stopping loops releases WakeLock cleanly
+            mgr.stopAllJobsForServiceDestroy()
+            assertFalse("WakeLock must be released on disconnect/teardown", service.isWakeLockHeld())
+        } finally {
+            mgr.stopAllJobsForServiceDestroy()
+            mgr.setLogOnlyWhenPhoneCharging(false)
+            mgr.setPausePollingWhenScreenLocked(false)
+            mgr.isPhoneCharging.value = false
+            mgr.isScreenOn.value = true
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun sameVersionBuildConfigAndOrientationLockToggleWorkCorrectly() {
+        val currentJson = """
+            {
+              "tag_name": "v${BuildConfig.VERSION_NAME}",
+              "name": "Release ${BuildConfig.VERSION_NAME}",
+              "prerelease": false,
+              "draft": false,
+              "body": "Latest",
+              "html_url": "https://github.com/joxit/cuktech-10-ultra/releases/latest",
+              "assets": []
+            }
+        """.trimIndent()
+        val parsed = GitHubApkUpdater.parseGitHubReleaseJson(currentJson, BuildConfig.VERSION_NAME)
+        assertFalse("Same version as BuildConfig.VERSION_NAME must not trigger update alert", parsed.isUpdateAvailable)
+
+        val mgr = BleBridgeService.ensureCuktechManagersInitialized(app)
+        val adapter = FakeStage5HardwareAdapter()
+        val dispatcher = CommandDispatcher(mgr.authManager, adapter)
+        val viewModel = DashboardViewModel(
+            application = app,
+            cuktechManager = mgr,
+            dispatcher = dispatcher
+        )
+
+        mgr.setAuthStateForTest(CuktechAuthState.AUTHENTICATED)
+        try {
+            composeTestRule.setContent {
+                LocalizedAppContent(appLanguage = "en") {
+                    MyApplicationTheme(useDynamicColor = false) {
+                        CuktechAppRoot(
+                            viewModel = viewModel,
+                            initialDestinationOverride = AppDestination.SETTINGS,
+                            requestPermissionsOnLaunch = false
+                        )
+                    }
+                }
+            }
+            composeTestRule.onNodeWithTag("orientation_lock_switch").performScrollTo().assertIsDisplayed()
+        } finally {
+            mgr.setAuthStateForTest(CuktechAuthState.DISCONNECTED)
+        }
     }
 }

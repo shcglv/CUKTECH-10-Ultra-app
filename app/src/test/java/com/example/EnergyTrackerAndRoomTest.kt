@@ -9,8 +9,10 @@ import com.example.cuktech.db.room.LegacySqliteMigrator
 import com.example.cuktech.energy.AdaptiveEnergyIntegrator
 import com.example.cuktech.energy.ChargeSessionDetector
 import com.example.cuktech.energy.ChargeSessionRecord
+import com.example.cuktech.energy.SmartLoadTracker
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -215,5 +217,58 @@ class EnergyTrackerAndRoomTest {
         } finally {
             freshDb.close()
         }
+    }
+
+    @Test
+    fun smartLoadTrackerIgnoresBriefWakeupPingsAndHysteresisDropsCleanly() {
+        val tracker = SmartLoadTracker()
+
+        // Brief 0.55W..0.90W pulse (< 2s) must not trigger active load
+        assertFalse(tracker.update(0.55, timestampSec = 100.0))
+        assertFalse(tracker.update(0.90, timestampSec = 101.0))
+        assertFalse(tracker.update(0.50, timestampSec = 102.0))
+
+        // Sustained >= 0.85W for >= 4.0s triggers active load
+        assertFalse(tracker.update(0.95, timestampSec = 200.0))
+        assertFalse(tracker.update(0.95, timestampSec = 202.0))
+        assertTrue(tracker.update(0.95, timestampSec = 204.2))
+
+        // Drop < 0.60W holds active briefly, then clears after >= 5.0s
+        assertTrue(tracker.update(0.20, timestampSec = 210.0))
+        assertTrue(tracker.update(0.20, timestampSec = 213.0))
+        assertFalse(tracker.update(0.20, timestampSec = 215.2))
+
+        // Real load >= 2.0W activates immediately
+        assertTrue(tracker.update(18.5, timestampSec = 220.0))
+    }
+
+    @Test
+    fun sessionDetectorFiltersOneMinuteTricklePingsWithoutUnpluggedSpam() {
+        val integrator = AdaptiveEnergyIntegrator(maxValidGapSec = 6.0)
+        val detector = ChargeSessionDetector(portId = 1, portLabel = "USB-C1")
+
+        // Simulate 5 minutes where a charged phone wakes up once per minute for 1s at 0.55..1.10W
+        var finishedCount = 0
+        for (minute in 0..4) {
+            val baseSec = 10_000.0 + minute * 60.0
+            val samples = listOf(
+                baseSec + 0.0 to 0.0,
+                baseSec + 1.0 to 0.75,
+                baseSec + 2.0 to 1.05,
+                baseSec + 3.0 to 0.05,
+                baseSec + 5.0 to 0.0,
+                baseSec + 8.0 to 0.0,
+                baseSec + 12.0 to 0.0
+            )
+            for ((t, w) in samples) {
+                val step = integrator.updateWithDetail(w, t)
+                val finished = detector.onSample(watts = w, step = step, protocolName = "PD 3.0", timestampSec = t)
+                if (finished != null) {
+                    finishedCount++
+                }
+            }
+        }
+        assertEquals(0, finishedCount)
+        assertNull(detector.activeSession)
     }
 }

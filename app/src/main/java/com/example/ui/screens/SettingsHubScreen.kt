@@ -1,7 +1,9 @@
 package com.example.ui.screens
 
+import android.appwidget.AppWidgetManager
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -65,6 +67,7 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -80,12 +83,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -118,6 +123,7 @@ import com.example.ui.components.EncryptedBackupExportDialog
 import com.example.ui.components.EncryptedBackupRestoreDialog
 import com.example.ui.components.GitHubUpdateDialog
 import com.example.ui.components.MiHomeSwitchDialog
+import com.example.ui.components.PortManualBottomSheet
 import com.example.ui.components.SoftResetConfirmDialog
 import com.example.ui.components.explicitPortName
 import com.example.ui.components.formatMinuteOfDay
@@ -127,6 +133,8 @@ import com.example.ui.theme.ExpressiveMotion
 import com.example.ui.theme.TelemetryMonoFontFamily
 import com.example.ui.theme.tabularNums
 import com.example.ui.viewmodel.DashboardViewModel
+import com.example.widget.CuktechGlanceCompactReceiver
+import com.example.widget.CuktechGlanceControlReceiver
 import java.text.SimpleDateFormat
 import java.util.Arrays
 import java.util.Date
@@ -184,6 +192,7 @@ fun SettingsHubScreen(
     var showRuleEditor by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<AutomationRuleEntity?>(null) }
     var showXiaomiDevicesSpoiler by remember { mutableStateOf(false) }
+    var showPortManualSheet by remember { mutableStateOf(false) }
 
     var pendingExportPass by remember { mutableStateOf<CharArray?>(null) }
     var pendingExportSecrets by remember { mutableStateOf(false) }
@@ -257,6 +266,12 @@ fun SettingsHubScreen(
             val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
             pm?.isIgnoringBatteryOptimizations(context.packageName) == true
         } else true
+    }
+
+    if (showPortManualSheet) {
+        PortManualBottomSheet(
+            onDismiss = { showPortManualSheet = false }
+        )
     }
 
     if (showSoftResetDialog) {
@@ -490,17 +505,37 @@ fun SettingsHubScreen(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
             Text(stringResource(R.string.settings_start_screen), style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(R.string.settings_start_screen_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 FilterChip(
                     selected = prefs.startDestination == StartDestination.OVERVIEW,
                     onClick = { viewModel.updateStartDestination(StartDestination.OVERVIEW) },
-                    label = { Text(stringResource(R.string.settings_start_overview)) },
+                    label = { Text(stringResource(R.string.nav_overview)) },
                     modifier = Modifier.testTag("start_screen_overview_chip")
                 )
                 FilterChip(
-                    selected = prefs.startDestination == StartDestination.GATEWAY,
-                    onClick = { viewModel.updateStartDestination(StartDestination.GATEWAY) },
-                    label = { Text(stringResource(R.string.settings_start_gateway)) },
+                    selected = prefs.startDestination == StartDestination.PORTS,
+                    onClick = { viewModel.updateStartDestination(StartDestination.PORTS) },
+                    label = { Text(stringResource(R.string.nav_ports)) },
+                    modifier = Modifier.testTag("start_screen_ports_chip")
+                )
+                FilterChip(
+                    selected = prefs.startDestination == StartDestination.ANALYTICS,
+                    onClick = { viewModel.updateStartDestination(StartDestination.ANALYTICS) },
+                    label = { Text(stringResource(R.string.nav_analytics)) },
+                    modifier = Modifier.testTag("start_screen_analytics_chip")
+                )
+                FilterChip(
+                    selected = prefs.startDestination == StartDestination.SETTINGS || prefs.startDestination == StartDestination.GATEWAY,
+                    onClick = { viewModel.updateStartDestination(StartDestination.SETTINGS) },
+                    label = { Text(stringResource(R.string.nav_settings)) },
                     modifier = Modifier.testTag("start_screen_gateway_chip")
                 )
             }
@@ -527,6 +562,32 @@ fun SettingsHubScreen(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            OutlinedButton(
+                onClick = { showPortManualSheet = true },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("open_port_manual_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Bolt,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.settings_port_manual_btn),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = stringResource(R.string.settings_port_manual_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         // 3. Charger Display & Hardware Controls (100% of AD1204 PIIDs)
@@ -576,11 +637,19 @@ fun SettingsHubScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(stringResource(R.string.settings_orientation_lock), style = MaterialTheme.typography.bodyMedium)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.settings_orientation_lock), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        stringResource(R.string.settings_orientation_lock_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Switch(
                     checked = settings.orientationLock,
                     onCheckedChange = { viewModel.setOrientationLock(it) },
-                    enabled = isConnected
+                    enabled = isConnected,
+                    modifier = Modifier.testTag("orientation_lock_switch")
                 )
             }
 
@@ -983,6 +1052,68 @@ fun SettingsHubScreen(
                     }
                 }
             }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_threshold_alerts_enable),
+                checked = prefs.thresholdAlertsEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.updateThresholdAlerts(
+                        enabled = enabled,
+                        highLoadWatts = prefs.highLoadAlertWatts,
+                        lowPowerDropWatts = prefs.lowPowerDropAlertWatts
+                    )
+                },
+                tag = "threshold_alerts_switch"
+            )
+
+            AnimatedVisibility(visible = prefs.thresholdAlertsEnabled) {
+                var highLoadDraft by remember(prefs.highLoadAlertWatts) {
+                    mutableFloatStateOf(prefs.highLoadAlertWatts.toFloat().coerceIn(40f, 120f))
+                }
+                var lowDropDraft by remember(prefs.lowPowerDropAlertWatts) {
+                    mutableFloatStateOf(prefs.lowPowerDropAlertWatts.toFloat().coerceIn(0.5f, 15f))
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_threshold_high_load_fmt, highLoadDraft),
+                        style = MaterialTheme.typography.labelLarge.tabularNums()
+                    )
+                    Slider(
+                        value = highLoadDraft,
+                        onValueChange = { highLoadDraft = it },
+                        onValueChangeFinished = {
+                            viewModel.updateThresholdAlerts(
+                                enabled = prefs.thresholdAlertsEnabled,
+                                highLoadWatts = highLoadDraft.toDouble(),
+                                lowPowerDropWatts = lowDropDraft.toDouble()
+                            )
+                        },
+                        valueRange = 40f..120f,
+                        steps = 15,
+                        modifier = Modifier.testTag("threshold_high_load_slider")
+                    )
+
+                    Text(
+                        text = stringResource(R.string.settings_threshold_low_drop_fmt, lowDropDraft),
+                        style = MaterialTheme.typography.labelLarge.tabularNums()
+                    )
+                    Slider(
+                        value = lowDropDraft,
+                        onValueChange = { lowDropDraft = it },
+                        onValueChangeFinished = {
+                            viewModel.updateThresholdAlerts(
+                                enabled = prefs.thresholdAlertsEnabled,
+                                highLoadWatts = highLoadDraft.toDouble(),
+                                lowPowerDropWatts = lowDropDraft.toDouble()
+                            )
+                        },
+                        valueRange = 0.5f..15f,
+                        modifier = Modifier.testTag("threshold_low_drop_slider")
+                    )
+                }
+            }
         }
 
         // 4c. Encrypted SAF Backup & Restore (.cukbackup)
@@ -1215,6 +1346,119 @@ fun SettingsHubScreen(
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.automation_add_rule))
+                }
+            }
+        }
+
+        // 4e. Home Screen Widgets Gallery & Shape Customizer
+        SettingsSectionCard(
+            title = stringResource(R.string.settings_widget_gallery_title),
+            icon = Icons.Default.Widgets
+        ) {
+            Column(
+                modifier = Modifier.testTag("settings_widget_gallery_card"),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_widget_gallery_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                fun pinWidget(receiverClass: Class<*>) {
+                    val mgr = AppWidgetManager.getInstance(context)
+                    if (mgr != null && mgr.isRequestPinAppWidgetSupported) {
+                        val ok = mgr.requestPinAppWidget(ComponentName(context, receiverClass), null, null)
+                        Toast.makeText(
+                            context,
+                            context.getString(if (ok) R.string.widget_pin_requested else R.string.widget_pin_unsupported),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.widget_pin_unsupported),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                // Control Panel (4x2) Preview + Pin
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.widget_preview_control_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "USB-C1 · USB-C2 · USB-C3 · USB-A",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = { pinWidget(CuktechGlanceControlReceiver::class.java) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("widget_pin_control_button")
+                        ) {
+                            Text(stringResource(R.string.widget_pin_btn))
+                        }
+                    }
+                }
+
+                // Compact Grid (2x2) Preview + Pin
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.widget_preview_compact_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "USB-C1..A · 2×2",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = { pinWidget(CuktechGlanceCompactReceiver::class.java) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("widget_pin_compact_button")
+                        ) {
+                            Text(stringResource(R.string.widget_pin_btn))
+                        }
+                    }
                 }
             }
         }
@@ -1877,6 +2121,16 @@ fun SettingsHubScreen(
                 Text(stringResource(R.string.action_save))
             }
         }
+
+        Text(
+            text = stringResource(R.string.settings_about_author_fmt, BuildConfig.APPLICATION_ID),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp)
+                .testTag("settings_author_footer")
+        )
 
         Spacer(Modifier.height(16.dp))
     }

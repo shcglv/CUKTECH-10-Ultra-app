@@ -25,8 +25,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
@@ -58,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -552,6 +557,14 @@ fun AliasEditDialog(
     )
 }
 
+fun scenarioIcon(mode: Int): ImageVector = when (mode) {
+    1 -> Icons.Default.AutoAwesome
+    2 -> Icons.Default.MergeType
+    3 -> Icons.Default.Bolt
+    4 -> Icons.Default.CallSplit
+    else -> Icons.Default.AutoAwesome
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScenarioSelectionDialog(
@@ -585,24 +598,39 @@ fun ScenarioSelectionDialog(
                 fontWeight = FontWeight.Bold
             )
             scenarios.forEach { (id, pair) ->
+                val isSelected = currentMode == id
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = if (currentMode == id) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceContainer,
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surfaceContainer,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(role = Role.RadioButton) { onSelect(id) }
-                            .padding(vertical = 10.dp, horizontal = 10.dp),
+                            .padding(vertical = 10.dp, horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(selected = currentMode == id, onClick = { onSelect(id) })
-                        Spacer(Modifier.width(8.dp))
-                        Column {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = scenarioIcon(id),
+                                    contentDescription = null,
+                                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(pair.first, style = MaterialTheme.typography.titleSmall)
                             Text(pair.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        RadioButton(selected = isSelected, onClick = { onSelect(id) })
                     }
                 }
             }

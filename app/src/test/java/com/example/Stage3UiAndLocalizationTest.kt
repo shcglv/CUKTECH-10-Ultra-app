@@ -1,6 +1,9 @@
 package com.example
 
 import android.app.Application
+import android.app.Notification
+import android.app.PendingIntent
+import android.content.Intent
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
@@ -18,14 +21,21 @@ import com.example.cuktech.automation.CommandSource
 import com.example.cuktech.automation.HardwareCommandAdapter
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.energy.PortChargeLimit
+import com.example.cuktech.notifications.ChargingNotificationManager
+import com.example.cuktech.notifications.LiveNotificationPayload
+import com.example.cuktech.prefs.AppPreferencesRepository
+import com.example.cuktech.prefs.StartDestination
 import com.example.cuktech.protocol.ChargerSettingsState
 import com.example.cuktech.protocol.PortTelemetry
 import com.example.ui.CuktechAppRoot
 import com.example.ui.i18n.LocalizedAppContent
 import com.example.ui.navigation.AppDestination
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.viewmodel.ChartMetric
 import com.example.ui.viewmodel.DashboardViewModel
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -314,5 +324,136 @@ class Stage3UiAndLocalizationTest {
         composeTestRule.waitForIdle()
 
         assertTrue(composeTestRule.onAllNodesWithText("Undo Port 1 -> ON").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun analyticsSupportsMultiMetricOverlayAndSingleRowPortFilterChips() {
+        val mgr = BleBridgeService.ensureCuktechManagersInitialized(app)
+        val nowMs = System.currentTimeMillis()
+        mgr.persistence.recordPortSnapshot(
+            ports = listOf(
+                PortTelemetry(1, "USB-C1", voltageV = 20.0, currentA = 3.0, powerW = 60.0, protocolName = "PD 3.0", cumulativeWh = 0.4),
+                PortTelemetry(2, "USB-C2", voltageV = 9.0, currentA = 2.0, powerW = 18.0, protocolName = "PPS", cumulativeWh = 0.2)
+            ),
+            timestampMs = nowMs - 20_000L,
+            deviceMac = "AA:BB:CC:11:22:33"
+        )
+        mgr.persistence.recordPortSnapshot(
+            ports = listOf(
+                PortTelemetry(1, "USB-C1", voltageV = 20.0, currentA = 3.5, powerW = 70.0, protocolName = "PD 3.0", cumulativeWh = 0.9),
+                PortTelemetry(2, "USB-C2", voltageV = 9.0, currentA = 2.2, powerW = 19.8, protocolName = "PPS", cumulativeWh = 0.4)
+            ),
+            timestampMs = nowMs - 5_000L,
+            deviceMac = "AA:BB:CC:11:22:33"
+        )
+        val viewModel = DashboardViewModel(app)
+
+        composeTestRule.setContent {
+            LocalizedAppContent(appLanguage = "ru") {
+                MyApplicationTheme(useDynamicColor = false) {
+                    CuktechAppRoot(
+                        viewModel = viewModel,
+                        initialDestinationOverride = AppDestination.ANALYTICS,
+                        requestPermissionsOnLaunch = false
+                    )
+                }
+            }
+        }
+
+        // Toggle V + A + Wh simultaneously alongside TOTAL_W
+        composeTestRule.onNodeWithTag("chart_metric_voltage_v").performClick()
+        composeTestRule.onNodeWithTag("chart_metric_current_a").performClick()
+        composeTestRule.onNodeWithTag("chart_metric_cumulative_wh").performClick()
+        composeTestRule.waitForIdle()
+
+        val selected = viewModel.selectedMetrics.value
+        assertTrue(ChartMetric.TOTAL_W in selected)
+        assertTrue(ChartMetric.VOLTAGE_V in selected)
+        assertTrue(ChartMetric.CURRENT_A in selected)
+        assertTrue(ChartMetric.CUMULATIVE_WH in selected)
+
+        composeTestRule.onNodeWithTag("chart_multi_metric_legend").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("chart_port_filter_1").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("chart_port_filter_2").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("chart_port_filter_3").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("chart_port_filter_4").assertIsDisplayed()
+    }
+
+    @Test
+    fun coldStartPrefNavigatesToSavedStartDestinationAfterDataStoreLoads() {
+        val mgr = BleBridgeService.ensureCuktechManagersInitialized(app)
+        val prefsRepo = mgr.preferencesRepository
+        runBlocking {
+            prefsRepo.updateStartDestination(StartDestination.PORTS)
+        }
+        try {
+            val viewModel = DashboardViewModel(app)
+            composeTestRule.setContent {
+                LocalizedAppContent(appLanguage = "en") {
+                    MyApplicationTheme(useDynamicColor = false) {
+                        CuktechAppRoot(
+                            viewModel = viewModel,
+                            initialDestinationOverride = null,
+                            showOnboardingOverride = false,
+                            requestPermissionsOnLaunch = false
+                        )
+                    }
+                }
+            }
+            composeTestRule.waitUntil(timeoutMillis = 5_000L) {
+                viewModel.preferencesLoaded.value
+            }
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag("ports_screen").assertIsDisplayed()
+        } finally {
+            runBlocking {
+                prefsRepo.updateStartDestination(StartDestination.OVERVIEW)
+            }
+        }
+    }
+
+    @Test
+    fun idleNotificationSuppressesZeroWattChipWhileActiveLoadPromotes() {
+        val openPi = PendingIntent.getActivity(app, 1, Intent(app, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val discPi = PendingIntent.getService(app, 2, Intent(app, BleBridgeService::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val now = 1_750_000_000_000L
+
+        val idleNotif = ChargingNotificationManager.buildOngoingNotification(
+            context = app,
+            payload = LiveNotificationPayload(
+                title = "CUKTECH 10 Ultra · Connected",
+                content = "All ports idle",
+                bigText = "",
+                totalWatts = 0.0,
+                nearestCountdownEndMs = null,
+                activeLimitProgressPct = null,
+                liveUpdatesEnabled = true,
+                serviceStartTimeMs = now
+            ),
+            openPendingIntent = openPi,
+            disconnectPendingIntent = discPi,
+            nowMs = now
+        )
+        assertNull(idleNotif.extras.getString("android.shortCriticalText"))
+        assertTrue(idleNotif.category != Notification.CATEGORY_PROGRESS)
+
+        val activeNotif = ChargingNotificationManager.buildOngoingNotification(
+            context = app,
+            payload = LiveNotificationPayload(
+                title = "CUKTECH 10 Ultra · 45.0 W",
+                content = "C1: 45.0W",
+                bigText = "",
+                totalWatts = 45.0,
+                nearestCountdownEndMs = null,
+                activeLimitProgressPct = null,
+                liveUpdatesEnabled = true,
+                serviceStartTimeMs = now
+            ),
+            openPendingIntent = openPi,
+            disconnectPendingIntent = discPi,
+            nowMs = now
+        )
+        assertEquals(Notification.CATEGORY_PROGRESS, activeNotif.category)
+        assertEquals("45.0W", ChargingNotificationManager.formatShortCriticalText(45.0, null, now))
     }
 }

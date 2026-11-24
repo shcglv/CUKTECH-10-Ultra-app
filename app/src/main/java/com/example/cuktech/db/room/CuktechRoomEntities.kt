@@ -58,7 +58,9 @@ data class ChargeSessionEntity(
     val computedCost: Double = 0.0,
     val isArchived: Boolean = false,
     val sampleCount: Int = 0,
-    val wattsSum: Double = 0.0
+    val wattsSum: Double = 0.0,
+    val fastBoostDurationSec: Long = 0L,
+    val taperDurationSec: Long = 0L
 ) {
     fun toRecord(): ChargeSessionRecord = ChargeSessionRecord(
         id = id,
@@ -83,7 +85,9 @@ data class ChargeSessionEntity(
         computedCost = computedCost,
         isArchived = isArchived,
         sampleCount = sampleCount,
-        wattsSum = wattsSum
+        wattsSum = wattsSum,
+        fastBoostDurationSec = fastBoostDurationSec,
+        taperDurationSec = taperDurationSec
     )
 
     companion object {
@@ -110,7 +114,9 @@ data class ChargeSessionEntity(
             computedCost = record.computedCost,
             isArchived = record.isArchived,
             sampleCount = record.sampleCount,
-            wattsSum = record.wattsSum
+            wattsSum = record.wattsSum,
+            fastBoostDurationSec = record.fastBoostDurationSec,
+            taperDurationSec = record.taperDurationSec
         )
     }
 }

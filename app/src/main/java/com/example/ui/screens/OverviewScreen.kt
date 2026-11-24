@@ -14,7 +14,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import com.example.ui.theme.ExpressiveMotion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -98,6 +97,7 @@ import com.example.ui.components.ScenarioSelectionDialog
 import com.example.ui.components.explicitPortName
 import com.example.ui.components.formatDurationHms
 import com.example.ui.components.localizedScenarioName
+import com.example.ui.components.scenarioIcon
 import com.example.ui.cuktech.CuktechChargerVisual
 import com.example.ui.i18n.resolveLocale
 import com.example.ui.theme.ExpressiveMotion
@@ -124,6 +124,7 @@ fun OverviewScreen(
     val isCooldown by viewModel.isDisconnectCooldown.collectAsStateWithLifecycle()
     val devInfo by viewModel.deviceInfo.collectAsStateWithLifecycle()
     val ports by viewModel.ports.collectAsStateWithLifecycle()
+    val isSmartCharging by viewModel.isSmartCharging.collectAsStateWithLifecycle()
     val totalWatts by viewModel.totalPowerWatts.collectAsStateWithLifecycle()
     val c3aSharedBus by viewModel.c3aSharedBus.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -360,7 +361,7 @@ fun OverviewScreen(
             ),
             label = "heroPulsePhase"
         )
-        val hasActiveLoad = totalWatts > 0.2
+        val hasActiveLoad = isSmartCharging || totalWatts >= 0.85
 
         Card(
             colors = CardDefaults.cardColors(
@@ -537,15 +538,75 @@ fun OverviewScreen(
 
                     Spacer(Modifier.width(10.dp))
 
+                    // Top-right slot: clickable Scenario Mode selector pill with dedicated scenario icon
+                    Surface(
+                        onClick = {
+                            if (isConnected) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                showScenarioDialog = true
+                            }
+                        },
+                        enabled = isConnected,
+                        color = if (isConnected) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerLow
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.testTag("overview_scenario_chip")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = scenarioIcon(settings.sceneMode),
+                                contentDescription = null,
+                                tint = if (isConnected) {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = localizedScenarioName(settings.sceneMode),
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                color = if (isConnected) {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                val totalWhToday = remember(ports, activeSessions) {
+                    val liveWh = ports.values.sumOf { it.cumulativeWh }
+                    if (liveWh > 0.0) liveWh else activeSessions.values.sumOf { it.whAccumulated }
+                }
+
+                // Bottom row: Utilization badge (left) flush & level with Delivered Energy badge (right)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val pct = ((totalWatts / 120.0) * 100.0).toInt().coerceIn(0, 100)
                     Surface(
                         color = if (hasActiveLoad) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {
                             MaterialTheme.colorScheme.surfaceContainerLow
                         },
-                        shape = RoundedCornerShape(14.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        val pct = ((totalWatts / 120.0) * 100.0).toInt().coerceIn(0, 100)
                         Text(
                             text = if (activeCount > 0) {
                                 "${stringResource(R.string.overview_active_sessions_fmt, activeCount)} · $pct%"
@@ -566,59 +627,45 @@ fun OverviewScreen(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                         )
                     }
-                }
 
-                val totalWhToday = remember(ports, activeSessions) {
-                    val liveWh = ports.values.sumOf { it.cumulativeWh }
-                    if (liveWh > 0.0) liveWh else activeSessions.values.sumOf { it.whAccumulated }
-                }
-
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    AssistChip(
-                        onClick = {
-                            if (isConnected) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                showScenarioDialog = true
-                            }
-                        },
-                        label = { Text(localizedScenarioName(settings.sceneMode)) },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.ElectricBolt,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    )
-
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        shape = RoundedCornerShape(10.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = stringResource(R.string.overview_session_energy_fmt, totalWhToday),
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontFamily = TelemetryMonoFontFamily
-                            ).tabularNums(),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
-                    }
-
-                    if (prefs.tariffRatePerKwh > 0.0) {
-                        val estCost = (totalWhToday / 1000.0) * prefs.tariffRatePerKwh
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
-                                text = stringResource(R.string.overview_est_cost_fmt, prefs.currencyCode, estCost),
-                                style = MaterialTheme.typography.labelMedium.tabularNums(),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                text = stringResource(R.string.overview_session_energy_fmt, totalWhToday),
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontFamily = TelemetryMonoFontFamily,
+                                    fontWeight = FontWeight.SemiBold
+                                ).tabularNums(),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                             )
+                        }
+
+                        if (prefs.tariffRatePerKwh > 0.0) {
+                            val estCost = (totalWhToday / 1000.0) * prefs.tariffRatePerKwh
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.overview_est_cost_fmt, prefs.currencyCode, estCost),
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Medium
+                                    ).tabularNums(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -822,13 +869,14 @@ fun OverviewScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OverviewPortMiniCard(
+                    OverviewPortMiniCard(
                     portId = 1,
                     port = ports[1] ?: PortTelemetry(1, "USB-C1"),
                     alias = viewModel.aliasForPort(1, aliases),
                     countdownSec = countdowns[1],
                     etaEstimate = etaEstimates[1],
                     cableDiag = cableDiagnostics[1],
+                    activePeakWatts = activeSessions[1]?.peakWatts,
                     accentColor = semantic.colorForPort(1),
                     onClick = { onNavigateToPort(1) },
                     modifier = Modifier.weight(1f)
@@ -840,6 +888,7 @@ fun OverviewScreen(
                     countdownSec = countdowns[2],
                     etaEstimate = etaEstimates[2],
                     cableDiag = cableDiagnostics[2],
+                    activePeakWatts = activeSessions[2]?.peakWatts,
                     accentColor = semantic.colorForPort(2),
                     onClick = { onNavigateToPort(2) },
                     modifier = Modifier.weight(1f)
@@ -869,6 +918,7 @@ fun OverviewScreen(
                         countdownSec = countdowns[3],
                         etaEstimate = etaEstimates[3],
                         cableDiag = cableDiagnostics[3],
+                        activePeakWatts = activeSessions[3]?.peakWatts,
                         accentColor = semantic.colorForPort(3),
                         onClick = { onNavigateToPort(3) },
                         modifier = Modifier.weight(1f)
@@ -880,6 +930,7 @@ fun OverviewScreen(
                         countdownSec = countdowns[4],
                         etaEstimate = etaEstimates[4],
                         cableDiag = cableDiagnostics[4],
+                        activePeakWatts = activeSessions[4]?.peakWatts,
                         accentColor = semantic.colorForPort(4),
                         onClick = { onNavigateToPort(4) },
                         modifier = Modifier.weight(1f)
@@ -890,6 +941,9 @@ fun OverviewScreen(
 
         // Compact Live Total Power Sparkline
         if (chartHistory.isNotEmpty()) {
+            val sparkPts = remember(chartHistory) { chartHistory.takeLast(60) }
+            val sparkMinW = remember(sparkPts) { sparkPts.minOfOrNull { it.totalWatts } ?: 0.0 }
+            val sparkMaxW = remember(sparkPts) { sparkPts.maxOfOrNull { it.totalWatts } ?: 0.0 }
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -920,6 +974,40 @@ fun OverviewScreen(
                                 Icons.AutoMirrored.Filled.ArrowForward,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .padding(bottom = 6.dp)
+                            .testTag("overview_sparkline_minmax")
+                    ) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            shape = RoundedCornerShape(999.dp)
+                        ) {
+                            Text(
+                                text = "${stringResource(R.string.overview_port_min_fmt, sparkMinW)} $unitW",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = TelemetryMonoFontFamily
+                                ).tabularNums(),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            shape = RoundedCornerShape(999.dp)
+                        ) {
+                            Text(
+                                text = "${stringResource(R.string.overview_port_peak_fmt, sparkMaxW)} $unitW",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = TelemetryMonoFontFamily
+                                ).tabularNums(),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
@@ -1005,6 +1093,7 @@ private fun OverviewPortMiniCard(
     countdownSec: Long?,
     etaEstimate: EtaEstimate?,
     cableDiag: PortCableDiagnostic?,
+    activePeakWatts: Double? = null,
     accentColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -1106,13 +1195,25 @@ private fun OverviewPortMiniCard(
                     ).tabularNums(),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = "${String.format(Locale.getDefault(), "%.2f", port.cumulativeWh)} $unitWh",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = TelemetryMonoFontFamily
-                    ).tabularNums(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    if (active && activePeakWatts != null && activePeakWatts > port.powerW + 0.5) {
+                        Text(
+                            text = "${stringResource(R.string.overview_port_peak_fmt, activePeakWatts)} $unitW",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = TelemetryMonoFontFamily
+                            ).tabularNums(),
+                            color = accentColor,
+                            modifier = Modifier.testTag("overview_port_peak_$portId")
+                        )
+                    }
+                    Text(
+                        text = "${String.format(Locale.getDefault(), "%.2f", port.cumulativeWh)} $unitWh",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = TelemetryMonoFontFamily
+                        ).tabularNums(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Text(

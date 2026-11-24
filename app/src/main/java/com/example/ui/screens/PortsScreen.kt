@@ -19,7 +19,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -274,20 +273,15 @@ fun PortsScreen(
                         explicitPortName(pid)
                     }
                     val tabBg by animateColorAsState(
-                        targetValue = if (selected) accent.copy(alpha = 0.18f) else androidx.compose.ui.graphics.Color.Transparent,
+                        targetValue = if (selected) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
                         animationSpec = ExpressiveMotion.spatialSpring(),
                         label = "port_tab_bg_$pid"
-                    )
-                    val tabBorderColor by animateColorAsState(
-                        targetValue = if (selected) accent.copy(alpha = 0.65f) else androidx.compose.ui.graphics.Color.Transparent,
-                        animationSpec = ExpressiveMotion.spatialSpring(),
-                        label = "port_tab_border_$pid"
                     )
 
                     Surface(
                         color = tabBg,
                         shape = RoundedCornerShape(14.dp),
-                        border = if (selected) BorderStroke(1.dp, tabBorderColor) else null,
+                        tonalElevation = if (selected) 2.dp else 0.dp,
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 48.dp)
@@ -490,21 +484,11 @@ private fun PortDetailCard(
     val portName = explicitPortName(portId)
     val specLabel = portSpecLabel(portId)
     val isActive = port.powerW > 0.2
-    val borderColor by animateColorAsState(
-        targetValue = when {
-            isFocused -> accent
-            isActive -> accent.copy(alpha = 0.45f)
-            else -> androidx.compose.ui.graphics.Color.Transparent
-        },
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "port_card_border"
-    )
 
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        border = if (isFocused || isActive) BorderStroke(if (isFocused) 1.5.dp else 1.dp, borderColor) else null,
         shape = RoundedCornerShape(22.dp),
         modifier = Modifier
             .fillMaxWidth()

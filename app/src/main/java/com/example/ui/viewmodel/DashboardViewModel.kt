@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.BleBridgeService
 import com.example.R
+import com.example.ui.i18n.resolveLocale
 import com.example.ui.i18n.withAppLocale
 import com.example.cuktech.automation.ChargerCommand
 import com.example.cuktech.automation.CommandDispatcher
@@ -26,11 +27,16 @@ import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.integrations.CloudIntegrations
 import com.example.cuktech.integrations.IntegrationConfig
 import com.example.cuktech.notifications.AnomalyAlert
+import com.example.cuktech.notifications.ChargerEvent
+import com.example.cuktech.power.ChargerSummaryCalculator
+import com.example.cuktech.power.DailyWhBucket
 import com.example.cuktech.power.EtaEstimate
 import com.example.cuktech.power.EtaEstimator
+import com.example.cuktech.power.PeriodSummarySnapshot
 import com.example.cuktech.power.PortCableDiagnostic
 import com.example.cuktech.power.PowerBudgetCalculator
 import com.example.cuktech.power.PowerBudgetSnapshot
+import com.example.cuktech.power.SummaryPeriodMode
 import com.example.cuktech.prefs.AppPreferences
 import com.example.cuktech.prefs.AppPreferencesRepository
 import com.example.cuktech.prefs.StartDestination
@@ -115,12 +121,14 @@ class DashboardViewModel @JvmOverloads constructor(
     val cloudClient: XiaomiCloudClient by lazy { XiaomiCloudClient() }
 
     val preferences: StateFlow<AppPreferences> = preferencesRepository.preferences
+    val preferencesLoaded: StateFlow<Boolean> = preferencesRepository.isLoaded
     val authState = cuktechManager.authState
     val isScanning = cuktechManager.isScanning
     val statusMessage = cuktechManager.statusMessage
     val discoveredDevices = cuktechManager.discoveredDevices
     val deviceInfo = cuktechManager.deviceInfo
     val ports = cuktechManager.ports
+    val isSmartCharging = cuktechManager.isSmartCharging
     val totalPowerWatts = cuktechManager.totalPowerWatts
     val settings = cuktechManager.settings
     val powerChartHistory = cuktechManager.powerChartHistory
@@ -159,6 +167,8 @@ class DashboardViewModel @JvmOverloads constructor(
     val logs = BleBridgeService.logs
     val updateAvailable = BleBridgeService.updateAvailable
     val anomalyAlerts: StateFlow<List<AnomalyAlert>> = cuktechManager.anomalyAlerts
+    val chargerEvents: StateFlow<List<ChargerEvent>> = cuktechManager.eventLog.events
+    val unreadEventCount: StateFlow<Int> = cuktechManager.eventLog.unreadCount
     val releaseUpdateInfo: StateFlow<ReleaseUpdateInfo?> = BleBridgeService.releaseUpdateInfo
     val updateDownloadState: StateFlow<UpdateDownloadState> = BleBridgeService.updateDownloadState
 
@@ -182,6 +192,75 @@ class DashboardViewModel @JvmOverloads constructor(
 
     val automationRules: StateFlow<List<AutomationRuleEntity>> = persistence.observeAutomationRules()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _summaryPeriodMode = MutableStateFlow(SummaryPeriodMode.WEEK)
+    val summaryPeriodMode: StateFlow<SummaryPeriodMode> = _summaryPeriodMode.asStateFlow()
+
+    private val _summaryPeriodOffset = MutableStateFlow(0)
+    val summaryPeriodOffset: StateFlow<Int> = _summaryPeriodOffset.asStateFlow()
+
+    val periodSummary: StateFlow<PeriodSummarySnapshot> = combine(
+        _summaryPeriodMode,
+        _summaryPeriodOffset,
+        completedSessions,
+        activeSessions,
+        dailyAggregates,
+        preferences
+    ) { values ->
+        @Suppress("UNCHECKED_CAST")
+        val mode = values[0] as SummaryPeriodMode
+        val offset = values[1] as Int
+        @Suppress("UNCHECKED_CAST")
+        val completed = values[2] as List<ChargeSessionRecord>
+        @Suppress("UNCHECKED_CAST")
+        val active = values[3] as Map<Int, ChargeSessionRecord>
+        @Suppress("UNCHECKED_CAST")
+        val aggs = values[4] as List<com.example.cuktech.db.room.DailyEnergyAggregateEntity>
+        val curPrefs = values[5] as AppPreferences
+        ChargerSummaryCalculator.computeSummary(
+            mode = mode,
+            periodOffset = offset,
+            completedSessions = completed,
+            activeSessions = active,
+            dailyAggregates = aggs,
+            anomalyCountInPeriod = anomalyAlerts.value.size,
+            defaultCurrency = curPrefs.currencyCode
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        ChargerSummaryCalculator.computeSummary(
+            mode = SummaryPeriodMode.WEEK,
+            periodOffset = 0,
+            completedSessions = completedSessions.value,
+            activeSessions = activeSessions.value,
+            dailyAggregates = dailyAggregates.value
+        )
+    )
+
+    val dailyWhBuckets: StateFlow<List<DailyWhBucket>> = combine(
+        completedSessions,
+        activeSessions,
+        dailyAggregates,
+        preferences
+    ) { completed, active, aggs, curPrefs ->
+        ChargerSummaryCalculator.computeRecentDailyBuckets(
+            daysCount = 10,
+            completedSessions = completed,
+            activeSessions = active,
+            dailyAggregates = aggs,
+            locale = resolveLocale(curPrefs.appLanguage)
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        ChargerSummaryCalculator.computeRecentDailyBuckets(
+            daysCount = 10,
+            completedSessions = completedSessions.value,
+            activeSessions = activeSessions.value,
+            dailyAggregates = dailyAggregates.value
+        )
+    )
 
     val cableDiagnostics: StateFlow<Map<Int, PortCableDiagnostic>> = cuktechManager.cableDiagnostics
 
@@ -221,8 +300,12 @@ class DashboardViewModel @JvmOverloads constructor(
     private val _chartInterval = MutableStateFlow(ChartInterval.MIN_5)
     val chartInterval: StateFlow<ChartInterval> = _chartInterval.asStateFlow()
 
-    private val _chartMetric = MutableStateFlow(ChartMetric.TOTAL_W)
-    val chartMetric: StateFlow<ChartMetric> = _chartMetric.asStateFlow()
+    private val _selectedMetrics = MutableStateFlow(setOf(ChartMetric.TOTAL_W))
+    val selectedMetrics: StateFlow<Set<ChartMetric>> = _selectedMetrics.asStateFlow()
+
+    val chartMetric: StateFlow<ChartMetric> = _selectedMetrics
+        .map { it.firstOrNull() ?: ChartMetric.TOTAL_W }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ChartMetric.TOTAL_W)
 
     private val _customRangeStartMs = MutableStateFlow(System.currentTimeMillis() - 3_600_000L)
     val customRangeStartMs: StateFlow<Long> = _customRangeStartMs.asStateFlow()
@@ -384,7 +467,21 @@ class DashboardViewModel @JvmOverloads constructor(
     }
 
     fun selectChartMetric(metric: ChartMetric) {
-        _chartMetric.value = metric
+        _selectedMetrics.value = setOf(metric)
+    }
+
+    fun toggleChartMetric(metric: ChartMetric) {
+        if (metric == ChartMetric.STACKED_W || metric == ChartMetric.PROTOCOLS) {
+            _selectedMetrics.value = setOf(metric)
+            return
+        }
+        val base = _selectedMetrics.value - ChartMetric.STACKED_W - ChartMetric.PROTOCOLS
+        val updated = if (metric in base) {
+            if (base.size > 1) base - metric else base
+        } else {
+            base + metric
+        }
+        _selectedMetrics.value = updated.ifEmpty { setOf(metric) }
     }
 
     // --- Session Replay ---
@@ -765,6 +862,25 @@ class DashboardViewModel @JvmOverloads constructor(
                 maxRepeats = maxRepeats
             )
         }
+    }
+
+    fun updateThresholdAlerts(enabled: Boolean, highLoadWatts: Double, lowPowerDropWatts: Double) {
+        viewModelScope.launch {
+            preferencesRepository.updateThresholdAlerts(enabled, highLoadWatts, lowPowerDropWatts)
+        }
+    }
+
+    fun selectSummaryPeriod(mode: SummaryPeriodMode, offset: Int) {
+        _summaryPeriodMode.value = mode
+        _summaryPeriodOffset.value = offset.coerceAtMost(0)
+    }
+
+    fun markAllEventsRead() {
+        cuktechManager.eventLog.markAllRead()
+    }
+
+    fun clearChargerEvents() {
+        cuktechManager.eventLog.clearAll()
     }
 
     fun savePortOrDeviceAlias(portId: Int, aliasName: String) {

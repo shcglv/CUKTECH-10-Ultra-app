@@ -23,7 +23,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import com.example.ui.theme.ExpressiveMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,9 +54,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -113,6 +115,7 @@ import com.example.cuktech.automation.UndoActionKind
 import com.example.cuktech.ble.CuktechAuthState
 import com.example.cuktech.prefs.StartDestination
 import com.example.ui.components.BluetoothOffDialog
+import com.example.ui.components.EventCenterSheet
 import com.example.ui.components.GitHubUpdateDialog
 import com.example.ui.components.MasterKillswitchConfirmDialog
 import com.example.ui.components.localizedScenarioName
@@ -155,14 +158,18 @@ fun CuktechAppRoot(
     val semantic = LocalSemanticColors.current
 
     val prefs by viewModel.preferences.collectAsStateWithLifecycle()
+    val prefsLoaded by viewModel.preferencesLoaded.collectAsStateWithLifecycle()
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val activeCred by viewModel.activeCred.collectAsStateWithLifecycle()
+    val isSmartCharging by viewModel.isSmartCharging.collectAsStateWithLifecycle()
     val totalWatts by viewModel.totalPowerWatts.collectAsStateWithLifecycle()
     val isCooldown by viewModel.isDisconnectCooldown.collectAsStateWithLifecycle()
     val undoAvailability by viewModel.undoAvailability.collectAsStateWithLifecycle()
     val updateAvailable by viewModel.updateAvailable.collectAsStateWithLifecycle()
     val releaseUpdateInfo by viewModel.releaseUpdateInfo.collectAsStateWithLifecycle()
     val updateDownloadState by viewModel.updateDownloadState.collectAsStateWithLifecycle()
+    val chargerEvents by viewModel.chargerEvents.collectAsStateWithLifecycle()
+    val unreadEventCount by viewModel.unreadEventCount.collectAsStateWithLifecycle()
 
     val shouldShowOnboarding = showOnboardingOverride
         ?: (initialDestinationOverride == null && pendingNavTab.value == null && !prefs.hasCompletedOnboarding)
@@ -174,17 +181,20 @@ fun CuktechAppRoot(
         return
     }
 
+    fun resolveStartAppDestination(sd: StartDestination): AppDestination = when (sd) {
+        StartDestination.OVERVIEW -> AppDestination.OVERVIEW
+        StartDestination.PORTS -> AppDestination.PORTS
+        StartDestination.ANALYTICS -> AppDestination.ANALYTICS
+        StartDestination.SETTINGS, StartDestination.GATEWAY -> AppDestination.SETTINGS
+    }
+
     val startDestination = remember(initialDestinationOverride) {
         initialDestinationOverride ?: when (pendingNavTab.value) {
             "PORTS" -> AppDestination.PORTS
             "ANALYTICS" -> AppDestination.ANALYTICS
             "SETTINGS" -> AppDestination.SETTINGS
             "LIVE", "OVERVIEW" -> AppDestination.OVERVIEW
-            else -> if (prefs.startDestination == StartDestination.GATEWAY) {
-                AppDestination.SETTINGS
-            } else {
-                AppDestination.OVERVIEW
-            }
+            else -> resolveStartAppDestination(prefs.startDestination)
         }
     }
 
@@ -193,6 +203,7 @@ fun CuktechAppRoot(
     var showBluetoothOffDialog by remember { mutableStateOf(false) }
     var showTopbarUpdateDialog by remember { mutableStateOf(false) }
     var showKillswitchConfirm by remember { mutableStateOf(false) }
+    var showEventCenter by remember { mutableStateOf(false) }
     var isCheckingUpdatesTopbar by remember { mutableStateOf(false) }
     var permissionsGranted by remember { mutableStateOf(false) }
     var pendingPermissionCallback by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -358,7 +369,35 @@ fun CuktechAppRoot(
         }
     }
 
-    LaunchedEffect(pendingNavTab.value) {
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDest = AppDestination.fromRoute(navBackStackEntry?.destination?.route)
+
+    var appliedColdStartPref by remember { mutableStateOf(false) }
+    LaunchedEffect(
+        prefsLoaded,
+        shouldShowOnboarding,
+        initialDestinationOverride,
+        pendingNavTab.value,
+        navBackStackEntry != null
+    ) {
+        if (!appliedColdStartPref &&
+            navBackStackEntry != null &&
+            prefsLoaded &&
+            !shouldShowOnboarding &&
+            initialDestinationOverride == null &&
+            pendingNavTab.value == null
+        ) {
+            appliedColdStartPref = true
+            val desired = resolveStartAppDestination(prefs.startDestination)
+            val current = AppDestination.fromRoute(navBackStackEntry?.destination?.route)
+            if (current != desired) {
+                navigateTopLevel(desired)
+            }
+        }
+    }
+
+    LaunchedEffect(pendingNavTab.value, navBackStackEntry != null) {
+        if (navBackStackEntry == null) return@LaunchedEffect
         val target = when (pendingNavTab.value) {
             "LIVE", "OVERVIEW" -> AppDestination.OVERVIEW
             "PORTS" -> AppDestination.PORTS
@@ -427,9 +466,6 @@ fun CuktechAppRoot(
             }
         }
     }
-
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDest = AppDestination.fromRoute(navBackStackEntry?.destination?.route)
 
     val topLevelItems = remember {
         listOf(
@@ -515,6 +551,15 @@ fun CuktechAppRoot(
         )
     }
 
+    if (showEventCenter) {
+        EventCenterSheet(
+            events = chargerEvents,
+            onMarkAllRead = { viewModel.markAllEventsRead() },
+            onClearAll = { viewModel.clearChargerEvents() },
+            onDismiss = { showEventCenter = false }
+        )
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useRail = maxWidth >= 600.dp
 
@@ -533,10 +578,13 @@ fun CuktechAppRoot(
             label = "topbar_status_dot"
         )
 
+        val showWattsInTopBar = isSmartCharging || totalWatts >= 0.85
         val statusSubtitle = when {
             isCooldown -> stringResource(R.string.status_cooldown)
-            authState == CuktechAuthState.AUTHENTICATED ->
+            authState == CuktechAuthState.AUTHENTICATED && showWattsInTopBar ->
                 "${String.format(appLocale, "%.1f", totalWatts)} $unitW · ${stringResource(R.string.status_connected)}"
+            authState == CuktechAuthState.AUTHENTICATED ->
+                stringResource(R.string.status_connected)
             authState == CuktechAuthState.SCANNING -> stringResource(R.string.status_scanning)
             authState == CuktechAuthState.AUTH_FAILED -> stringResource(R.string.status_auth_failed)
             authState == CuktechAuthState.DISCONNECTED -> stringResource(R.string.status_disconnected)
@@ -684,6 +732,41 @@ fun CuktechAppRoot(
                                             imageVector = Icons.Filled.CloudDownload,
                                             contentDescription = stringResource(R.string.settings_update_available),
                                             tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        showEventCenter = true
+                                    },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("topbar_event_center_button")
+                                ) {
+                                    BadgedBox(
+                                        badge = {
+                                            if (unreadEventCount > 0) {
+                                                Badge(
+                                                    modifier = Modifier.testTag("topbar_event_unread_badge")
+                                                ) {
+                                                    Text(
+                                                        text = if (unreadEventCount > 99) "99+" else "$unreadEventCount",
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Notifications,
+                                            contentDescription = stringResource(R.string.event_center_cd),
+                                            tint = if (unreadEventCount > 0) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
                                         )
                                     }
                                 }

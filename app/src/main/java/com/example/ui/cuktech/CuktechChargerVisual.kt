@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -139,14 +140,14 @@ fun CuktechChargerVisual(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.Top
         ) {
-            // Left: Material 3 Expressive AC Squircle Bolt & Flowing S-Curve Wave Conduit
-            Box(
+            // Left: Material 3 Expressive AC Squircle Bolt & Flowing S-Curve Wave Conduit (symmetric weight)
+            BoxWithConstraints(
                 modifier = Modifier
-                    .width(84.dp)
+                    .weight(1f)
                     .height(238.dp)
             ) {
                 val trackIdleColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-                val badgeCenterX = 30.dp
+                val badgeCenterX = (maxWidth - 46.dp).coerceIn(22.dp, 46.dp)
                 val badgeCenterY = 148.dp
 
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -540,10 +541,10 @@ fun CuktechChargerVisual(
                 }
             }
 
-            // Right: Animated Flowing Port Beams & Live Wattage Readouts (with unified C3+A bus)
+            // Right: Animated Flowing Port Beams & Live Wattage Readouts (symmetric weight with unified C3+A bus)
             Column(
                 modifier = Modifier
-                    .width(104.dp)
+                    .weight(1f)
                     .height(238.dp)
                     .padding(top = topPadding),
                 verticalArrangement = Arrangement.spacedBy(rowSpacing)

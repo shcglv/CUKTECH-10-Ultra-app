@@ -1117,8 +1117,9 @@ private fun parseCookieString(raw: String): Map<String, String> {
 }
 
 /**
- * Prominent "SEARCH & PAIR CUKTECH 10 ULTRA" discovery and pairing modal.
+ * Prominent Material 3 Expressive "SEARCH & PAIR CUKTECH 10 ULTRA" discovery and pairing bottom sheet.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CuktechDiscoveryPairingDialog(
     bleManager: CuktechBleManager,
@@ -1140,8 +1141,11 @@ fun CuktechDiscoveryPairingDialog(
         bleConnectionState != com.example.BleBridgeService.Companion.BleConnectionState.DISCONNECTED
 
     var pendingSwitchDevice by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val haptic = LocalHapticFeedback.current
 
     val requestConnectToDevice: (String, String) -> Unit = { targetMac, targetName ->
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         if (isCurrentlyConnected) {
             pendingSwitchDevice = targetMac to targetName
         } else {
@@ -1165,12 +1169,16 @@ fun CuktechDiscoveryPairingDialog(
         AlertDialog(
             onDismissRequest = { pendingSwitchDevice = null },
             title = {
-                Text(stringResource(R.string.xiaomi_switch_title), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(
+                    text = stringResource(R.string.xiaomi_switch_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
                 Text(
                     text = stringResource(R.string.xiaomi_switch_body_fmt, targetName, targetMac),
-                    fontSize = 13.sp
+                    style = MaterialTheme.typography.bodyMedium
                 )
             },
             confirmButton = {
@@ -1183,7 +1191,7 @@ fun CuktechDiscoveryPairingDialog(
                     },
                     modifier = Modifier.heightIn(min = 48.dp)
                 ) {
-                    Text(stringResource(R.string.xiaomi_switch_confirm), fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.xiaomi_switch_confirm))
                 }
             },
             dismissButton = {
@@ -1197,38 +1205,44 @@ fun CuktechDiscoveryPairingDialog(
         )
     }
 
-    Dialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
-        Card(
+        Column(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .heightIn(max = 680.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(40.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.BluetoothSearching,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.BluetoothSearching,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.xiaomi_pair_title),
                             style = MaterialTheme.typography.titleMedium,
@@ -1236,208 +1250,242 @@ fun CuktechDiscoveryPairingDialog(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
-                    }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cd_close))
+                        Text(
+                            text = if (!isBtEnabled) stringResource(R.string.toast_bt_disabled) else statusMsg,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cd_close))
+                }
+            }
 
-                if (!isBtEnabled) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                        modifier = Modifier.fillMaxWidth()
+            if (!isBtEnabled) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.BluetoothDisabled, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.xiaomi_pair_bt_off_title),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                                Text(
-                                    text = stringResource(R.string.xiaomi_pair_bt_off_body),
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
+                        Icon(
+                            imageVector = Icons.Default.BluetoothDisabled,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.xiaomi_pair_bt_off_title),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = stringResource(R.string.xiaomi_pair_bt_off_body),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
                         }
                     }
                 }
+            }
 
-                Text(
-                    text = if (!isBtEnabled) stringResource(R.string.toast_bt_disabled) else statusMsg,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            if (isScanning || authState == CuktechAuthState.SCANNING) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
+            }
 
-                if (isScanning || authState == CuktechAuthState.SCANNING) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 380.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 // Saved Xiaomi Cloud credentials quick-connect section
                 if (savedCreds.isNotEmpty()) {
                     Text(
                         text = stringResource(R.string.xiaomi_pair_synced_header),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
                     savedCreds.forEach { cred ->
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    requestConnectToDevice(cred.mac, cred.name)
-                                },
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                                .clip(RoundedCornerShape(18.dp))
+                                .clickable { requestConnectToDevice(cred.mac, cred.name) },
+                            shape = RoundedCornerShape(18.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 14.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Bolt,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = cred.name,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "${cred.mac}  ·  ${if (cred.hasValidToken) stringResource(R.string.xiaomi_pair_token_ready) else stringResource(R.string.xiaomi_pair_token_missing)}",
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
+                                        text = "${cred.mac} · ${if (cred.hasValidToken) stringResource(R.string.xiaomi_pair_token_ready) else stringResource(R.string.xiaomi_pair_token_missing)}",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Button(
-                                    onClick = {
-                                        requestConnectToDevice(cred.mac, cred.name)
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
+                                FilledTonalButton(
+                                    onClick = { requestConnectToDevice(cred.mac, cred.name) },
+                                    shape = RoundedCornerShape(14.dp),
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                                     modifier = Modifier.heightIn(min = 48.dp)
                                 ) {
-                                    Text(stringResource(R.string.action_connect), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(stringResource(R.string.action_connect))
                                 }
                             }
                         }
                     }
                 }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
                 Text(
                     text = stringResource(R.string.xiaomi_pair_discovered_fmt, discovered.size),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (discovered.isEmpty()) {
+                if (discovered.isEmpty()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Text(
                             text = stringResource(R.string.xiaomi_pair_empty),
-                            fontSize = 12.sp,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 12.dp)
+                            modifier = Modifier.padding(16.dp)
                         )
-                    } else {
-                        discovered.forEach { dev ->
-                            Surface(
+                    }
+                } else {
+                    discovered.forEach { dev ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .clickable { requestConnectToDevice(dev.mac, dev.name) },
+                            shape = RoundedCornerShape(18.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow
+                        ) {
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { requestConnectToDevice(dev.mac, dev.name) },
-                                shape = RoundedCornerShape(14.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    modifier = Modifier.size(36.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = dev.name,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = "${dev.mac}  ·  ${dev.rssi} ${stringResource(R.string.unit_dbm)}",
-                                            fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Bluetooth,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Button(
-                                        onClick = { requestConnectToDevice(dev.mac, dev.name) },
-                                        shape = RoundedCornerShape(10.dp),
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-                                        modifier = Modifier.heightIn(min = 48.dp)
-                                    ) {
-                                        Text(stringResource(R.string.action_connect), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = dev.name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${dev.mac} · ${dev.rssi} ${stringResource(R.string.unit_dbm)}",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Button(
+                                    onClick = { requestConnectToDevice(dev.mac, dev.name) },
+                                    shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
+                                    Text(stringResource(R.string.action_connect))
                                 }
                             }
                         }
                     }
                 }
+            }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                FilledTonalButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        if (btManager?.adapter?.isEnabled == true) {
+                            bleManager.startSearchForCuktechChargers(10000L)
+                        } else {
+                            android.widget.Toast.makeText(
+                                context,
+                                context.getString(R.string.toast_bt_disabled),
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.heightIn(min = 48.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = {
-                            if (btManager?.adapter?.isEnabled == true) {
-                                bleManager.startSearchForCuktechChargers(10000L)
-                            } else {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    context.getString(R.string.toast_bt_disabled),
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-                        modifier = Modifier.heightIn(min = 48.dp)
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.action_rescan), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(stringResource(R.string.action_rescan))
                 }
             }
         }

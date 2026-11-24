@@ -85,11 +85,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.cuktech.db.CuktechPersistence
 import com.example.cuktech.energy.ChargeSessionRecord
+import com.example.ui.components.ChargingPeriodSummaryCard
 import com.example.ui.components.ClearHistoryDialog
 import com.example.ui.components.ConsolidatedSessionsTableDialog
+import com.example.ui.components.DailyEnergyBarChartCard
 import com.example.ui.components.ExportCsvDialog
 import com.example.ui.components.ExpressiveTelemetryChartCard
 import com.example.ui.components.PixelEnergyBreakdownCard
+import com.example.ui.components.PortActivityTimelineCard
 import com.example.ui.components.buildMonotoneCubicPath
 import com.example.ui.components.explicitPortName
 import com.example.ui.components.formatDurationHms
@@ -102,6 +105,7 @@ import com.example.ui.viewmodel.ChartPointSample
 import com.example.ui.viewmodel.DashboardViewModel
 import com.example.ui.viewmodel.SessionReplayState
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -114,6 +118,7 @@ fun AnalyticsScreen(
     val context = LocalContext.current
     val chartInterval by viewModel.chartInterval.collectAsStateWithLifecycle()
     val chartMetric by viewModel.chartMetric.collectAsStateWithLifecycle()
+    val selectedMetrics by viewModel.selectedMetrics.collectAsStateWithLifecycle()
     val chartSamples by viewModel.chartSamples.collectAsStateWithLifecycle()
     val activeSessions by viewModel.activeSessions.collectAsStateWithLifecycle()
     val completedSessions by viewModel.completedSessions.collectAsStateWithLifecycle()
@@ -123,6 +128,8 @@ fun AnalyticsScreen(
     val prefs by viewModel.preferences.collectAsStateWithLifecycle()
     val replayState by viewModel.replayState.collectAsStateWithLifecycle()
     val ports by viewModel.ports.collectAsStateWithLifecycle()
+    val periodSummary by viewModel.periodSummary.collectAsStateWithLifecycle()
+    val dailyWhBuckets by viewModel.dailyWhBuckets.collectAsStateWithLifecycle()
 
     var showExportDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
@@ -209,6 +216,28 @@ fun AnalyticsScreen(
     val allPortsLoggingDisabled = portLoggingMap.values.none { it }
     val showLoggingPausedNotice = !telemetryEnabled || allPortsLoggingDisabled
 
+    val todayStartMs = remember(completedSessions.size) {
+        Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val yesterdayStartMs = todayStartMs - 86_400_000L
+    val todayList = remember(completedSessions, todayStartMs) {
+        completedSessions.filter { (it.startTimeSec * 1000.0).toLong() >= todayStartMs }
+    }
+    val yesterdayList = remember(completedSessions, todayStartMs, yesterdayStartMs) {
+        completedSessions.filter {
+            val ms = (it.startTimeSec * 1000.0).toLong()
+            ms in yesterdayStartMs until todayStartMs
+        }
+    }
+    val earlierList = remember(completedSessions, yesterdayStartMs) {
+        completedSessions.filter { (it.startTimeSec * 1000.0).toLong() < yesterdayStartMs }
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -246,6 +275,7 @@ fun AnalyticsScreen(
             ExpressiveTelemetryChartCard(
                 interval = chartInterval,
                 metric = chartMetric,
+                selectedMetrics = selectedMetrics,
                 samples = chartSamples,
                 onSelectInterval = { iv ->
                     if (iv == ChartInterval.CUSTOM) {
@@ -254,7 +284,8 @@ fun AnalyticsScreen(
                         viewModel.selectChartInterval(iv)
                     }
                 },
-                onSelectMetric = { viewModel.selectChartMetric(it) }
+                onSelectMetric = { viewModel.selectChartMetric(it) },
+                onToggleMetric = { viewModel.toggleChartMetric(it) }
             )
         }
 
@@ -303,6 +334,28 @@ fun AnalyticsScreen(
                     )
                 }
             }
+        }
+
+        // Weekly / Monthly Expressive Summary Card
+        item {
+            ChargingPeriodSummaryCard(
+                summary = periodSummary,
+                onSelectPeriod = { mode, offset -> viewModel.selectSummaryPeriod(mode, offset) }
+            )
+        }
+
+        // Last 10 Days Energy Bar Chart
+        item {
+            DailyEnergyBarChartCard(buckets = dailyWhBuckets)
+        }
+
+        // 24h 4-Port Activity Timeline Swimlanes
+        item {
+            PortActivityTimelineCard(
+                activeSessions = activeSessions,
+                completedSessions = completedSessions,
+                chartSamples = chartSamples
+            )
         }
 
         // Pixel Battery-Style Port Energy Distribution Card
@@ -369,7 +422,7 @@ fun AnalyticsScreen(
             }
         }
 
-        // Completed Sessions
+        // Completed Sessions grouped by Today / Yesterday / Earlier
         item {
             Text(
                 text = stringResource(R.string.analytics_completed_sessions),
@@ -393,11 +446,59 @@ fun AnalyticsScreen(
                 }
             }
         } else {
-            items(completedSessions, key = { "done_${it.id}_${it.startTimeSec}" }) { session ->
-                SessionHistoryCard(
-                    session = session,
-                    onReplayClick = { viewModel.openSessionReplay(session) }
-                )
+            if (todayList.isNotEmpty()) {
+                item(key = "hdr_today") {
+                    Text(
+                        text = stringResource(R.string.analytics_group_today),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .testTag("analytics_group_today")
+                    )
+                }
+                items(todayList, key = { "done_t_${it.id}_${it.startTimeSec}" }) { session ->
+                    SessionHistoryCard(
+                        session = session,
+                        onReplayClick = { viewModel.openSessionReplay(session) }
+                    )
+                }
+            }
+            if (yesterdayList.isNotEmpty()) {
+                item(key = "hdr_yesterday") {
+                    Text(
+                        text = stringResource(R.string.analytics_group_yesterday),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .testTag("analytics_group_yesterday")
+                    )
+                }
+                items(yesterdayList, key = { "done_y_${it.id}_${it.startTimeSec}" }) { session ->
+                    SessionHistoryCard(
+                        session = session,
+                        onReplayClick = { viewModel.openSessionReplay(session) }
+                    )
+                }
+            }
+            if (earlierList.isNotEmpty()) {
+                item(key = "hdr_earlier") {
+                    Text(
+                        text = stringResource(R.string.analytics_group_earlier),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .testTag("analytics_group_earlier")
+                    )
+                }
+                items(earlierList, key = { "done_e_${it.id}_${it.startTimeSec}" }) { session ->
+                    SessionHistoryCard(
+                        session = session,
+                        onReplayClick = { viewModel.openSessionReplay(session) }
+                    )
+                }
             }
         }
 
@@ -473,7 +574,7 @@ private fun SessionHistoryCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "${dateFmt.format(Date((session.startTimeSec * 1000).toLong()))} · ${formatDurationHms(session.durationSeconds)}",
+                        text = "${dateFmt.format(Date((session.startTimeSec * 1000).toLong()))} · ${stringResource(R.string.session_charged_for_fmt, formatDurationHms(session.durationSeconds))}",
                         style = MaterialTheme.typography.bodySmall.tabularNums(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -520,6 +621,62 @@ private fun SessionHistoryCard(
                     Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text(stringResource(R.string.analytics_replay))
+                }
+            }
+
+            val phaseTotalSec = session.fastBoostDurationSec + session.taperDurationSec
+            if (phaseTotalSec > 0L) {
+                val boostFrac = (session.fastBoostDurationSec.toFloat() / phaseTotalSec).coerceIn(0f, 1f)
+                val taperFrac = (session.taperDurationSec.toFloat() / phaseTotalSec).coerceIn(0f, 1f)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp)
+                        .testTag("session_phase_bar_${session.id}")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        if (boostFrac > 0.01f) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(boostFrac.coerceAtLeast(0.05f))
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                        if (taperFrac > 0.01f) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(taperFrac.coerceAtLeast(0.05f))
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MaterialTheme.colorScheme.tertiary)
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.session_phase_boost_fmt, formatDurationHms(session.fastBoostDurationSec)),
+                            style = MaterialTheme.typography.labelSmall.tabularNums(),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.session_phase_taper_fmt, formatDurationHms(session.taperDurationSec)),
+                            style = MaterialTheme.typography.labelSmall.tabularNums(),
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
                 }
             }
         }

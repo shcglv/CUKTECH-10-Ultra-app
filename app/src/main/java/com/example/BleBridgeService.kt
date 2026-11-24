@@ -118,6 +118,7 @@ class BleBridgeService : Service() {
                 Intent.ACTION_SCREEN_ON -> {
                     cuktechManager?.isScreenOn?.value = true
                     cuktechManager?.kickAutoReconnectIfNeeded()
+                    cuktechManager?.syncWakeLockWithPollingState()
                 }
                 Intent.ACTION_SCREEN_OFF -> {
                     cuktechManager?.isScreenOn?.value = false
@@ -125,6 +126,7 @@ class BleBridgeService : Service() {
                     if (!isChargingPriority && cuktechManager?.pausePollingWhenScreenLocked?.value == true) {
                         cuktechManager?.finalizeAllActiveSessions()
                     }
+                    cuktechManager?.syncWakeLockWithPollingState()
                 }
             }
         }
@@ -133,12 +135,16 @@ class BleBridgeService : Service() {
     private val powerStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_POWER_CONNECTED -> cuktechManager?.isPhoneCharging?.value = true
+                Intent.ACTION_POWER_CONNECTED -> {
+                    cuktechManager?.isPhoneCharging?.value = true
+                    cuktechManager?.syncWakeLockWithPollingState()
+                }
                 Intent.ACTION_POWER_DISCONNECTED -> {
                     cuktechManager?.isPhoneCharging?.value = false
                     if (cuktechManager?.logOnlyWhenPhoneCharging?.value == true) {
                         cuktechManager?.finalizeAllActiveSessions()
                     }
+                    cuktechManager?.syncWakeLockWithPollingState()
                 }
             }
         }
@@ -253,9 +259,9 @@ class BleBridgeService : Service() {
         val hasTargetMac = !cuktechManager?.lastConnectedMac.isNullOrBlank() || cuktechManager?.credentialStore?.activeDevice?.value != null
 
         // If Auto-Connect on Proximity is enabled and user did NOT manually tap disconnect,
-        // preserve the foreground service and partial wakelock so the background listener can auto-reconnect
+        // keep the foreground service notification alive (without holding WakeLock in standby) so background auto-reconnect can run
         if (isAutoReconnectConfigured && !isUserManual && hasTargetMac) {
-            acquireWakeLock()
+            releaseWakeLock()
             val lang = cuktechManager?.preferencesRepository?.preferences?.value?.appLanguage ?: "system"
             val locCtx = applicationContext.withAppLocale(lang)
             updateNotificationTelemetry(
@@ -284,9 +290,9 @@ class BleBridgeService : Service() {
         }
     }
 
-    private var wakeLock: PowerManager.WakeLock? = null
+    internal var wakeLock: PowerManager.WakeLock? = null
 
-    private fun acquireWakeLock() {
+    internal fun acquireWakeLock() {
         try {
             if (wakeLock == null) {
                 val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -295,14 +301,14 @@ class BleBridgeService : Service() {
             }
             if (wakeLock?.isHeld != true) {
                 wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24 hours safeguard
-                log(LogLevel.LEVEL2, "Acquired partial CPU wake lock for background keepalive.")
+                log(LogLevel.LEVEL2, "Acquired partial CPU wake lock for active telemetry polling.")
             }
         } catch (e: Exception) {
             log(LogLevel.LEVEL1, "Error acquiring WakeLock: ${e.message}")
         }
     }
 
-    private fun releaseWakeLock() {
+    internal fun releaseWakeLock() {
         try {
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()
@@ -359,7 +365,6 @@ class BleBridgeService : Service() {
     }
 
     private fun createNotificationChannelAndStartForeground() {
-        acquireWakeLock()
         ChargingNotificationManager.ensureChannels(this)
         val prefs = cuktechManager?.preferencesRepository?.preferences?.value
         val liveEnabled = prefs?.liveUpdatesEnabled ?: true
@@ -403,6 +408,20 @@ class BleBridgeService : Service() {
             if (e !is SecurityException && (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || e !is android.app.ForegroundServiceStartNotAllowedException)) {
                 log(LogLevel.LEVEL1, "Error starting foreground service: ${e.message}")
             }
+        }
+    }
+
+    fun dismissConnectedIdleNotification() {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancel(NOTIFICATION_ID)
+            lastNotifSignature = ""
         }
     }
 
@@ -453,6 +472,25 @@ class BleBridgeService : Service() {
                 openPendingIntent = buildOpenPendingIntent(),
                 disconnectPendingIntent = buildDisconnectPendingIntent()
             )
+            if (!isNotificationActive) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val hasBlePerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        } else true
+                        if (hasBlePerm) {
+                            startForeground(NOTIFICATION_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+                        } else {
+                            startForeground(NOTIFICATION_ID, notif)
+                        }
+                    } else {
+                        startForeground(NOTIFICATION_ID, notif)
+                    }
+                    return@runCatching
+                } catch (_: Exception) {
+                    // Fallback to standard notify when background startForeground is disallowed
+                }
+            }
             nm.notify(NOTIFICATION_ID, notif)
         }
     }
@@ -468,6 +506,12 @@ class BleBridgeService : Service() {
             if (mgr.authState.value == CuktechAuthState.AUTHENTICATED) {
                 val ports = mgr.ports.value
                 val totalW = PortTelemetryDecoder.computeEffectiveTotalWatts(ports)
+                val hasTimers = mgr.countdownRemainingSeconds.value.isNotEmpty() || mgr.usbALowCurrentRemainingSeconds.value != null
+                val hasLimits = mgr.chargeLimits.value.values.any { it.enabled && !it.triggered }
+                if (!mgr.isSmartCharging.value && !hasTimers && !hasLimits) {
+                    dismissConnectedIdleNotification()
+                    return
+                }
                 val c3a = PortTelemetryDecoder.resolveC3ASharedBus(ports)
                 val title = if (totalW > 0.05) {
                     String.format(locale, "⚡ CUKTECH 10 Ultra · %.1f %s", totalW, unitW)
@@ -559,7 +603,6 @@ class BleBridgeService : Service() {
         _isServerRunning.value = started && gw.isRunning
         if (started) {
             _serverPort.value = gw.boundPort
-            acquireWakeLock()
         }
         updateClientsList()
     }
@@ -713,7 +756,6 @@ class BleBridgeService : Service() {
             log(LogLevel.LEVEL1, "Invalid MAC address: $address")
             return false
         }
-        acquireWakeLock()
         negotiatedMtu = 23
         log(LogLevel.LEVEL2, "Connecting to CUKTECH BLE peripheral: $address (autoConnect=$autoConnect)")
         setBleConnectionState(BleConnectionState.CONNECTING, address)

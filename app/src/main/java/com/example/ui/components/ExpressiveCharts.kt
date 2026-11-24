@@ -48,6 +48,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -57,6 +58,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -246,18 +249,26 @@ fun ExpressiveSparkline(
     }
 }
 
+private enum class ChartVisualStyle {
+    CURVE,
+    BARS
+}
+
 /**
- * Next-gen Analytics telemetry card with smooth Bezier curves, stacked area mode (`STACKED_W`),
- * interactive port legend toggles, and horizontal touch-scrubbing with floating tooltip.
+ * Next-gen Analytics telemetry card with smooth Bezier curves, interactive bar columns,
+ * simultaneous multi-metric overlay (e.g. V + A + Wh + W), stacked area/bar mode (`STACKED_W`),
+ * Min/Max/Avg analytics, single-row port chips, and touch scrubbing.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ExpressiveTelemetryChartCard(
     interval: ChartInterval,
-    metric: ChartMetric,
+    metric: ChartMetric = ChartMetric.TOTAL_W,
+    selectedMetrics: Set<ChartMetric> = setOf(metric),
     samples: List<ChartPointSample>,
     onSelectInterval: (ChartInterval) -> Unit,
-    onSelectMetric: (ChartMetric) -> Unit,
+    onSelectMetric: (ChartMetric) -> Unit = {},
+    onToggleMetric: (ChartMetric) -> Unit = onSelectMetric,
     modifier: Modifier = Modifier
 ) {
     val semantic = LocalSemanticColors.current
@@ -270,12 +281,118 @@ fun ExpressiveTelemetryChartCard(
     }
 
     var visiblePorts by remember { mutableStateOf(setOf(1, 2, 3, 4)) }
-    var scrubIndex by remember(samples, metric, interval) { mutableIntStateOf(-1) }
+    var visualStyle by remember { mutableStateOf(ChartVisualStyle.CURVE) }
+    var scrubIndex by remember(samples, selectedMetrics, interval) { mutableIntStateOf(-1) }
 
     LaunchedEffect(scrubIndex) {
         if (scrubIndex >= 0) {
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
+    }
+
+    val effectiveMetrics = remember(selectedMetrics, metric) {
+        val raw = selectedMetrics.ifEmpty { setOf(metric) }
+        when {
+            ChartMetric.PROTOCOLS in raw -> listOf(ChartMetric.PROTOCOLS)
+            ChartMetric.STACKED_W in raw -> listOf(ChartMetric.STACKED_W)
+            else -> listOf(
+                ChartMetric.TOTAL_W,
+                ChartMetric.PER_PORT_W,
+                ChartMetric.VOLTAGE_V,
+                ChartMetric.CURRENT_A,
+                ChartMetric.CUMULATIVE_WH
+            ).filter { it in raw }.ifEmpty { listOf(ChartMetric.TOTAL_W) }
+        }
+    }
+    val primaryMetric = effectiveMetrics.first()
+    val isMultiMetric = effectiveMetrics.size > 1
+    val activePortList = remember(visiblePorts) {
+        listOf(1, 2, 3, 4).filter { it in visiblePorts }.ifEmpty { listOf(1, 2, 3, 4) }
+    }
+
+    val unitW = stringResource(R.string.unit_w)
+    val unitV = stringResource(R.string.unit_v)
+    val unitA = stringResource(R.string.unit_a)
+    val unitWh = stringResource(R.string.unit_wh)
+
+    @Composable
+    fun metricLabel(m: ChartMetric): String = when (m) {
+        ChartMetric.TOTAL_W -> stringResource(R.string.analytics_metric_total_w)
+        ChartMetric.STACKED_W -> stringResource(R.string.analytics_metric_stacked_w)
+        ChartMetric.PER_PORT_W -> stringResource(R.string.analytics_metric_per_port_w)
+        ChartMetric.VOLTAGE_V -> stringResource(R.string.analytics_metric_voltage_v)
+        ChartMetric.CURRENT_A -> stringResource(R.string.analytics_metric_current_a)
+        ChartMetric.CUMULATIVE_WH -> stringResource(R.string.analytics_metric_cum_wh)
+        ChartMetric.PROTOCOLS -> stringResource(R.string.analytics_metric_protocols)
+    }
+
+    fun metricUnit(m: ChartMetric): String = when (m) {
+        ChartMetric.TOTAL_W, ChartMetric.STACKED_W, ChartMetric.PER_PORT_W -> unitW
+        ChartMetric.VOLTAGE_V -> unitV
+        ChartMetric.CURRENT_A -> unitA
+        ChartMetric.CUMULATIVE_WH -> unitWh
+        ChartMetric.PROTOCOLS -> ""
+    }
+
+    fun metricFormat(m: ChartMetric): String = when (m) {
+        ChartMetric.CURRENT_A, ChartMetric.CUMULATIVE_WH -> "%.2f"
+        else -> "%.1f"
+    }
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+    val tertiaryColor = MaterialTheme.colorScheme.tertiary
+    fun colorForCurveMetric(m: ChartMetric): Color = when (m) {
+        ChartMetric.TOTAL_W -> primaryColor
+        ChartMetric.PER_PORT_W -> secondaryColor
+        ChartMetric.VOLTAGE_V -> semantic.warning
+        ChartMetric.CURRENT_A -> tertiaryColor
+        ChartMetric.CUMULATIVE_WH -> semantic.success
+        else -> primaryColor
+    }
+
+    fun aggregateMetricValue(s: ChartPointSample, m: ChartMetric): Double = when (m) {
+        ChartMetric.TOTAL_W -> s.totalW
+        ChartMetric.STACKED_W, ChartMetric.PER_PORT_W -> activePortList.sumOf { (s.portW[it] ?: 0.0).coerceAtLeast(0.0) }
+        ChartMetric.VOLTAGE_V -> activePortList.mapNotNull { pid -> s.portV[pid]?.takeIf { it > 0.1 } }.maxOrNull() ?: 0.0
+        ChartMetric.CURRENT_A -> activePortList.sumOf { (s.portA[it] ?: 0.0).coerceAtLeast(0.0) }
+        ChartMetric.CUMULATIVE_WH -> activePortList.sumOf { (s.portWh[it] ?: 0.0).coerceAtLeast(0.0) }
+        ChartMetric.PROTOCOLS -> 0.0
+    }
+
+    fun peakForMetric(m: ChartMetric): Double {
+        val rawPeak = when (m) {
+            ChartMetric.TOTAL_W -> samples.maxOfOrNull { it.totalW } ?: 5.0
+            ChartMetric.STACKED_W -> samples.maxOfOrNull { s -> activePortList.sumOf { (s.portW[it] ?: 0.0).coerceAtLeast(0.0) } } ?: 5.0
+            ChartMetric.PER_PORT_W -> if (isMultiMetric) {
+                samples.maxOfOrNull { aggregateMetricValue(it, m) } ?: 5.0
+            } else {
+                samples.maxOfOrNull { s -> activePortList.maxOfOrNull { s.portW[it] ?: 0.0 } ?: 0.0 } ?: 5.0
+            }
+            ChartMetric.VOLTAGE_V -> if (isMultiMetric) {
+                samples.maxOfOrNull { aggregateMetricValue(it, m) } ?: 5.0
+            } else {
+                samples.maxOfOrNull { s -> activePortList.maxOfOrNull { s.portV[it] ?: 0.0 } ?: 0.0 } ?: 5.0
+            }
+            ChartMetric.CURRENT_A -> if (isMultiMetric) {
+                samples.maxOfOrNull { aggregateMetricValue(it, m) } ?: 0.5
+            } else {
+                samples.maxOfOrNull { s -> activePortList.maxOfOrNull { s.portA[it] ?: 0.0 } ?: 0.0 } ?: 0.5
+            }
+            ChartMetric.CUMULATIVE_WH -> if (isMultiMetric) {
+                samples.maxOfOrNull { aggregateMetricValue(it, m) } ?: 0.2
+            } else {
+                samples.maxOfOrNull { s -> activePortList.maxOfOrNull { s.portWh[it] ?: 0.0 } ?: 0.0 } ?: 0.2
+            }
+            ChartMetric.PROTOCOLS -> 1.0
+        }
+        val minFloor = when (m) {
+            ChartMetric.CURRENT_A -> 0.5
+            ChartMetric.CUMULATIVE_WH -> 0.2
+            ChartMetric.VOLTAGE_V -> 5.0
+            else -> 5.0
+        }
+        return rawPeak.coerceAtLeast(minFloor) * 1.12
     }
 
     Card(
@@ -288,8 +405,8 @@ fun ExpressiveTelemetryChartCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Interval selector row
             Row(
@@ -316,28 +433,140 @@ fun ExpressiveTelemetryChartCard(
                 }
             }
 
-            // All 7 telemetry metrics visible via FlowRow (Total W, Stacked W, Per-Port W, V, A, Wh, Protocols)
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val metricLabels = listOf(
-                    ChartMetric.TOTAL_W to stringResource(R.string.analytics_metric_total_w),
-                    ChartMetric.STACKED_W to stringResource(R.string.analytics_metric_stacked_w),
-                    ChartMetric.PER_PORT_W to stringResource(R.string.analytics_metric_per_port_w),
-                    ChartMetric.VOLTAGE_V to stringResource(R.string.analytics_metric_voltage_v),
-                    ChartMetric.CURRENT_A to stringResource(R.string.analytics_metric_current_a),
-                    ChartMetric.CUMULATIVE_WH to stringResource(R.string.analytics_metric_cum_wh),
-                    ChartMetric.PROTOCOLS to stringResource(R.string.analytics_metric_protocols)
-                )
-                metricLabels.forEach { (m, label) ->
-                    FilterChip(
-                        selected = metric == m,
-                        onClick = { onSelectMetric(m) },
-                        label = { Text(label) },
-                        modifier = Modifier.testTag("chart_metric_${m.name.lowercase()}")
+            // All 7 telemetry metrics toggleable via FlowRow (multi-metric overlay supported for curve metrics)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val metricOrder = listOf(
+                        ChartMetric.TOTAL_W,
+                        ChartMetric.STACKED_W,
+                        ChartMetric.PER_PORT_W,
+                        ChartMetric.VOLTAGE_V,
+                        ChartMetric.CURRENT_A,
+                        ChartMetric.CUMULATIVE_WH,
+                        ChartMetric.PROTOCOLS
                     )
+                    metricOrder.forEach { m ->
+                        val isSelected = m in effectiveMetrics
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { onToggleMetric(m) },
+                            leadingIcon = if (isMultiMetric && isSelected && m in listOf(
+                                    ChartMetric.TOTAL_W,
+                                    ChartMetric.PER_PORT_W,
+                                    ChartMetric.VOLTAGE_V,
+                                    ChartMetric.CURRENT_A,
+                                    ChartMetric.CUMULATIVE_WH
+                                )
+                            ) {
+                                {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(colorForCurveMetric(m))
+                                    )
+                                }
+                            } else null,
+                            label = { Text(metricLabel(m)) },
+                            modifier = Modifier.testTag("chart_metric_${m.name.lowercase()}")
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.analytics_multi_metric_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            fun sampleStatValue(s: ChartPointSample, m: ChartMetric): Double = when (m) {
+                ChartMetric.TOTAL_W -> s.totalW
+                ChartMetric.STACKED_W -> activePortList.sumOf { (s.portW[it] ?: 0.0).coerceAtLeast(0.0) }
+                ChartMetric.PER_PORT_W -> if (isMultiMetric) aggregateMetricValue(s, m) else activePortList.maxOfOrNull { s.portW[it] ?: 0.0 } ?: 0.0
+                ChartMetric.VOLTAGE_V -> if (isMultiMetric) aggregateMetricValue(s, m) else activePortList.maxOfOrNull { s.portV[it] ?: 0.0 } ?: 0.0
+                ChartMetric.CURRENT_A -> if (isMultiMetric) aggregateMetricValue(s, m) else activePortList.maxOfOrNull { s.portA[it] ?: 0.0 } ?: 0.0
+                ChartMetric.CUMULATIVE_WH -> if (isMultiMetric) aggregateMetricValue(s, m) else activePortList.maxOfOrNull { s.portWh[it] ?: 0.0 } ?: 0.0
+                ChartMetric.PROTOCOLS -> 0.0
+            }
+
+            val statSeries = remember(samples, primaryMetric, activePortList, isMultiMetric) {
+                samples.map { sampleStatValue(it, primaryMetric) }
+            }
+            val statMin = remember(statSeries) { statSeries.minOrNull() ?: 0.0 }
+            val statMax = remember(statSeries) { statSeries.maxOrNull() ?: 0.0 }
+            val statAvg = remember(statSeries) {
+                if (statSeries.isNotEmpty()) statSeries.sum() / statSeries.size else 0.0
+            }
+
+            if (primaryMetric != ChartMetric.PROTOCOLS) {
+                val pUnit = metricUnit(primaryMetric)
+                val pFmt = metricFormat(primaryMetric)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (samples.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.testTag("chart_min_max_pills")
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                shape = RoundedCornerShape(999.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.chart_pill_min_fmt,
+                                        "${String.format(Locale.US, pFmt, statMin)} $pUnit"
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = TelemetryMonoFontFamily
+                                    ).tabularNums(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                shape = RoundedCornerShape(999.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.chart_pill_max_fmt,
+                                        "${String.format(Locale.US, pFmt, statMax)} $pUnit"
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = TelemetryMonoFontFamily
+                                    ).tabularNums(),
+                                    color = colorForCurveMetric(primaryMetric),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(
+                            selected = visualStyle == ChartVisualStyle.CURVE,
+                            onClick = { visualStyle = ChartVisualStyle.CURVE },
+                            label = { Text(stringResource(R.string.chart_style_curve)) },
+                            modifier = Modifier.testTag("chart_style_curve")
+                        )
+                        FilterChip(
+                            selected = visualStyle == ChartVisualStyle.BARS,
+                            onClick = { visualStyle = ChartVisualStyle.BARS },
+                            label = { Text(stringResource(R.string.chart_style_bars)) },
+                            modifier = Modifier.testTag("chart_style_bars")
+                        )
+                    }
                 }
             }
 
@@ -354,7 +583,7 @@ fun ExpressiveTelemetryChartCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            } else if (metric == ChartMetric.PROTOCOLS) {
+            } else if (primaryMetric == ChartMetric.PROTOCOLS) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (portId in 1..4) {
                         val color = semantic.colorForPort(portId)
@@ -400,71 +629,47 @@ fun ExpressiveTelemetryChartCard(
                     }
                 }
             } else {
-                val unit = when (metric) {
-                    ChartMetric.TOTAL_W, ChartMetric.STACKED_W, ChartMetric.PER_PORT_W -> stringResource(R.string.unit_w)
-                    ChartMetric.VOLTAGE_V -> stringResource(R.string.unit_v)
-                    ChartMetric.CURRENT_A -> stringResource(R.string.unit_a)
-                    ChartMetric.CUMULATIVE_WH -> stringResource(R.string.unit_wh)
-                    ChartMetric.PROTOCOLS -> ""
+                val metricPeaks = remember(samples, effectiveMetrics, activePortList) {
+                    effectiveMetrics.associateWith { peakForMetric(it) }
                 }
-
-                val activePortList = remember(visiblePorts) {
-                    listOf(1, 2, 3, 4).filter { it in visiblePorts }.ifEmpty { listOf(1, 2, 3, 4) }
-                }
-
-                val valFmt = if (metric == ChartMetric.CURRENT_A || metric == ChartMetric.CUMULATIVE_WH) "%.2f" else "%.1f"
-                val maxVal = remember(samples, metric, activePortList) {
-                    val peak = when (metric) {
-                        ChartMetric.TOTAL_W -> samples.maxOfOrNull { it.totalW } ?: 10.0
-                        ChartMetric.STACKED_W -> samples.maxOfOrNull { s ->
-                            activePortList.sumOf { pid -> (s.portW[pid] ?: 0.0).coerceAtLeast(0.0) }
-                        } ?: 10.0
-                        ChartMetric.PER_PORT_W -> samples.maxOfOrNull { s ->
-                            activePortList.maxOfOrNull { pid -> s.portW[pid] ?: 0.0 } ?: 0.0
-                        } ?: 10.0
-                        ChartMetric.VOLTAGE_V -> samples.maxOfOrNull { s ->
-                            activePortList.maxOfOrNull { pid -> s.portV[pid] ?: 0.0 } ?: 0.0
-                        } ?: 5.0
-                        ChartMetric.CURRENT_A -> samples.maxOfOrNull { s ->
-                            activePortList.maxOfOrNull { pid -> s.portA[pid] ?: 0.0 } ?: 0.0
-                        } ?: 0.5
-                        ChartMetric.CUMULATIVE_WH -> samples.maxOfOrNull { s ->
-                            activePortList.maxOfOrNull { pid -> s.portWh[pid] ?: 0.0 } ?: 0.0
-                        } ?: 0.2
-                        ChartMetric.PROTOCOLS -> 1.0
-                    }
-                    val minFloor = when (metric) {
-                        ChartMetric.CURRENT_A -> 0.5
-                        ChartMetric.CUMULATIVE_WH -> 0.2
-                        ChartMetric.VOLTAGE_V -> 5.0
-                        else -> 5.0
-                    }
-                    peak.coerceAtLeast(minFloor) * 1.12
-                }
+                val leftAxisMetric = effectiveMetrics.first()
+                val leftMax = metricPeaks[leftAxisMetric] ?: 10.0
+                val rightAxisMetric = if (effectiveMetrics.size == 2) effectiveMetrics[1] else null
+                val rightMax = rightAxisMetric?.let { metricPeaks[it] ?: 10.0 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    // Left Y-Axis: exact units for 1–2 metrics, normalized % for 3+ overlaid metrics
                     Column(
-                        modifier = Modifier.height(185.dp),
+                        modifier = Modifier.height(148.dp),
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "${String.format(Locale.US, valFmt, maxVal)} $unit",
-                            style = MaterialTheme.typography.labelSmall.tabularNums(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "${String.format(Locale.US, valFmt, maxVal / 2.0)} $unit",
-                            style = MaterialTheme.typography.labelSmall.tabularNums(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "0 $unit",
-                            style = MaterialTheme.typography.labelSmall.tabularNums(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (effectiveMetrics.size >= 3) {
+                            Text("100%", style = MaterialTheme.typography.labelSmall.tabularNums(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("50%", style = MaterialTheme.typography.labelSmall.tabularNums(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("0%", style = MaterialTheme.typography.labelSmall.tabularNums(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            val unit = metricUnit(leftAxisMetric)
+                            val fmt = metricFormat(leftAxisMetric)
+                            val labelColor = if (isMultiMetric) colorForCurveMetric(leftAxisMetric) else MaterialTheme.colorScheme.onSurfaceVariant
+                            Text(
+                                text = "${String.format(Locale.US, fmt, leftMax)} $unit",
+                                style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                color = labelColor
+                            )
+                            Text(
+                                text = "${String.format(Locale.US, fmt, leftMax / 2.0)} $unit",
+                                style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                color = labelColor
+                            )
+                            Text(
+                                text = "0 $unit",
+                                style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                color = labelColor
+                            )
+                        }
                     }
 
                     val totalLineColor = MaterialTheme.colorScheme.primary
@@ -475,7 +680,7 @@ fun ExpressiveTelemetryChartCard(
                     BoxWithConstraints(
                         modifier = Modifier
                             .weight(1f)
-                            .height(185.dp)
+                            .height(148.dp)
                     ) {
                         val density = LocalDensity.current
                         val boxW = with(density) { maxWidth.toPx() }
@@ -516,120 +721,232 @@ fun ExpressiveTelemetryChartCard(
                             drawLine(gridColor, Offset(0f, padTop + usableH / 2f), Offset(size.width, padTop + usableH / 2f), 1.dp.toPx())
                             drawLine(gridColor, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
 
-                            if (samples.size >= 2) {
-                                when (metric) {
-                                    ChartMetric.TOTAL_W -> {
+                            if (samples.isNotEmpty() && statAvg > 0.01 && !isMultiMetric) {
+                                val avgY = size.height - ((statAvg / leftMax).toFloat().coerceIn(0f, 1f) * usableH)
+                                drawLine(
+                                    color = colorForCurveMetric(primaryMetric).copy(alpha = 0.55f),
+                                    start = Offset(0f, avgY),
+                                    end = Offset(size.width, avgY),
+                                    strokeWidth = 1.4.dp.toPx(),
+                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+                                )
+                            }
+
+                            if (visualStyle == ChartVisualStyle.BARS && samples.isNotEmpty()) {
+                                val barCount = samples.size.coerceAtMost(32)
+                                val bucketIndices = (0 until barCount).map { b ->
+                                    if (barCount == 1) 0 else ((b.toFloat() / (barCount - 1)) * samples.lastIndex).roundToInt().coerceIn(0, samples.lastIndex)
+                                }
+                                val slotW = size.width / barCount.coerceAtLeast(1)
+                                val gapPx = (slotW * 0.22f).coerceIn(1.5.dp.toPx(), 5.dp.toPx())
+                                val barW = (slotW - gapPx).coerceAtLeast(3f)
+                                val cornerR = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+
+                                if (isMultiMetric) {
+                                    val subCount = effectiveMetrics.size.coerceAtLeast(1)
+                                    val subW = ((barW - (subCount - 1) * 1.5.dp.toPx()) / subCount).coerceAtLeast(2f)
+                                    bucketIndices.forEachIndexed { bIdx, sIdx ->
+                                        val s = samples[sIdx]
+                                        val baseX = bIdx * slotW + gapPx / 2f
+                                        effectiveMetrics.forEachIndexed { mIdx, m ->
+                                            val mMax = (metricPeaks[m] ?: 10.0).coerceAtLeast(0.01)
+                                            val v = aggregateMetricValue(s, m)
+                                            val h = ((v / mMax).toFloat().coerceIn(0f, 1f) * usableH).coerceAtLeast(if (v > 0.01) 3f else 0f)
+                                            if (h > 0f) {
+                                                drawRoundRect(
+                                                    color = colorForCurveMetric(m),
+                                                    topLeft = Offset(baseX + mIdx * (subW + 1.5.dp.toPx()), size.height - h),
+                                                    size = Size(subW, h),
+                                                    cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else if (primaryMetric == ChartMetric.STACKED_W) {
+                                    bucketIndices.forEachIndexed { bIdx, sIdx ->
+                                        val s = samples[sIdx]
+                                        val x = bIdx * slotW + gapPx / 2f
+                                        var yBottom = size.height
+                                        for (portId in activePortList.sortedDescending()) {
+                                            val w = (s.portW[portId] ?: 0.0).coerceAtLeast(0.0)
+                                            val segH = ((w / leftMax).toFloat().coerceIn(0f, 1f) * usableH)
+                                            if (segH > 1f) {
+                                                val top = (yBottom - segH).coerceAtLeast(padTop)
+                                                drawRoundRect(
+                                                    color = semantic.colorForPort(portId),
+                                                    topLeft = Offset(x, top),
+                                                    size = Size(barW, yBottom - top),
+                                                    cornerRadius = CornerRadius(2.5.dp.toPx(), 2.5.dp.toPx())
+                                                )
+                                                yBottom = top
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    val barColor = colorForCurveMetric(primaryMetric)
+                                    bucketIndices.forEachIndexed { bIdx, sIdx ->
+                                        val s = samples[sIdx]
+                                        val v = sampleStatValue(s, primaryMetric)
+                                        val h = ((v / leftMax).toFloat().coerceIn(0f, 1f) * usableH).coerceAtLeast(if (v > 0.01) 3f else 0f)
+                                        if (h > 0f) {
+                                            val isScrubbed = scrubIndex in samples.indices && kotlin.math.abs(sIdx - scrubIndex) <= (samples.size / barCount.coerceAtLeast(1)).coerceAtLeast(1)
+                                            drawRoundRect(
+                                                color = if (isScrubbed) barColor else barColor.copy(alpha = 0.82f),
+                                                topLeft = Offset(bIdx * slotW + gapPx / 2f, size.height - h),
+                                                size = Size(barW, h),
+                                                cornerRadius = cornerR
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (scrubIndex in samples.indices) {
+                                    val cx = if (samples.size > 1) {
+                                        (scrubIndex.toFloat() / (samples.size - 1)) * size.width
+                                    } else size.width / 2f
+                                    drawLine(crosshairColor.copy(alpha = 0.65f), Offset(cx, 0f), Offset(cx, size.height), 1.5.dp.toPx())
+                                }
+                            } else if (samples.size >= 2) {
+                                if (isMultiMetric) {
+                                    for (m in effectiveMetrics) {
+                                        val mColor = colorForCurveMetric(m)
+                                        val mMax = (metricPeaks[m] ?: 10.0).coerceAtLeast(0.01)
                                         val offsets = samples.mapIndexed { idx, s ->
+                                            val v = aggregateMetricValue(s, m)
                                             val x = (idx.toFloat() / (samples.size - 1)) * size.width
-                                            val y = size.height - ((s.totalW / maxVal).toFloat().coerceIn(0f, 1f) * usableH)
+                                            val y = size.height - ((v / mMax).toFloat().coerceIn(0f, 1f) * usableH)
                                             Offset(x, y)
                                         }
                                         val curve = buildMonotoneCubicPath(offsets, padTop, size.height)
-                                        val fill = Path().apply {
-                                            addPath(curve)
-                                            lineTo(offsets.last().x, size.height)
-                                            lineTo(offsets.first().x, size.height)
-                                            close()
-                                        }
-                                        drawPath(
-                                            path = fill,
-                                            brush = Brush.verticalGradient(
-                                                listOf(totalLineColor.copy(alpha = 0.28f), totalLineColor.copy(alpha = 0.0f))
-                                            )
-                                        )
                                         drawPath(
                                             path = curve,
-                                            color = totalLineColor,
-                                            style = Stroke(width = 2.75.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                            color = mColor,
+                                            style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
                                         )
                                         if (scrubIndex in offsets.indices) {
                                             val pt = offsets[scrubIndex]
-                                            drawLine(crosshairColor.copy(alpha = 0.6f), Offset(pt.x, 0f), Offset(pt.x, size.height), 1.5.dp.toPx())
-                                            drawCircle(surfaceLow, radius = 5.5.dp.toPx(), center = pt)
-                                            drawCircle(totalLineColor, radius = 3.8.dp.toPx(), center = pt)
+                                            drawCircle(surfaceLow, radius = 5.dp.toPx(), center = pt)
+                                            drawCircle(mColor, radius = 3.4.dp.toPx(), center = pt)
                                         }
                                     }
-
-                                    ChartMetric.STACKED_W -> {
-                                        // Draw stacked layers bottom-up (4 -> 3 -> 2 -> 1)
-                                        val drawOrder = activePortList.sortedDescending()
-                                        var prevTotals = DoubleArray(samples.size) { 0.0 }
-                                        var prevOffsets = samples.indices.map { idx ->
-                                            Offset((idx.toFloat() / (samples.size - 1)) * size.width, size.height)
-                                        }
-
-                                        for (portId in drawOrder) {
-                                            val color = semantic.colorForPort(portId)
-                                            val nextTotals = DoubleArray(samples.size) { idx ->
-                                                prevTotals[idx] + (samples[idx].portW[portId] ?: 0.0).coerceAtLeast(0.0)
-                                            }
-                                            val nextOffsets = samples.indices.map { idx ->
-                                                val x = (idx.toFloat() / (samples.size - 1)) * size.width
-                                                val y = size.height - ((nextTotals[idx] / maxVal).toFloat().coerceIn(0f, 1f) * usableH)
-                                                Offset(x, y)
-                                            }
-
-                                            val topCurve = buildMonotoneCubicPath(nextOffsets, padTop, size.height)
-                                            val bottomCurveRev = buildMonotoneCubicPath(prevOffsets.reversed(), padTop, size.height)
-                                            val areaPath = Path().apply {
-                                                addPath(topCurve)
-                                                lineTo(prevOffsets.last().x, prevOffsets.last().y)
-                                                addPath(bottomCurveRev)
-                                                close()
-                                            }
-                                            drawPath(path = areaPath, color = color.copy(alpha = 0.42f))
-                                            drawPath(
-                                                path = topCurve,
-                                                color = color,
-                                                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                                            )
-                                            prevTotals = nextTotals
-                                            prevOffsets = nextOffsets
-                                        }
-
-                                        if (scrubIndex in samples.indices) {
-                                            val cx = (scrubIndex.toFloat() / (samples.size - 1)) * size.width
-                                            drawLine(crosshairColor.copy(alpha = 0.65f), Offset(cx, 0f), Offset(cx, size.height), 1.5.dp.toPx())
-                                            var cumulative = 0.0
-                                            for (portId in drawOrder) {
-                                                cumulative += (samples[scrubIndex].portW[portId] ?: 0.0).coerceAtLeast(0.0)
-                                                val cy = size.height - ((cumulative / maxVal).toFloat().coerceIn(0f, 1f) * usableH)
-                                                drawCircle(surfaceLow, radius = 5.dp.toPx(), center = Offset(cx, cy))
-                                                drawCircle(semantic.colorForPort(portId), radius = 3.5.dp.toPx(), center = Offset(cx, cy))
-                                            }
-                                        }
+                                    if (scrubIndex in samples.indices) {
+                                        val cx = (scrubIndex.toFloat() / (samples.size - 1)) * size.width
+                                        drawLine(crosshairColor.copy(alpha = 0.6f), Offset(cx, 0f), Offset(cx, size.height), 1.5.dp.toPx())
                                     }
-
-                                    else -> {
-                                        for (portId in activePortList) {
-                                            val pColor = semantic.colorForPort(portId)
+                                } else {
+                                    when (primaryMetric) {
+                                        ChartMetric.TOTAL_W -> {
                                             val offsets = samples.mapIndexed { idx, s ->
-                                                val v = when (metric) {
-                                                    ChartMetric.PER_PORT_W -> s.portW[portId] ?: 0.0
-                                                    ChartMetric.VOLTAGE_V -> s.portV[portId] ?: 0.0
-                                                    ChartMetric.CURRENT_A -> s.portA[portId] ?: 0.0
-                                                    ChartMetric.CUMULATIVE_WH -> s.portWh[portId] ?: 0.0
-                                                    else -> 0.0
-                                                }
                                                 val x = (idx.toFloat() / (samples.size - 1)) * size.width
-                                                val y = size.height - ((v / maxVal).toFloat().coerceIn(0f, 1f) * usableH)
+                                                val y = size.height - ((s.totalW / leftMax).toFloat().coerceIn(0f, 1f) * usableH)
                                                 Offset(x, y)
                                             }
                                             val curve = buildMonotoneCubicPath(offsets, padTop, size.height)
+                                            val fill = Path().apply {
+                                                addPath(curve)
+                                                lineTo(offsets.last().x, size.height)
+                                                lineTo(offsets.first().x, size.height)
+                                                close()
+                                            }
+                                            drawPath(
+                                                path = fill,
+                                                brush = Brush.verticalGradient(
+                                                    listOf(totalLineColor.copy(alpha = 0.28f), totalLineColor.copy(alpha = 0.0f))
+                                                )
+                                            )
                                             drawPath(
                                                 path = curve,
-                                                color = pColor,
-                                                style = Stroke(width = 2.25.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                                color = totalLineColor,
+                                                style = Stroke(width = 2.75.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
                                             )
                                             if (scrubIndex in offsets.indices) {
                                                 val pt = offsets[scrubIndex]
-                                                drawCircle(surfaceLow, radius = 4.8.dp.toPx(), center = pt)
-                                                drawCircle(pColor, radius = 3.2.dp.toPx(), center = pt)
+                                                drawLine(crosshairColor.copy(alpha = 0.6f), Offset(pt.x, 0f), Offset(pt.x, size.height), 1.5.dp.toPx())
+                                                drawCircle(surfaceLow, radius = 5.5.dp.toPx(), center = pt)
+                                                drawCircle(totalLineColor, radius = 3.8.dp.toPx(), center = pt)
                                             }
                                         }
-                                        if (scrubIndex in samples.indices) {
-                                            val cx = (scrubIndex.toFloat() / (samples.size - 1)) * size.width
-                                            drawLine(crosshairColor.copy(alpha = 0.6f), Offset(cx, 0f), Offset(cx, size.height), 1.5.dp.toPx())
+
+                                        ChartMetric.STACKED_W -> {
+                                            val drawOrder = activePortList.sortedDescending()
+                                            var prevTotals = DoubleArray(samples.size) { 0.0 }
+                                            var prevOffsets = samples.indices.map { idx ->
+                                                Offset((idx.toFloat() / (samples.size - 1)) * size.width, size.height)
+                                            }
+
+                                            for (portId in drawOrder) {
+                                                val color = semantic.colorForPort(portId)
+                                                val nextTotals = DoubleArray(samples.size) { idx ->
+                                                    prevTotals[idx] + (samples[idx].portW[portId] ?: 0.0).coerceAtLeast(0.0)
+                                                }
+                                                val nextOffsets = samples.indices.map { idx ->
+                                                    val x = (idx.toFloat() / (samples.size - 1)) * size.width
+                                                    val y = size.height - ((nextTotals[idx] / leftMax).toFloat().coerceIn(0f, 1f) * usableH)
+                                                    Offset(x, y)
+                                                }
+
+                                                val topCurve = buildMonotoneCubicPath(nextOffsets, padTop, size.height)
+                                                val bottomCurveRev = buildMonotoneCubicPath(prevOffsets.reversed(), padTop, size.height)
+                                                val areaPath = Path().apply {
+                                                    addPath(topCurve)
+                                                    lineTo(prevOffsets.last().x, prevOffsets.last().y)
+                                                    addPath(bottomCurveRev)
+                                                    close()
+                                                }
+                                                drawPath(path = areaPath, color = color.copy(alpha = 0.42f))
+                                                drawPath(
+                                                    path = topCurve,
+                                                    color = color,
+                                                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                                )
+                                                prevTotals = nextTotals
+                                                prevOffsets = nextOffsets
+                                            }
+
+                                            if (scrubIndex in samples.indices) {
+                                                val cx = (scrubIndex.toFloat() / (samples.size - 1)) * size.width
+                                                drawLine(crosshairColor.copy(alpha = 0.65f), Offset(cx, 0f), Offset(cx, size.height), 1.5.dp.toPx())
+                                                var cumulative = 0.0
+                                                for (portId in drawOrder) {
+                                                    cumulative += (samples[scrubIndex].portW[portId] ?: 0.0).coerceAtLeast(0.0)
+                                                    val cy = size.height - ((cumulative / leftMax).toFloat().coerceIn(0f, 1f) * usableH)
+                                                    drawCircle(surfaceLow, radius = 5.dp.toPx(), center = Offset(cx, cy))
+                                                    drawCircle(semantic.colorForPort(portId), radius = 3.5.dp.toPx(), center = Offset(cx, cy))
+                                                }
+                                            }
+                                        }
+
+                                        else -> {
+                                            for (portId in activePortList) {
+                                                val pColor = semantic.colorForPort(portId)
+                                                val offsets = samples.mapIndexed { idx, s ->
+                                                    val v = when (primaryMetric) {
+                                                        ChartMetric.PER_PORT_W -> s.portW[portId] ?: 0.0
+                                                        ChartMetric.VOLTAGE_V -> s.portV[portId] ?: 0.0
+                                                        ChartMetric.CURRENT_A -> s.portA[portId] ?: 0.0
+                                                        ChartMetric.CUMULATIVE_WH -> s.portWh[portId] ?: 0.0
+                                                        else -> 0.0
+                                                    }
+                                                    val x = (idx.toFloat() / (samples.size - 1)) * size.width
+                                                    val y = size.height - ((v / leftMax).toFloat().coerceIn(0f, 1f) * usableH)
+                                                    Offset(x, y)
+                                                }
+                                                val curve = buildMonotoneCubicPath(offsets, padTop, size.height)
+                                                drawPath(
+                                                    path = curve,
+                                                    color = pColor,
+                                                    style = Stroke(width = 2.25.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                                )
+                                                if (scrubIndex in offsets.indices) {
+                                                    val pt = offsets[scrubIndex]
+                                                    drawCircle(surfaceLow, radius = 4.8.dp.toPx(), center = pt)
+                                                    drawCircle(pColor, radius = 3.2.dp.toPx(), center = pt)
+                                                }
+                                            }
+                                            if (scrubIndex in samples.indices) {
+                                                val cx = (scrubIndex.toFloat() / (samples.size - 1)) * size.width
+                                                drawLine(crosshairColor.copy(alpha = 0.6f), Offset(cx, 0f), Offset(cx, size.height), 1.5.dp.toPx())
+                                            }
                                         }
                                     }
                                 }
@@ -644,9 +961,9 @@ fun ExpressiveTelemetryChartCard(
                             } else 0f
                             val placeRight = rawX < boxW * 0.52f
                             val tooltipOffsetX = if (placeRight) {
-                                (rawX + 12f).coerceAtMost((boxW - 150f).coerceAtLeast(0f))
+                                (rawX + 12f).coerceAtMost((boxW - 155f).coerceAtLeast(0f))
                             } else {
-                                (rawX - 160f).coerceAtLeast(0f)
+                                (rawX - 165f).coerceAtLeast(0f)
                             }
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
@@ -668,40 +985,130 @@ fun ExpressiveTelemetryChartCard(
                                         ).tabularNums(),
                                         color = MaterialTheme.colorScheme.inverseOnSurface
                                     )
-                                    if (metric == ChartMetric.TOTAL_W || metric == ChartMetric.STACKED_W) {
-                                        val total = if (metric == ChartMetric.STACKED_W) {
-                                            activePortList.sumOf { pt.portW[it] ?: 0.0 }
-                                        } else pt.totalW
-                                        Text(
-                                            text = "${String.format(Locale.US, "%.1f", total)} $unit",
-                                            style = MaterialTheme.typography.labelMedium.copy(
-                                                fontFamily = TelemetryMonoFontFamily,
-                                                fontWeight = FontWeight.Bold
-                                            ).tabularNums(),
-                                            color = MaterialTheme.colorScheme.inversePrimary
-                                        )
-                                    }
-                                    if (metric != ChartMetric.TOTAL_W) {
-                                        activePortList.forEach { pid ->
-                                            val v = when (metric) {
-                                                ChartMetric.STACKED_W, ChartMetric.PER_PORT_W -> pt.portW[pid] ?: 0.0
-                                                ChartMetric.VOLTAGE_V -> pt.portV[pid] ?: 0.0
-                                                ChartMetric.CURRENT_A -> pt.portA[pid] ?: 0.0
-                                                ChartMetric.CUMULATIVE_WH -> pt.portWh[pid] ?: 0.0
-                                                else -> 0.0
-                                            }
-                                            if (v > 0.005) {
+                                    if (isMultiMetric) {
+                                        effectiveMetrics.forEach { m ->
+                                            val v = aggregateMetricValue(pt, m)
+                                            val unit = metricUnit(m)
+                                            val fmt = metricFormat(m)
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(7.dp)
+                                                        .clip(CircleShape)
+                                                        .background(colorForCurveMetric(m))
+                                                )
                                                 Text(
-                                                    text = "${explicitPortName(pid)}: ${String.format(Locale.US, valFmt, v)} $unit",
+                                                    text = "${metricLabel(m)}: ${String.format(Locale.US, fmt, v)} $unit",
                                                     style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontFamily = TelemetryMonoFontFamily
+                                                        fontFamily = TelemetryMonoFontFamily,
+                                                        fontWeight = FontWeight.SemiBold
                                                     ).tabularNums(),
                                                     color = MaterialTheme.colorScheme.inverseOnSurface
                                                 )
                                             }
                                         }
+                                    } else {
+                                        val unit = metricUnit(primaryMetric)
+                                        val valFmt = metricFormat(primaryMetric)
+                                        if (primaryMetric == ChartMetric.TOTAL_W || primaryMetric == ChartMetric.STACKED_W) {
+                                            val total = if (primaryMetric == ChartMetric.STACKED_W) {
+                                                activePortList.sumOf { pt.portW[it] ?: 0.0 }
+                                            } else pt.totalW
+                                            Text(
+                                                text = "${String.format(Locale.US, "%.1f", total)} $unit",
+                                                style = MaterialTheme.typography.labelMedium.copy(
+                                                    fontFamily = TelemetryMonoFontFamily,
+                                                    fontWeight = FontWeight.Bold
+                                                ).tabularNums(),
+                                                color = MaterialTheme.colorScheme.inversePrimary
+                                            )
+                                        }
+                                        if (primaryMetric != ChartMetric.TOTAL_W) {
+                                            activePortList.forEach { pid ->
+                                                val v = when (primaryMetric) {
+                                                    ChartMetric.STACKED_W, ChartMetric.PER_PORT_W -> pt.portW[pid] ?: 0.0
+                                                    ChartMetric.VOLTAGE_V -> pt.portV[pid] ?: 0.0
+                                                    ChartMetric.CURRENT_A -> pt.portA[pid] ?: 0.0
+                                                    ChartMetric.CUMULATIVE_WH -> pt.portWh[pid] ?: 0.0
+                                                    else -> 0.0
+                                                }
+                                                if (v > 0.005) {
+                                                    Text(
+                                                        text = "${explicitPortName(pid)}: ${String.format(Locale.US, valFmt, v)} $unit",
+                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                            fontFamily = TelemetryMonoFontFamily
+                                                        ).tabularNums(),
+                                                        color = MaterialTheme.colorScheme.inverseOnSurface
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    // Dual Y-Axis on the right when exactly 2 metrics are overlaid
+                    if (rightAxisMetric != null && rightMax != null) {
+                        val rUnit = metricUnit(rightAxisMetric)
+                        val rFmt = metricFormat(rightAxisMetric)
+                        val rColor = colorForCurveMetric(rightAxisMetric)
+                        Column(
+                            modifier = Modifier.height(148.dp),
+                            verticalArrangement = Arrangement.SpaceBetween,
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            Text(
+                                text = "${String.format(Locale.US, rFmt, rightMax)} $rUnit",
+                                style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                color = rColor
+                            )
+                            Text(
+                                text = "${String.format(Locale.US, rFmt, rightMax / 2.0)} $rUnit",
+                                style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                color = rColor
+                            )
+                            Text(
+                                text = "0 $rUnit",
+                                style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                color = rColor
+                            )
+                        }
+                    }
+                }
+
+                // Multi-metric colored legend when 2+ parameters are overlaid
+                if (isMultiMetric) {
+                    FlowRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("chart_multi_metric_legend"),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        effectiveMetrics.forEach { m ->
+                            val peak = metricPeaks[m] ?: 0.0
+                            val unit = metricUnit(m)
+                            val fmt = metricFormat(m)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(colorForCurveMetric(m))
+                                )
+                                Text(
+                                    text = "${metricLabel(m)} (${String.format(Locale.US, fmt, peak / 1.12)} $unit)",
+                                    style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -729,26 +1136,95 @@ fun ExpressiveTelemetryChartCard(
                     )
                 }
 
+                // Bottom Average / Minimum / Maximum stats strip
+                val pUnit = metricUnit(primaryMetric)
+                val pFmt = metricFormat(primaryMetric)
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("chart_stats_row")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.chart_stat_avg),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${String.format(Locale.US, pFmt, statAvg)} $pUnit",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontFamily = TelemetryMonoFontFamily,
+                                    fontWeight = FontWeight.Bold
+                                ).tabularNums()
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.chart_stat_min),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${String.format(Locale.US, pFmt, statMin)} $pUnit",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontFamily = TelemetryMonoFontFamily,
+                                    fontWeight = FontWeight.Bold
+                                ).tabularNums()
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.chart_stat_max),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${String.format(Locale.US, pFmt, statMax)} $pUnit",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontFamily = TelemetryMonoFontFamily,
+                                    fontWeight = FontWeight.Bold
+                                ).tabularNums(),
+                                color = colorForCurveMetric(primaryMetric)
+                            )
+                        }
+                    }
+                }
+
                 Text(
                     text = stringResource(R.string.analytics_chart_scrub_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                // Interactive port filter legend for multi-port metrics
-                if (metric != ChartMetric.TOTAL_W) {
+                // Single-line compact C1 | C2 | C3 | A port filter chips
+                if (effectiveMetrics != listOf(ChartMetric.TOTAL_W)) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             text = stringResource(R.string.analytics_port_filter_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             for (portId in 1..4) {
                                 val selected = portId in visiblePorts
+                                val fullPortCd = explicitPortName(portId)
+                                val shortLabel = when (portId) {
+                                    1 -> stringResource(R.string.port_short_c1)
+                                    2 -> stringResource(R.string.port_short_c2)
+                                    3 -> stringResource(R.string.port_short_c3)
+                                    else -> stringResource(R.string.port_short_a)
+                                }
                                 FilterChip(
                                     selected = selected,
                                     onClick = {
@@ -762,14 +1238,23 @@ fun ExpressiveTelemetryChartCard(
                                     leadingIcon = {
                                         Box(
                                             modifier = Modifier
-                                                .size(8.dp)
+                                                .size(7.dp)
                                                 .clip(CircleShape)
                                                 .background(semantic.colorForPort(portId))
                                         )
                                     },
-                                    label = { Text(explicitPortName(portId)) },
+                                    label = {
+                                        Text(
+                                            text = shortLabel,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Clip
+                                        )
+                                    },
                                     modifier = Modifier
+                                        .weight(1f)
                                         .heightIn(min = 48.dp)
+                                        .semantics { contentDescription = fullPortCd }
                                         .testTag("chart_port_filter_$portId")
                                 )
                             }

@@ -649,7 +649,7 @@ private fun CompactWidgetContent(
             .fillMaxSize()
             .appWidgetBackground()
             .background(ColorProvider(R.color.widget_surface_bg))
-            .cornerRadius(28.dp)
+            .cornerRadius(24.dp)
             .padding(12.dp)
     ) {
         Row(
