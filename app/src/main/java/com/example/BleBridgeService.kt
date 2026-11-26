@@ -330,6 +330,7 @@ class BleBridgeService : Service() {
         } catch (_: Exception) {}
         releaseWakeLock()
         cleanupServer()
+        cloudIntegrations?.shutdown()
         cuktechManager?.stopAllJobsForServiceDestroy()
         closeGattClean(triggerCooldown = false)
         stopBleScan()
@@ -1281,15 +1282,28 @@ class BleBridgeService : Service() {
             bleDiagnostics ?: BleDiagnostics(appCtx).also { bleDiagnostics = it }
             val mgr = cuktechManager ?: CuktechBleManager(appCtx, store, db, prefsRepo, authMgr).also { createdMgr ->
                 cuktechManager = createdMgr
-                val integrations = CloudIntegrations(appCtx, store) { portId, enabled ->
-                    CoroutineScope(Dispatchers.Default).launch {
-                        createdMgr.commandDispatcher.dispatch(
-                            source = CommandSource.AUTOMATION_RULE,
-                            command = ChargerCommand.SetPortEnabled(portId, enabled),
-                            clientKey = "cloud_integrations"
-                        )
+                val integrations = CloudIntegrations(
+                    context = appCtx,
+                    credentialStore = store,
+                    onPortSwitchCommand = { portId, enabled ->
+                        CoroutineScope(Dispatchers.Default).launch {
+                            createdMgr.commandDispatcher.dispatch(
+                                source = CommandSource.AUTOMATION_RULE,
+                                command = ChargerCommand.SetPortEnabled(portId, enabled),
+                                clientKey = "cloud_integrations"
+                            )
+                        }
+                    },
+                    onSceneModeCommand = { mode ->
+                        CoroutineScope(Dispatchers.Default).launch {
+                            createdMgr.commandDispatcher.dispatch(
+                                source = CommandSource.AUTOMATION_RULE,
+                                command = ChargerCommand.SetSceneMode(mode),
+                                clientKey = "cloud_integrations_mqtt"
+                            )
+                        }
                     }
-                }
+                )
                 cloudIntegrations = integrations
                 tcpGatewayServer = TcpGatewayServer(
                     authManager = authMgr,
@@ -1301,8 +1315,37 @@ class BleBridgeService : Service() {
                     }
                 )
 
+                val lastPortActiveMap = java.util.concurrent.ConcurrentHashMap<Int, Boolean>()
+
                 createdMgr.onTelemetryUpdated = { portsMap, totalWatts, devInfo ->
-                    integrations.onTelemetryUpdate(portsMap, totalWatts)
+                    val curRssi = createdMgr.integritySnapshot.value.currentRssiDbm
+                    integrations.onTelemetryUpdate(portsMap, totalWatts, curRssi)
+                    for ((pid, p) in portsMap) {
+                        val prevActive = lastPortActiveMap[pid]
+                        if (p.powerW >= 0.4) {
+                            if (prevActive == false) {
+                                integrations.publishEvent(
+                                    eventType = "PORT_CONNECTED",
+                                    title = "Port $pid load active",
+                                    detail = String.format(Locale.US, "%.1f W (%s)", p.powerW, p.protocolName),
+                                    portId = pid,
+                                    extra = mapOf("power_w" to p.powerW, "protocol" to p.protocolName)
+                                )
+                            }
+                            lastPortActiveMap[pid] = true
+                        } else if (p.powerW < 0.2) {
+                            if (prevActive == true) {
+                                integrations.publishEvent(
+                                    eventType = "PORT_DISCONNECTED",
+                                    title = "Port $pid idle",
+                                    detail = String.format(Locale.US, "%.2f Wh", p.cumulativeWh),
+                                    portId = pid,
+                                    extra = mapOf("wh" to p.cumulativeWh)
+                                )
+                            }
+                            lastPortActiveMap[pid] = false
+                        }
+                    }
                     broadcastTaskerTelemetry(appCtx, portsMap, totalWatts, devInfo.macAddress)
                     tcpGatewayServer?.let { gw ->
                         if (gw.isRunning) {
@@ -1331,6 +1374,34 @@ class BleBridgeService : Service() {
                 }
 
                 val syncScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+                syncScope.launch(Dispatchers.IO) {
+                    if (integrations.config.value.mqttEnabled) {
+                        val activeMac = store.activeDevice.value?.mac?.takeIf { it.isNotBlank() } ?: "cuktech10_ultra"
+                        val nodeId = "cuktech_${activeMac.replace(":", "").lowercase()}"
+                        integrations.connectOrReconnectMqtt(nodeId = nodeId)
+                    }
+                }
+                val forwardedEventIds = Collections.synchronizedSet(HashSet<String>())
+                var seededEvents = false
+                syncScope.launch {
+                    createdMgr.eventLog.events.collect { eventsList ->
+                        if (!seededEvents) {
+                            seededEvents = true
+                            eventsList.forEach { forwardedEventIds.add(it.id) }
+                            return@collect
+                        }
+                        eventsList.asReversed().forEach { ev ->
+                            if (forwardedEventIds.add(ev.id)) {
+                                integrations.publishEvent(
+                                    eventType = ev.type.name,
+                                    title = ev.title,
+                                    detail = ev.detail,
+                                    portId = ev.portId
+                                )
+                            }
+                        }
+                    }
+                }
                 syncScope.launch {
                     createdMgr.authState.collect { authState ->
                         val mac = createdMgr.deviceInfo.value.macAddress.ifBlank { null }

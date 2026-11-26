@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,6 +13,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,12 +30,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -44,15 +53,18 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,15 +96,36 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.cuktech.db.CuktechPersistence
+import com.example.cuktech.db.room.SessionAnnotationEntity
+import com.example.cuktech.db.room.SessionGapEntity
+import com.example.cuktech.db.room.TelemetrySampleEntity
 import com.example.cuktech.energy.ChargeSessionRecord
+import com.example.cuktech.power.SessionDeepAnalysis
+import com.example.cuktech.power.SessionPhaseType
+import com.example.ui.components.CableInventoryAndLabCard
+import com.example.ui.components.ChargerPassportAndResearchCard
 import com.example.ui.components.ChargingPeriodSummaryCard
 import com.example.ui.components.ClearHistoryDialog
 import com.example.ui.components.ConsolidatedSessionsTableDialog
 import com.example.ui.components.DailyEnergyBarChartCard
+import com.example.ui.components.DeviceInventoryCard
 import com.example.ui.components.ExportCsvDialog
 import com.example.ui.components.ExpressiveTelemetryChartCard
+import com.example.ui.components.IncidentBlackBoxCard
+import com.example.ui.components.LoadDistributionSimulatorCard
+import com.example.ui.components.MultiPortAndHeatmapCard
+import com.example.ui.components.PdoExplorerCard
+import com.example.ui.components.PhoneBatteryCalibrationCard
 import com.example.ui.components.PixelEnergyBreakdownCard
+import com.example.ui.components.MultiChargerFleetCard
 import com.example.ui.components.PortActivityTimelineCard
+import com.example.ui.components.PortLifecycleMetricsCard
+import com.example.ui.components.PowerBandsAndHistogramsCard
+import com.example.ui.components.ProtocolAttributionCard
+import com.example.ui.components.ProtocolTransitionsCard
+import com.example.ui.components.SceneAndCombinationMatrixCard
+import com.example.ui.components.SessionRecordsAndNormsCard
+import com.example.ui.components.TwoSessionComparisonCard
 import com.example.ui.components.buildMonotoneCubicPath
 import com.example.ui.components.explicitPortName
 import com.example.ui.components.formatDurationHms
@@ -109,6 +142,15 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
+
+private enum class AnalyticsSubTab {
+    SUMMARY,
+    LIFECYCLE,
+    POWER_PROTOCOLS,
+    SCENES_PDO,
+    SESSIONS_LAB,
+    INVENTORY_LAB
+}
 
 @Composable
 fun AnalyticsScreen(
@@ -130,7 +172,41 @@ fun AnalyticsScreen(
     val ports by viewModel.ports.collectAsStateWithLifecycle()
     val periodSummary by viewModel.periodSummary.collectAsStateWithLifecycle()
     val dailyWhBuckets by viewModel.dailyWhBuckets.collectAsStateWithLifecycle()
+    val analyticsWindowDays by viewModel.analyticsWindowDays.collectAsStateWithLifecycle()
+    val portLifecycleAnalytics by viewModel.portLifecycleAnalytics.collectAsStateWithLifecycle()
+    val scenarioAndPdoSnapshot by viewModel.scenarioAndPdoSnapshot.collectAsStateWithLifecycle()
+    val simSceneMode by viewModel.simSceneMode.collectAsStateWithLifecycle()
+    val simPortsMask by viewModel.simPortsMask.collectAsStateWithLifecycle()
+    val loadSimulationResult by viewModel.loadSimulationResult.collectAsStateWithLifecycle()
+    val sessionPersonalRecords by viewModel.sessionPersonalRecords.collectAsStateWithLifecycle()
+    val comparisonSessionAId by viewModel.comparisonSessionAId.collectAsStateWithLifecycle()
+    val comparisonSessionBId by viewModel.comparisonSessionBId.collectAsStateWithLifecycle()
+    val comparisonAlignment by viewModel.comparisonAlignment.collectAsStateWithLifecycle()
+    val sessionComparisonResult by viewModel.sessionComparisonResult.collectAsStateWithLifecycle()
+    val incidentBlackBoxes by viewModel.incidentBlackBoxes.collectAsStateWithLifecycle()
+    val sessionAnnotations by viewModel.sessionAnnotations.collectAsStateWithLifecycle()
+    val replayDeepAnalysis by viewModel.replayDeepAnalysis.collectAsStateWithLifecycle()
+    val replayGaps by viewModel.replayGaps.collectAsStateWithLifecycle()
+    val deviceInventory by viewModel.deviceInventory.collectAsStateWithLifecycle()
+    val cableInventory by viewModel.cableInventory.collectAsStateWithLifecycle()
+    val cableLabTests by viewModel.cableLabTests.collectAsStateWithLifecycle()
+    val phoneBattery by viewModel.phoneBattery.collectAsStateWithLifecycle()
+    val cableLabRunner by viewModel.cableLabRunner.collectAsStateWithLifecycle()
+    val cableLabLastNotice by viewModel.cableLabLastNotice.collectAsStateWithLifecycle()
+    val suggestedDeviceMatch by viewModel.suggestedDeviceMatch.collectAsStateWithLifecycle()
+    val chargerPassport by viewModel.chargerPassport.collectAsStateWithLifecycle()
+    val fleetSummary by viewModel.fleetSummary.collectAsStateWithLifecycle()
 
+    val allComparableSessions = remember(activeSessions, completedSessions) {
+        activeSessions.values.toList() + completedSessions
+    }
+    LaunchedEffect(allComparableSessions.size, comparisonSessionAId, comparisonSessionBId) {
+        if (allComparableSessions.size >= 2 && (comparisonSessionAId == null || comparisonSessionBId == null)) {
+            viewModel.selectComparisonSessions(allComparableSessions[0].id, allComparableSessions[1].id)
+        }
+    }
+
+    var activeSubTab by remember { mutableStateOf(AnalyticsSubTab.SUMMARY) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var showSummaryTable by remember { mutableStateOf(false) }
@@ -205,10 +281,32 @@ fun AnalyticsScreen(
     }
 
     if (replayState.session != null) {
+        val currentSid = replayState.session!!.id
+        val sessionBookmarks = remember(sessionAnnotations, currentSid) {
+            sessionAnnotations.filter { it.sessionId == currentSid }
+        }
         SessionReplayDialog(
             replayState = replayState,
+            deepAnalysis = replayDeepAnalysis,
+            gaps = replayGaps,
+            annotations = sessionBookmarks,
             onScrub = { viewModel.scrubReplayTo(it) },
             onTogglePlay = { viewModel.toggleReplayPlayback() },
+            onAddBookmark = { sample, tag, note ->
+                viewModel.addReplayBookmark(currentSid, sample, tag, note)
+            },
+            onDeleteAnnotation = { viewModel.deleteSessionAnnotation(it) },
+            onExportJson = {
+                viewModel.buildAnnotatedReplayJson(replayState.session!!) { json ->
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("CuktechReplay", json))
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.toast_json_copied),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
             onDismiss = { viewModel.closeSessionReplay() }
         )
     }
@@ -270,6 +368,169 @@ fun AnalyticsScreen(
             }
         }
 
+        // Sub-Tab Switcher: Summary | Ports Lifecycle | Power & Protocols | Scenes & PDO | Session Lab
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = activeSubTab == AnalyticsSubTab.SUMMARY,
+                    onClick = { activeSubTab = AnalyticsSubTab.SUMMARY },
+                    label = { Text(stringResource(R.string.analytics_tab_summary)) },
+                    modifier = Modifier.testTag("analytics_tab_summary")
+                )
+                FilterChip(
+                    selected = activeSubTab == AnalyticsSubTab.LIFECYCLE,
+                    onClick = { activeSubTab = AnalyticsSubTab.LIFECYCLE },
+                    label = { Text(stringResource(R.string.analytics_tab_lifecycle)) },
+                    modifier = Modifier.testTag("analytics_tab_lifecycle")
+                )
+                FilterChip(
+                    selected = activeSubTab == AnalyticsSubTab.POWER_PROTOCOLS,
+                    onClick = { activeSubTab = AnalyticsSubTab.POWER_PROTOCOLS },
+                    label = { Text(stringResource(R.string.analytics_tab_power_protocols)) },
+                    modifier = Modifier.testTag("analytics_tab_power_protocols")
+                )
+                FilterChip(
+                    selected = activeSubTab == AnalyticsSubTab.SCENES_PDO,
+                    onClick = { activeSubTab = AnalyticsSubTab.SCENES_PDO },
+                    label = { Text(stringResource(R.string.analytics_tab_scenes_pdo)) },
+                    modifier = Modifier.testTag("analytics_tab_scenes_pdo")
+                )
+                FilterChip(
+                    selected = activeSubTab == AnalyticsSubTab.SESSIONS_LAB,
+                    onClick = { activeSubTab = AnalyticsSubTab.SESSIONS_LAB },
+                    label = { Text(stringResource(R.string.analytics_tab_session_lab)) },
+                    modifier = Modifier.testTag("analytics_tab_session_lab")
+                )
+                FilterChip(
+                    selected = activeSubTab == AnalyticsSubTab.INVENTORY_LAB,
+                    onClick = { activeSubTab = AnalyticsSubTab.INVENTORY_LAB },
+                    label = { Text(stringResource(R.string.analytics_tab_inventory_lab)) },
+                    modifier = Modifier.testTag("analytics_tab_inventory_lab")
+                )
+            }
+        }
+
+        if (activeSubTab == AnalyticsSubTab.LIFECYCLE ||
+            activeSubTab == AnalyticsSubTab.POWER_PROTOCOLS ||
+            activeSubTab == AnalyticsSubTab.SCENES_PDO
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        1 to R.string.analytics_window_1d,
+                        7 to R.string.analytics_window_7d,
+                        30 to R.string.analytics_window_30d
+                    ).forEach { (days, labelRes) ->
+                        FilterChip(
+                            selected = analyticsWindowDays == days,
+                            onClick = { viewModel.setAnalyticsWindowDays(days) },
+                            label = { Text(stringResource(labelRes)) },
+                            modifier = Modifier.testTag("analytics_window_${days}d")
+                        )
+                    }
+                }
+            }
+        }
+
+        if (activeSubTab == AnalyticsSubTab.LIFECYCLE) {
+            item {
+                PortLifecycleMetricsCard(analytics = portLifecycleAnalytics)
+            }
+            item {
+                MultiPortAndHeatmapCard(analytics = portLifecycleAnalytics)
+            }
+        } else if (activeSubTab == AnalyticsSubTab.POWER_PROTOCOLS) {
+            item {
+                PowerBandsAndHistogramsCard(analytics = portLifecycleAnalytics)
+            }
+            item {
+                ProtocolAttributionCard(analytics = portLifecycleAnalytics)
+            }
+        } else if (activeSubTab == AnalyticsSubTab.SCENES_PDO) {
+            item {
+                PdoExplorerCard(snapshot = scenarioAndPdoSnapshot)
+            }
+            item {
+                SceneAndCombinationMatrixCard(snapshot = scenarioAndPdoSnapshot)
+            }
+            item {
+                LoadDistributionSimulatorCard(
+                    simSceneMode = simSceneMode,
+                    simPortsMask = simPortsMask,
+                    simulation = loadSimulationResult,
+                    onSelectScene = { viewModel.setSimulatorConfig(it, simPortsMask) },
+                    onTogglePort = { viewModel.toggleSimulatorPortBit(it) }
+                )
+            }
+            item {
+                ProtocolTransitionsCard(snapshot = scenarioAndPdoSnapshot)
+            }
+        } else if (activeSubTab == AnalyticsSubTab.SESSIONS_LAB) {
+            item {
+                SessionRecordsAndNormsCard(records = sessionPersonalRecords)
+            }
+            item {
+                TwoSessionComparisonCard(
+                    sessions = allComparableSessions,
+                    selectedAId = comparisonSessionAId,
+                    selectedBId = comparisonSessionBId,
+                    alignment = comparisonAlignment,
+                    comparison = sessionComparisonResult,
+                    onSelectSessions = { a, b -> viewModel.selectComparisonSessions(a, b) },
+                    onSelectAlignment = { viewModel.setComparisonAlignment(it) }
+                )
+            }
+            item {
+                IncidentBlackBoxCard(
+                    blackBoxes = incidentBlackBoxes,
+                    onCaptureManual = { viewModel.captureManualBlackBox() }
+                )
+            }
+        } else if (activeSubTab == AnalyticsSubTab.INVENTORY_LAB) {
+            item {
+                PhoneBatteryCalibrationCard(
+                    snapshot = phoneBattery,
+                    onRefresh = { viewModel.refreshPhoneBattery() }
+                )
+            }
+            item {
+                DeviceInventoryCard(
+                    devices = deviceInventory,
+                    suggestion = suggestedDeviceMatch,
+                    onConfirmSuggestion = { viewModel.confirmSuggestedDeviceMatch(it) },
+                    onSaveDevice = { viewModel.saveDeviceInventory(it) },
+                    onDeleteDevice = { viewModel.deleteDeviceInventory(it) }
+                )
+            }
+            item {
+                CableInventoryAndLabCard(
+                    cables = cableInventory,
+                    tests = cableLabTests,
+                    runnerState = cableLabRunner,
+                    lastNoticeCode = cableLabLastNotice,
+                    onSaveCable = { viewModel.saveCableInventory(it) },
+                    onDeleteCable = { viewModel.deleteCableInventory(it) },
+                    onDeleteTest = { viewModel.deleteCableLabTest(it) },
+                    onStartGuidedTest = { portId, cable -> viewModel.startGuidedCableLabTest(portId, cable) },
+                    onCancelGuidedTest = { viewModel.cancelGuidedCableLabTest() },
+                    onAnalyzeRecent = { portId, cable -> viewModel.analyzeRecentWindowForCableLab(portId, cable) }
+                )
+            }
+            item {
+                ChargerPassportAndResearchCard(
+                    passport = chargerPassport,
+                    onBuildAnonymizedJson = { viewModel.buildAnonymizedLabJson() }
+                )
+            }
+        } else {
         // Next-Gen Interactive Bezier / Stacked Telemetry Chart Card
         item {
             ExpressiveTelemetryChartCard(
@@ -342,6 +603,16 @@ fun AnalyticsScreen(
                 summary = periodSummary,
                 onSelectPeriod = { mode, offset -> viewModel.selectSummaryPeriod(mode, offset) }
             )
+        }
+
+        // Multi-Charger Fleet Summary & Side-by-Side Benchmark
+        if (fleetSummary.nodes.isNotEmpty()) {
+            item {
+                MultiChargerFleetCard(
+                    fleet = fleetSummary,
+                    onSwitchCharger = { viewModel.switchActiveCharger(it) }
+                )
+            }
         }
 
         // Last 10 Days Energy Bar Chart
@@ -500,6 +771,8 @@ fun AnalyticsScreen(
                     )
                 }
             }
+        }
+
         }
 
         item { Spacer(Modifier.height(16.dp)) }
@@ -694,18 +967,26 @@ private fun StatusBadge(text: String, containerColor: Color) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SessionReplayDialog(
     replayState: SessionReplayState,
+    deepAnalysis: SessionDeepAnalysis?,
+    gaps: List<SessionGapEntity>,
+    annotations: List<SessionAnnotationEntity>,
     onScrub: (Int) -> Unit,
     onTogglePlay: () -> Unit,
+    onAddBookmark: (TelemetrySampleEntity?, String, String) -> Unit,
+    onDeleteAnnotation: (Long) -> Unit,
+    onExportJson: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val session = replayState.session ?: return
     val currentSample = replayState.currentSample
     val tsFmt = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var tagInput by remember { mutableStateOf("") }
+    var noteInput by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -717,15 +998,39 @@ private fun SessionReplayDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "${stringResource(R.string.replay_title)} · ${explicitPortName(session.portId)}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${stringResource(R.string.replay_title)} · ${explicitPortName(session.portId)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                if ((deepAnalysis?.bridgeBackfilledSamples ?: 0) > 0) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.replay_bridge_badge_fmt,
+                                deepAnalysis?.bridgeBackfilledSamples ?: 0
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
 
             when {
                 replayState.isLoading -> {
@@ -751,6 +1056,9 @@ private fun SessionReplayDialog(
                     val lineColor = MaterialTheme.colorScheme.primary
                     val cursorColor = MaterialTheme.colorScheme.error
                     val surfaceHigh = MaterialTheme.colorScheme.surfaceContainerHigh
+                    val gapOverlayColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    val minTs = samples.first().timestampMs
+                    val maxTs = samples.last().timestampMs.coerceAtLeast(minTs + 1L)
 
                     Canvas(
                         modifier = Modifier
@@ -773,6 +1081,19 @@ private fun SessionReplayDialog(
                             }
                     ) {
                         if (samples.size >= 2) {
+                            val span = (maxTs - minTs).toFloat().coerceAtLeast(1f)
+                            for (g in gaps) {
+                                val gx0 = (((g.gapStartMs - minTs) / span).coerceIn(0f, 1f)) * size.width
+                                val gx1 = (((g.gapEndMs - minTs) / span).coerceIn(0f, 1f)) * size.width
+                                if (gx1 > gx0) {
+                                    drawRect(
+                                        color = gapOverlayColor,
+                                        topLeft = Offset(gx0, 0f),
+                                        size = Size((gx1 - gx0).coerceAtLeast(4f), size.height)
+                                    )
+                                }
+                            }
+
                             val padY = 6.dp.toPx()
                             val usableH = (size.height - padY * 2).coerceAtLeast(4f)
                             val offsets = samples.mapIndexed { idx, s ->
@@ -805,6 +1126,29 @@ private fun SessionReplayDialog(
                         }
                     }
 
+                    // Protocol timeline color bar
+                    val protoPrimary = MaterialTheme.colorScheme.primary
+                    val protoSecondary = MaterialTheme.colorScheme.tertiary
+                    val protoIdle = MaterialTheme.colorScheme.surfaceContainerHighest
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                    ) {
+                        val n = samples.size.coerceAtLeast(1)
+                        val stepW = size.width / n
+                        samples.forEachIndexed { idx, s ->
+                            val c = when {
+                                s.powerW < 0.5 -> protoIdle
+                                s.protocolName.contains("PD", ignoreCase = true) ||
+                                    s.protocolName.contains("Xiaomi", ignoreCase = true) -> protoPrimary
+                                else -> protoSecondary
+                            }
+                            drawRect(c, topLeft = Offset(idx * stepW, 0f), size = Size(stepW + 0.5f, size.height))
+                        }
+                    }
+
                     if (currentSample != null) {
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceContainer,
@@ -820,8 +1164,11 @@ private fun SessionReplayDialog(
                                 val unitV = stringResource(R.string.unit_v)
                                 val unitA = stringResource(R.string.unit_a)
                                 val unitWh = stringResource(R.string.unit_wh)
+                                val srcSuffix = if (currentSample.sourceMode == "BRIDGE_SYNC") {
+                                    " · ${stringResource(R.string.analytics_source_badge_bridge)}"
+                                } else ""
                                 Text(
-                                    text = "${tsFmt.format(Date(currentSample.timestampMs))} · ${currentSample.protocolName}",
+                                    text = "${tsFmt.format(Date(currentSample.timestampMs))} · ${currentSample.protocolName}$srcSuffix",
                                     style = MaterialTheme.typography.labelLarge.tabularNums(),
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -888,6 +1235,223 @@ private fun SessionReplayDialog(
                             text = "${replayState.cursorIndex + 1} / ${samples.size}",
                             style = MaterialTheme.typography.labelMedium.tabularNums()
                         )
+                    }
+
+                    // Deep Phase Segmentation & Stability Quality
+                    if (deepAnalysis != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("replay_deep_analysis_card")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.replay_phases_header),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.replay_metrics_fmt,
+                                        deepAnalysis.powerVolatilityIndexPct,
+                                        deepAnalysis.voltageStabilityScore,
+                                        deepAnalysis.currentStabilityScore,
+                                        deepAnalysis.vsNormWhRatio
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = TelemetryMonoFontFamily
+                                    ).tabularNums(),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (deepAnalysis.cadenceSufficient) {
+                                        stringResource(
+                                            R.string.replay_ramp_fmt,
+                                            deepAnalysis.rampUpSec.toInt(),
+                                            deepAnalysis.stabilizationSec.toInt(),
+                                            deepAnalysis.medianCadenceMs.toInt()
+                                        )
+                                    } else {
+                                        stringResource(
+                                            R.string.replay_cadence_insufficient_fmt,
+                                            deepAnalysis.medianCadenceMs.toInt()
+                                        )
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (deepAnalysis.phases.isNotEmpty()) {
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        deepAnalysis.phases.take(8).forEach { seg ->
+                                            val phaseRes = when (seg.phase) {
+                                                SessionPhaseType.RAMP_UP -> R.string.replay_phase_ramp_up
+                                                SessionPhaseType.STABLE -> R.string.replay_phase_stable
+                                                SessionPhaseType.TAPER -> R.string.replay_phase_taper
+                                                SessionPhaseType.POWER_DROP -> R.string.replay_phase_drop
+                                                SessionPhaseType.INTERRUPTION -> R.string.replay_phase_interruption
+                                                SessionPhaseType.IDLE -> R.string.replay_phase_idle
+                                            }
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${stringResource(phaseRes)} · ${seg.durationSec}s",
+                                                    style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (deepAnalysis.dropExplanations.isNotEmpty()) {
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                                    Text(
+                                        text = stringResource(R.string.replay_drops_header),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    deepAnalysis.dropExplanations.take(4).forEach { drop ->
+                                        val reasonLabel = when (drop.causeCode) {
+                                            "NEIGHBOR_PORT_ACTIVATED" -> stringResource(R.string.replay_drop_neighbor)
+                                            "PROTOCOL_STEP_DOWN" -> stringResource(R.string.replay_drop_protocol)
+                                            "BLE_GAP_OVERLAP" -> stringResource(R.string.replay_drop_ble_gap)
+                                            else -> stringResource(R.string.replay_drop_taper)
+                                        }
+                                        Text(
+                                            text = "${tsFmt.format(Date(drop.timestampMs))} · $reasonLabel (-${drop.dropPct.toInt()}%: ${drop.detail})",
+                                            style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Bookmarks & Annotations
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.replay_bookmarks_header),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = tagInput,
+                                    onValueChange = { tagInput = it },
+                                    label = { Text(stringResource(R.string.replay_bookmark_tag_label)) },
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("replay_bookmark_tag_input")
+                                )
+                                OutlinedTextField(
+                                    value = noteInput,
+                                    onValueChange = { noteInput = it },
+                                    label = { Text(stringResource(R.string.replay_bookmark_note_label)) },
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("replay_bookmark_note_input")
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        onAddBookmark(currentSample, tagInput, noteInput)
+                                        tagInput = ""
+                                        noteInput = ""
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("replay_add_bookmark_btn")
+                                ) {
+                                    Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.replay_add_bookmark_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                OutlinedButton(
+                                    onClick = onExportJson,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("replay_export_json_btn")
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.replay_export_json_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            if (annotations.isNotEmpty()) {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.testTag("replay_annotation_list")
+                                ) {
+                                    annotations.forEach { ann ->
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.surfaceContainer,
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = buildString {
+                                                        append("[${ann.tagLabel}] ")
+                                                        if (ann.timestampMs > 0L) append("${tsFmt.format(Date(ann.timestampMs))} · ")
+                                                        append("${String.format(Locale.US, "%.1f", ann.powerW)}W")
+                                                        if (ann.noteText.isNotBlank()) append(" — ${ann.noteText}")
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall.tabularNums(),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                IconButton(
+                                                    onClick = { onDeleteAnnotation(ann.id) },
+                                                    modifier = Modifier.size(48.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = stringResource(R.string.cd_close),
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="com.example.widget.CuktechWidgetConfigActivity"
+    android:description="@string/widget_port_desc"
+    android:initialLayout="@layout/widget_cuktech_port"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:previewLayout="@layout/widget_cuktech_port"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable|configuration_optional" />

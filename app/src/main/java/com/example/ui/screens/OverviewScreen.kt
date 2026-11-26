@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.ui.components.WorkspaceAndCustomKpisCard
 import com.example.cuktech.ble.CuktechAuthState
 import com.example.cuktech.power.CableHealthRating
 import com.example.cuktech.power.EtaEstimate
@@ -91,9 +92,12 @@ import com.example.cuktech.protocol.C3ASharedBusState
 import com.example.cuktech.protocol.PortTelemetry
 import com.example.ui.components.AliasEditDialog
 import com.example.ui.components.ExpressiveSparkline
+import com.example.ui.components.MultiChargerAndIntegrityStrip
+import com.example.ui.components.MultiChargerHubSheet
 import com.example.ui.components.PowerBudgetCard
 import com.example.ui.components.SaveChargingProfileDialog
 import com.example.ui.components.ScenarioSelectionDialog
+import com.example.ui.components.TelemetryIntegrityAndRadarSheet
 import com.example.ui.components.explicitPortName
 import com.example.ui.components.formatDurationHms
 import com.example.ui.components.localizedScenarioName
@@ -144,10 +148,20 @@ fun OverviewScreen(
     val cableDiagnostics by viewModel.cableDiagnostics.collectAsStateWithLifecycle()
     val automationRules by viewModel.automationRules.collectAsStateWithLifecycle()
     val isAutoReconnectConfigured by viewModel.isAutoReconnectConfigured.collectAsStateWithLifecycle()
+    val integritySnapshot by viewModel.integritySnapshot.collectAsStateWithLifecycle()
+    val rssiHistory by viewModel.rssiHistory.collectAsStateWithLifecycle()
+    val sessionGaps by viewModel.sessionGaps.collectAsStateWithLifecycle()
+    val chargerNodes by viewModel.chargerNodes.collectAsStateWithLifecycle()
+    val savedDevices by viewModel.savedDevices.collectAsStateWithLifecycle()
+    val bridgeSyncing by viewModel.bridgeSyncing.collectAsStateWithLifecycle()
+    val evaluatedKpis by viewModel.evaluatedKpis.collectAsStateWithLifecycle()
+    val fleetSummary by viewModel.fleetSummary.collectAsStateWithLifecycle()
 
     var showScenarioDialog by remember { mutableStateOf(false) }
     var editingChargerAlias by remember { mutableStateOf(false) }
     var showSaveProfileDialog by remember { mutableStateOf(false) }
+    var showMultiChargerSheet by remember { mutableStateOf(false) }
+    var showIntegritySheet by remember { mutableStateOf(false) }
 
     val haptic = LocalHapticFeedback.current
     val semantic = LocalSemanticColors.current
@@ -193,6 +207,46 @@ fun OverviewScreen(
                 viewModel.saveCurrentAsProfile(profileName)
             },
             onDismiss = { showSaveProfileDialog = false }
+        )
+    }
+
+    val activeMacResolved = remember(devInfo.macAddress, activeCred) {
+        devInfo.macAddress.takeIf { it.isNotBlank() && it != "--" } ?: activeCred?.mac.orEmpty()
+    }
+    val activeNodeLabel = remember(chargerAlias, chargerNodes, activeMacResolved, devInfo.name) {
+        val node = chargerNodes.firstOrNull { it.deviceMac.equals(activeMacResolved, ignoreCase = true) }
+        chargerAlias?.takeIf { it.isNotBlank() }
+            ?: node?.locationContext?.takeIf { it.isNotBlank() && !it.equals("Default", ignoreCase = true) }
+            ?: node?.name?.takeIf { it.isNotBlank() }
+            ?: devInfo.name.ifBlank { "CUKTECH 10 Ultra" }
+    }
+
+    if (showMultiChargerSheet) {
+        MultiChargerHubSheet(
+            savedDevices = savedDevices,
+            chargerNodes = chargerNodes,
+            activeMac = activeMacResolved,
+            onSwitchCharger = { mac ->
+                showMultiChargerSheet = false
+                viewModel.switchActiveCharger(mac)
+            },
+            onSaveNodeMeta = { mac, name, location, mains ->
+                viewModel.updateChargerNodeMeta(mac, name, location, mains)
+            },
+            onDismiss = { showMultiChargerSheet = false },
+            fleetSummary = fleetSummary
+        )
+    }
+
+    if (showIntegritySheet) {
+        TelemetryIntegrityAndRadarSheet(
+            integrity = integritySnapshot,
+            rssiHistory = rssiHistory,
+            gaps = sessionGaps,
+            bridgeEnabled = prefs.bridgeSyncEnabled,
+            bridgeSyncing = bridgeSyncing,
+            onSyncBridgeNow = { viewModel.syncFromBridgeNow() },
+            onDismiss = { showIntegritySheet = false }
         )
     }
 
@@ -349,6 +403,25 @@ fun OverviewScreen(
                 }
             }
         }
+
+        MultiChargerAndIntegrityStrip(
+            activeNodeLabel = activeNodeLabel,
+            nodesCount = maxOf(chargerNodes.size, savedDevices.size),
+            integrity = integritySnapshot,
+            onOpenChargerHub = { showMultiChargerSheet = true },
+            onOpenIntegritySheet = { showIntegritySheet = true }
+        )
+
+        WorkspaceAndCustomKpisCard(
+            activeWorkspaceId = prefs.activeWorkspaceId,
+            kpis = evaluatedKpis,
+            currencyCode = prefs.currencyCode,
+            onSelectWorkspace = { viewModel.selectWorkspace(it) },
+            onAddKpi = { title, formula, unit, target ->
+                viewModel.addCustomKpi(title, formula, unit, target)
+            },
+            onDeleteKpi = { viewModel.deleteCustomKpi(it) }
+        )
 
         // Unified Charger Visual + Live Output Hero Card
         val heroPulseTransition = rememberInfiniteTransition(label = "hero_power_pulse")

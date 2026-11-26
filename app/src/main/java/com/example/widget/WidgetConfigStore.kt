@@ -151,6 +151,7 @@ object CuktechWidgetUpdater {
         updateScope.launch {
             runCatching { CuktechGlanceControlWidget.updateAll(appCtx) }
             runCatching { CuktechGlanceCompactWidget.updateAll(appCtx) }
+            runCatching { CuktechGlancePortWidget.updateAll(appCtx) }
         }
     }
 

@@ -813,4 +813,446 @@
     <string name="port_manual_multi_34p">• C1 + C2 + C3: например 45 Вт + 45 Вт + 30 Вт (до 120 Вт суммарно)\n• Все 4 порта (C1+C2+C3+A): до 110–120 Вт всего, при этом C3+A работают в режиме 5В / 15 Вт</string>
     <string name="port_manual_scenarios_header">Сценарии мощности ADC 2.0 (BLE)</string>
     <string name="port_manual_scenarios_body">• AI-режим: автоматическая балансировка мощности между всеми активными портами.\n• Гибрид: удерживает повышенный бюджет для ноутбука на USB-C1.\n• Одиночный: максимум мощности на один основной порт.\n• Двойной: сбалансированное разделение мощности между C1 и C2 с минимумом переподключений.</string>
+
+    <!-- Этап 1: Гибридная непрерывность BLE, мульти-БП, радар сигнала и аудит команд -->
+    <string name="event_ble_exit_title">Выход из зоны BLE зарядника</string>
+    <string name="event_ble_exit_detail_fmt">Сигнал упал до %1$d дБм при нагрузке %2$.1f Вт</string>
+    <string name="notif_ble_exit_limit_body_fmt">Сигнал %1$d дБм (%2$.1f Вт). Отсечка по Вт·ч требует телефон в зоне BLE или стационарный мост.</string>
+    <string name="event_bridge_sync_title">Докачка со стационарного моста</string>
+    <string name="event_bridge_sync_detail_fmt">Синхронизировано %1$d точек телеметрии за время отсутствия</string>
+
+    <string name="overview_multi_charger_strip_fmt">%1$s · узлов: %2$d</string>
+    <string name="overview_confidence_high">Точные данные</string>
+    <string name="overview_confidence_medium">Есть разрывы</string>
+    <string name="overview_confidence_low">Офлайн / Разрыв</string>
+    <string name="overview_confidence_score_fmt">Доверие %1$d%%</string>
+
+    <string name="multi_charger_hub_title">Хаб блоков питания</string>
+    <string name="multi_charger_hub_desc">Переключайтесь между блоками CUKTECH 10 Ultra и задавайте комнату/розетку и потолок сети (110В = 110 Вт макс., 220В = 120 Вт макс.).</string>
+    <string name="multi_charger_active_badge">Активен</string>
+    <string name="multi_charger_connect_btn">Выбрать</string>
+    <string name="multi_charger_location_label">Комната / Розетка</string>
+    <string name="multi_charger_mains_label">Потолок сети AC</string>
+    <string name="multi_charger_mains_220">220В (макс. 120 Вт)</string>
+    <string name="multi_charger_mains_110">110В (макс. 110 Вт)</string>
+    <string name="multi_charger_empty">Подключите или синхронизируйте CUKTECH 10 Ultra для управления несколькими блоками.</string>
+
+    <string name="integrity_sheet_title">Качество данных и BLE-радар</string>
+    <string name="integrity_score_title_fmt">Уверенность телеметрии: %1$d%%</string>
+    <string name="integrity_cadence_fmt">Интервал %1$d мс · Джиттер %2$d мс</string>
+    <string name="integrity_uptime_fmt">Покрытие 24ч: %1$.1f%% · Переподключений: %2$d</string>
+    <string name="integrity_sources_fmt">Прямой BLE: %1$d · Мост: %2$d</string>
+    <string name="integrity_blind_gaps_fmt">Слепых разрывов BLE: %1$d (%2$.1f мин — Вт·ч не додумываются)</string>
+    <string name="integrity_backfill_btn">Докачать с моста сейчас</string>
+    <string name="integrity_rssi_radar_title">BLE-радар близости и риск обрыва</string>
+    <string name="integrity_rssi_risk_low">Стабильно</string>
+    <string name="integrity_rssi_risk_medium">Отдаление</string>
+    <string name="integrity_rssi_risk_high">Порог разрыва</string>
+    <string name="integrity_gaps_log_title">Зафиксированные разрывы BLE (24ч)</string>
+    <string name="integrity_gap_backfilled_fmt">Восстановлено мостом (%1$d тчк)</string>
+    <string name="integrity_gap_open_label">Неизмеренный разрыв BLE</string>
+    <string name="integrity_reason_live_direct">Идёт прямой опрос по BLE с телефона</string>
+    <string name="integrity_reason_bridge_backfilled">Разрывы закрыты данными со стационарного моста</string>
+    <string name="integrity_reason_ble_disconnected">Отключено (ожидание возврата в зону BLE или моста)</string>
+    <string name="integrity_reason_telemetry_stale">Задержка пакетов (&gt;8с без новой телеметрии)</string>
+    <string name="integrity_reason_weak_signal">Слабый сигнал RSSI — риск выхода из зоны BLE</string>
+    <string name="integrity_reason_blind_gap_open">Есть незаполненные интервалы ухода от розетки</string>
+
+    <string name="diag_wizard_title">Мастер подключения и авторизации (6 шагов)</string>
+    <string name="wizard_bt_perm">Разрешения Bluetooth Nearby</string>
+    <string name="wizard_bt_adapter">Адаптер Bluetooth включён</string>
+    <string name="wizard_ble_scan">Маяк BLE CUKTECH обнаружен</string>
+    <string name="wizard_creds_ready">Токен MiOT устройства найден</string>
+    <string name="wizard_gatt_a4">Службы GATT и рукопожатие 0xA4</string>
+    <string name="wizard_miot_session">Шифрованная сессия MiOT активна</string>
+    <string name="diag_audit_title">Аудит команд и счётчики износа реле</string>
+    <string name="diag_wear_soft_resets_fmt">Сбросы Soft Reset: %1$d · Killswitch: %2$d</string>
+    <string name="diag_audit_empty">Команды ещё не выполнялись.</string>
+    <string name="diag_audit_reconciled">Подтв.</string>
+    <string name="diag_audit_rejected">Отклон.</string>
+
+    <string name="settings_section_continuity">Гибрид BLE-непрерывности и стационарный мост</string>
+    <string name="settings_bridge_enable">Включить докачку со стационарного моста</string>
+    <string name="settings_bridge_desc">Укажите домашний BLE-шлюз (HTTP/JSON), чтобы заряды в ваше отсутствие автоматически склеивались при возвращении в зону Wi-Fi/BLE.</string>
+    <string name="settings_bridge_url_label">URL моста (напр. http://192.168.1.50:8787)</string>
+    <string name="settings_bridge_token_label">Bearer-токен моста (опционально)</string>
+    <string name="settings_bridge_test_btn">Проверить</string>
+    <string name="settings_bridge_sync_now_btn">Докачать</string>
+    <string name="settings_bridge_status_online_fmt">Мост в сети %1$s · в буфере %2$d тчк</string>
+    <string name="settings_bridge_status_offline_fmt">Мост недоступен: %1$s</string>
+    <string name="settings_ble_exit_enable">Предупреждать о выходе из зоны BLE под нагрузкой</string>
+    <string name="settings_ble_exit_threshold_fmt">Порог тревоги RSSI: %1$d дБм</string>
+    <string name="toast_bridge_sync_ok_fmt">С моста загружено %1$d новых точек</string>
+    <string name="toast_bridge_sync_fail_fmt">Ошибка синхронизации моста: %1$s</string>
+
+    <!-- Этап 2: Жизненный цикл портов, профили мощности и протоколы -->
+    <string name="analytics_tab_summary">Сводка</string>
+    <string name="analytics_tab_lifecycle">Порты и цикл</string>
+    <string name="analytics_tab_power_protocols">Мощность и протоколы</string>
+    <string name="analytics_window_1d">24ч</string>
+    <string name="analytics_window_7d">7д</string>
+    <string name="analytics_window_30d">30д</string>
+    <string name="analytics_source_badge_bridge">МОСТ</string>
+    <string name="analytics_source_badge_mixed_fmt">BLE %1$d · Мост %2$d</string>
+
+    <string name="lifecycle_ports_card_title">Статистика жизненного цикла портов</string>
+    <string name="lifecycle_ports_empty">В выбранном окне пока недостаточно телеметрии портов.</string>
+    <string name="lifecycle_conn_count_fmt">Рейтинг #%1$d · сессий: %2$d</string>
+    <string name="lifecycle_occ_util_eff_fmt">Занят %1$.0f%% · Активен %2$.0f%% · КПД %3$.0f%%</string>
+    <string name="lifecycle_idle_fmt">Простой с кабелем: %1$.0f мин (%2$.2f Вт·ч)</string>
+    <string name="lifecycle_rapid_drops_fmt">Быстрые реконнекты (&lt;60с): %1$d · Подтв. обрывов: %2$d</string>
+    <string name="lifecycle_ble_gap_note">Внезапные обрывы учитываются только при непрерывном BLE-опросе (&lt;=10с), исключая уход телефона из радиуса.</string>
+    <string name="lifecycle_multiport_title">Одновременная работа портов</string>
+    <string name="lifecycle_multiport_row_fmt">1П: %1$.0fм · 2П: %2$.0fм · 3П: %3$.0fм · 4П: %4$.0fм (Макс %5$d)</string>
+    <string name="lifecycle_heatmap_title">Недельная тепловая карта (Пн–Вс · блоки по 4ч)</string>
+    <string name="lifecycle_heatmap_subtitle">Плотность потребления Вт·ч по 4-часовым интервалам</string>
+    <string name="lifecycle_hourly_title">Суточный профиль энергии по часам (Вт·ч)</string>
+
+    <string name="power_bands_title">Распределение по диапазонам мощности</string>
+    <string name="power_plateaus_fmt">На пике (&gt;=85%%): %1$.1f мин (%2$d плато) · Медиана %3$.1f Вт · %4$.1f Вт·ч/ч</string>
+    <string name="power_hist_voltage_title">Гистограмма напряжений</string>
+    <string name="power_hist_current_title">Гистограмма тока</string>
+    <string name="power_peaks_dips_title">Топ пиков и заметных просадок мощности</string>
+    <string name="power_protocols_title">Статистика протоколов быстрой зарядки</string>
+    <string name="power_protocols_honesty_note">C1/C2 берут точный код из регистра PIID 17. C3/USB-A используют эвристику PIID 18 и V·A (шаг АЦП 0.1В/0.1А).</string>
+    <string name="proto_badge_exact_c12">Точный PIID 17</string>
+    <string name="proto_badge_heuristic_c3a">Эвристика C3/A</string>
+
+    <!-- Этап 3: Сценарии, PDO-обозреватель, матрица портов и симулятор нагрузки -->
+    <string name="analytics_tab_scenes_pdo">Сценарии и PDO</string>
+    <string name="analytics_tab_session_lab">Лаборатория</string>
+
+    <string name="pdo_explorer_title">Обозреватель PDO и линий напряжения</string>
+    <string name="pdo_explorer_hw_badge">Аппаратный PIID 7/8</string>
+    <string name="pdo_explorer_est_badge">Только замеры V·A</string>
+    <string name="pdo_explorer_c3a_notice">C1/C2 передают точные профили PDO (PIID 7/8) и флаги протоколов. C3/USB-A не отдают таблицу PDO и оцениваются исключительно по фактическим замерам V·A.</string>
+    <string name="pdo_explorer_pps_fmt">PPS ≤%1$.0fВ</string>
+    <string name="pdo_explorer_declared_fmt">Заявлено PDO: %1$s</string>
+    <string name="pdo_explorer_samples_fmt">%1$d замеров</string>
+    <string name="pdo_explorer_no_bands">В этом окне пока нет активных полос напряжения.</string>
+    <string name="pdo_explorer_perm_enabled">%1$s ВКЛ</string>
+    <string name="pdo_explorer_perm_disabled">%1$s ВЫКЛ</string>
+
+    <string name="scene_matrix_title">Эмпирическая матрица сценариев и портов</string>
+    <string name="scene_matrix_obs_fmt">%1$d наблюдений</string>
+    <string name="scene_matrix_empty">Подключите устройства, чтобы накопить реальную статистику распределения мощности в режимах AI, Гибрид, Одиночный и Двойной.</string>
+    <string name="scene_stat_row_fmt">%1$d набл. · Сред. %2$.1f Вт · Пик %3$.1f Вт · Топ %4$s</string>
+    <string name="scene_matrix_combos_header">Наблюдаемые комбинации портов</string>
+    <string name="scene_matrix_combo_row_fmt">%1$d набл. · Сред. %2$.1f Вт · Пик %3$.1f Вт</string>
+    <string name="scene_matrix_c3a_shared_badge">C3+A общие 5В (%1$d)</string>
+
+    <string name="load_sim_title">Интерактивный симулятор нагрузки</string>
+    <string name="load_sim_desc">Выберите активные порты и сценарий ADC 2.0, чтобы оценить потолок мощности по вашей истории замеров или паспортной таблице 110В/220В.</string>
+    <string name="load_sim_conf_high">Факт · Высокая (%1$d набл.)</string>
+    <string name="load_sim_conf_medium">Факт · Средняя (%1$d набл.)</string>
+    <string name="load_sim_conf_estimate">Паспортная оценка (%1$d набл.)</string>
+    <string name="load_sim_ceiling_fmt">Оценка потолка %1$.1f / %2$.0f Вт</string>
+    <string name="load_sim_headroom_fmt">Запас %1$.1f Вт</string>
+    <string name="load_sim_c3a_alert">C3 + USB-A активны вместе: вторичная шина фиксируется на общих 5В / макс. 15 Вт.</string>
+    <string name="load_sim_idle_prompt">Выберите хотя бы один порт (C1–A) для расчёта распределения.</string>
+    <string name="load_sim_disclaimer_history">Рассчитано по реальной телеметрии БП при совпадении режима и активных портов.</string>
+    <string name="load_sim_disclaimer_estimate">Оценка по паспортным характеристикам AD1204 (недостаточно накопленных замеров).</string>
+
+    <string name="proto_transitions_title">Граф переходов протоколов</string>
+    <string name="proto_transitions_empty">За выбранный период переключений протоколов (при интервале ≤15с) не обнаружено.</string>
+    <string name="proto_transition_row_fmt">%1$s: %2$s → %3$s (%4$d×)</string>
+    <string name="proto_transition_delta_fmt">%1$.1f → %2$.1f Вт (%3$+.1f Вт)</string>
+    <string name="proto_transition_osc_badge">Осцилляция ≥3/2м</string>
+
+    <!-- Этап 4: Лаборатория сессий, рекорды, сравнение, глубокий реплей и чёрный ящик -->
+    <string name="session_records_title">Личные рекорды и нормы</string>
+    <string name="session_records_empty">Завершите хотя бы одну зарядку для расчёта рекордов и норм.</string>
+    <string name="session_rec_peak">Рекорд пика</string>
+    <string name="session_rec_wh">Макс. энергия</string>
+    <string name="session_rec_dur">Длительность</string>
+    <string name="session_rec_rate">Темп Вт·ч/ч</string>
+    <string name="session_rec_rate_fmt">%1$.1f Вт·ч/ч</string>
+    <string name="session_rec_failure_fmt">Завершено: %1$d · Обрывы/отсечки: %2$.1f%%</string>
+    <string name="session_class_fast_boost">Быстрый буст</string>
+    <string name="session_class_long_steady">Долгая ровная</string>
+    <string name="session_class_short_burst">Короткая</string>
+    <string name="session_class_interrupted">С разрывом BLE</string>
+    <string name="session_class_trickle">Малый ток</string>
+    <string name="session_class_multiport">Мульти-порт</string>
+    <string name="session_class_drop">Срыв / Отсечка</string>
+
+    <string name="session_compare_title">Наложение двух сессий</string>
+    <string name="session_compare_empty">Запишите хотя бы 2 сессии, чтобы сравнить кривые мощности на одном графике.</string>
+    <string name="session_compare_pick_a">Сессия A</string>
+    <string name="session_compare_pick_b">Сессия B</string>
+    <string name="session_compare_align_time">По времени (мин)</string>
+    <string name="session_compare_align_wh">По энергии (Вт·ч)</string>
+    <string name="session_compare_delta_fmt">ΔЭнергия %1$+.2f Вт·ч · ΔПик %2$+.1f Вт · ΔСред %3$+.1f Вт · ΔВремя %4$s</string>
+    <string name="session_compare_item_fmt">#%1$d %2$s · %3$.2f Вт·ч (%4$.0fВт пик)</string>
+
+    <string name="blackbox_title">Чёрный ящик инцидентов (кольцевой буфер 5 мин)</string>
+    <string name="blackbox_desc">Автоматически сохраняет последние 5 минут телеметрии всех портов и событий BLE/команд при внезапном срыве или сбросе протокола.</string>
+    <string name="blackbox_capture_btn">Снять дамп сейчас</string>
+    <string name="blackbox_empty">Инцидентов пока не зафиксировано.</string>
+    <string name="blackbox_type_manual">Ручной снимок</string>
+    <string name="blackbox_type_drop">Внезапный обрыв</string>
+    <string name="blackbox_type_proto">Сброс кабеля / PD</string>
+    <string name="blackbox_copy_json">Копировать JSON</string>
+    <string name="toast_blackbox_captured">Дамп чёрного ящика сохранён</string>
+    <string name="toast_json_copied">JSON скопирован в буфер обмена</string>
+
+    <!-- Расширенный разбор в диалоге реплея сессии -->
+    <string name="replay_phases_header">Фазы и стабильность цикла</string>
+    <string name="replay_phase_ramp_up">Разгон</string>
+    <string name="replay_phase_stable">Плато</string>
+    <string name="replay_phase_taper">Спад</string>
+    <string name="replay_phase_drop">Просадка</string>
+    <string name="replay_phase_interruption">Разрыв BLE</string>
+    <string name="replay_phase_idle">Простой</string>
+    <string name="replay_metrics_fmt">Волатильность %1$.1f%% · V-стаб %2$d%% · A-стаб %3$d%% · к норме %4$.2f× Вт·ч</string>
+    <string name="replay_ramp_fmt">Разгон %1$dс · Стабилизация %2$dс (опрос %3$d мс)</string>
+    <string name="replay_cadence_insufficient_fmt">Разгон скрыт: интервал %1$d мс (&gt;3.5с) или разрыв BLE на старте</string>
+    <string name="replay_bridge_badge_fmt">МОСТ · %1$d тчк</string>
+    <string name="replay_drops_header">Причины резких просадок мощности</string>
+    <string name="replay_drop_neighbor">Включился соседний порт</string>
+    <string name="replay_drop_protocol">Шаг вниз по протоколу</string>
+    <string name="replay_drop_ble_gap">Наложение разрыва BLE</string>
+    <string name="replay_drop_taper">Снижение нагрузки устройством</string>
+    <string name="replay_bookmarks_header">Закладки и теги реплея</string>
+    <string name="replay_bookmark_tag_label">Тег (напр. Пик, Нагрев)</string>
+    <string name="replay_bookmark_note_label">Заметка (опционально)</string>
+    <string name="replay_add_bookmark_btn">Добавить закладку</string>
+    <string name="replay_export_json_btn">Экспорт JSON с разметкой</string>
+
+    <!-- Этап 5: Инвентарь устройств и кабелей, лаборатория 0.1В, батарея телефона и паспорт БП -->
+    <string name="analytics_tab_inventory_lab">Инвентарь и кабели</string>
+
+    <string name="phone_batt_title">Калибровка по батарее телефона</string>
+    <string name="phone_batt_refresh_btn">Обновить</string>
+    <string name="phone_batt_soc_fmt">Заряд %1$d%% · %2$.2f В · %3$d мА</string>
+    <string name="phone_batt_power_temp_fmt">В батарею %1$.2f Вт · Темп. %2$.1f °C · %3$s</string>
+    <string name="phone_batt_eff_fmt">Порт %1$s · Оценка КПД до батареи: %2$d%%</string>
+    <string name="phone_batt_unplugged">Телефон сейчас не заряжается от совпавшего порта БП.</string>
+    <string name="phone_batt_disclaimer">Только оценка: BatteryManager показывает чистый приток в ячейку за вычетом экрана, CPU и модема.</string>
+
+    <string name="device_inv_title">Инвентарь устройств и подбор кривой</string>
+    <string name="device_inv_add_btn">Добавить</string>
+    <string name="device_inv_empty">Устройства ещё не добавлены. Занесите ноутбук, смартфон или павербанк для автопривязки сессий.</string>
+    <string name="device_inv_meta_fmt">%1$s · %2$.0f Вт·ч · макс %3$.0f Вт · %4$s</string>
+    <string name="device_inv_stats_fmt">Накоплено: %1$.2f Вт·ч · сессий: %2$d</string>
+    <string name="device_suggest_title_fmt">Привязать последнюю сессию к «%1$s»? (%2$d%%)</string>
+    <string name="device_suggest_detail_fmt">Пик %1$.1f Вт · %2$.2f Вт·ч на %3$s (%4$s)</string>
+    <string name="device_suggest_confirm_btn">Подтвердить</string>
+    <string name="device_dialog_title">Добавить устройство</string>
+    <string name="device_dialog_name_label">Название (напр. Pixel 9 Pro)</string>
+    <string name="device_dialog_wh_label">Ёмкость батареи (Вт·ч)</string>
+    <string name="device_dialog_maxw_label">Паспортная мощность (Вт)</string>
+    <string name="device_dialog_proto_label">Протокол (PD / PPS / QC)</string>
+    <string name="device_cat_phone">Смартфон</string>
+    <string name="device_cat_laptop">Ноутбук</string>
+    <string name="device_cat_tablet">Планшет</string>
+    <string name="device_cat_powerbank">Павербанк</string>
+
+    <string name="cable_lab_title">Кабели и тест петли (компенсатор 0.1В)</string>
+    <string name="cable_lab_add_btn">Добавить кабель</string>
+    <string name="cable_lab_empty">Кабели не добавлены. Сохраните кабель или проверьте любой фиксированный порт (≥1.5А).</string>
+    <string name="cable_lab_meta_fmt">%1$s · %2$dА · %3$d см · E-Marker: %4$s</string>
+    <string name="cable_lab_last_fmt">Петля: %1$d ±%2$d мОм (просадка %3$d мВ · тестов: %4$d)</string>
+    <string name="cable_lab_select_label">Кабель для теста</string>
+    <string name="cable_lab_adhoc">Без привязки к кабелю</string>
+    <string name="cable_lab_start_btn">Замер 12с</string>
+    <string name="cable_lab_cancel_btn">Отмена (%1$d/%2$d)</string>
+    <string name="cable_lab_analyze_recent_btn">Анализ за 30м</string>
+    <string name="cable_lab_disclaimer">Оценивает всю цепь (порт + кабель + разъём) на фиксированной линии PD/QC ≥1.5А. Погрешность ±мОм вызвана шагом АЦП 0.1В; PPS/Xiaomi исключены.</string>
+    <string name="cable_lab_err_pps">Активен плавающий PPS / HyperCharge — для замера просадки нужна фиксированная линия (5/9/12/15/20В).</string>
+    <string name="cable_lab_err_low_current">Ток ниже 1.5А — нужна нагрузка от 1.5А, чтобы просадка была видна над шагом АЦП 0.1В.</string>
+    <string name="cable_lab_err_few_samples">Недостаточно замеров (нужно ≥5 стабильных точек под нагрузкой на фикс. линии).</string>
+    <string name="cable_lab_err_no_rail">Напряжение не совпадает со стандартной фиксированной шиной (5/9/12/15/20В).</string>
+    <string name="cable_lab_ok_msg">Тест кабеля сохранён с указанием погрешности ±мОм.</string>
+    <string name="cable_lab_result_row_fmt">%1$s · %2$s @ %3$.0fВ (%4$.1fА) → %5$d ±%6$d мОм · %7$s</string>
+    <string name="cable_dialog_title">Добавить USB-кабель</string>
+    <string name="cable_dialog_name_label">Название (напр. Cuktech 6A)</string>
+    <string name="cable_dialog_amps_label">Номинал тока (3 / 5 / 6 А)</string>
+    <string name="cable_dialog_length_label">Длина (см)</string>
+    <string name="cable_dialog_emarker">Встроенный чип E-Marker</string>
+
+    <string name="passport_title">Паспорт БП и обезличенный экспорт</string>
+    <string name="passport_header_fmt">%1$s · %2$s · сеть %3$dВ</string>
+    <string name="passport_stats_fmt">Сессий: %1$d · Отдано: %2$.2f Вт·ч · Тестов кабеля: %3$d</string>
+    <string name="passport_avg_mohm_fmt">Среднее сопротивление петли: %1$d мОм</string>
+    <string name="passport_export_btn">Экспорт обезличенного JSON</string>
+    <string name="passport_export_note">Перед копированием удаляются MAC-адреса, токены MiOT, названия устройств и личные заметки.</string>
+    <string name="action_delete">Удалить</string>
+
+    <!-- Этап 6: Безопасность автоматизации, симулятор, дедлайны, плитка QS, NFC URI и виджет порта -->
+    <string name="qs_tile_label">CUKTECH C1</string>
+    <string name="widget_port_name">Фокус на порт (2×2)</string>
+    <string name="widget_port_desc">Живое напряжение, ток, ватты и мини-график для выбранного порта.</string>
+    <string name="widget_preview_port_title">Один порт + мини-график (2×2)</string>
+
+    <string name="automation_trig_power_guard">Порог мощности (ПО)</string>
+    <string name="automation_trig_phone_soc">Заряд телефона %</string>
+    <string name="automation_act_usba_trickle">USB-A малый ток (4ч)</string>
+    <string name="automation_act_smart_display">Ночной экран</string>
+    <string name="automation_priority_label">Приоритет правила</string>
+    <string name="automation_priority_high">P1 Высокий</string>
+    <string name="automation_priority_normal">P5 Обычный</string>
+    <string name="automation_priority_low">P10 Низкий</string>
+    <string name="automation_phone_soc_fmt">Отключить порт при заряде телефона %1$d%%</string>
+    <string name="automation_power_guard_note">Программная защита по опросу BLE (задержка ~1–2с); не заменяет аппаратный предохранитель/OCP.</string>
+    <string name="automation_display_night_note">Включает автогашение при простое и таймаут экрана 10с.</string>
+
+    <string name="automation_safety_title">Контроль конфликтов и симулятор 24ч</string>
+    <string name="automation_safety_stale_note">Защита от устаревших данных BLE: правила блокируются, если пакету >12с или связь потеряна.</string>
+    <string name="automation_safety_clean">Конфликтов правил и циклов переключения не обнаружено.</string>
+    <string name="automation_simulate_btn">Симуляция на истории 24ч</string>
+    <string name="automation_sim_result_fmt">Проверено %1$d точек (пропущено пауз BLE: %2$d) · срабатываний: %3$d</string>
+
+    <string name="deadline_queue_title">Очередь приоритетов и дедлайны</string>
+    <string name="deadline_add_btn">Добавить дедлайн</string>
+    <string name="deadline_empty">Цели по времени ещё не заданы. Укажите нужные Вт·ч и срок, чтобы видеть запас по времени.</string>
+    <string name="deadline_status_completed">ГОТОВО</string>
+    <string name="deadline_status_on_track">В СРОК</string>
+    <string name="deadline_status_at_risk">НА ГРАНИ</string>
+    <string name="deadline_status_will_miss">НЕ УСПЕЕТ</string>
+    <string name="deadline_status_paused">НЕТ НАГРУЗКИ</string>
+    <string name="deadline_row_meta_fmt">%1$s · %2$.1f/%3$.0f Вт·ч · %4$.1f Вт</string>
+    <string name="deadline_eta_fmt">Осталось ~%1$d мин · Запас до срока: %2$d мин</string>
+    <string name="deadline_sheet_title">Новый дедлайн зарядки</string>
+    <string name="deadline_name_label">Задача (напр. Ноутбук к вылету)</string>
+    <string name="deadline_wh_label">Целевая энергия (Вт·ч)</string>
+    <string name="deadline_hours_label">Срок через (часов)</string>
+
+    <string name="nfc_actions_title">NFC-метки и плитка быстрых настроек</string>
+    <string name="nfc_actions_desc">Запишите deep-link URI на любую NFC-метку или добавьте плитку CUKTECH C1 в шторку быстрых настроек Android.</string>
+    <string name="nfc_copy_btn">Копировать URI</string>
+    <string name="nfc_test_btn">Проверить URI</string>
+    <string name="nfc_preset_night">Сцена: AI / Ночь</string>
+    <string name="nfc_preset_burst">Сцена: 120Вт Турбо</string>
+    <string name="nfc_preset_c1_toggle">Переключить USB-C1</string>
+    <string name="nfc_preset_usba_trickle">USB-A малый ток</string>
+
+    <!-- Этап 7: Флот БП, MQTT 3.1.1, Event Webhooks, mDNS-поиск моста и WebDAV -->
+    <string name="fleet_summary_title">Флот зарядников и сравнение узлов</string>
+    <string name="fleet_summary_desc">Суммирует текущую нагрузку и энергию по всем сохранённым БП и сравнивает лимиты сети 110В/220В.</string>
+    <string name="fleet_live_total_label">Мощность флота</string>
+    <string name="fleet_today_wh_label">Флот за сегодня</string>
+    <string name="fleet_all_time_label">Флот всего</string>
+    <string name="fleet_nodes_online_fmt">%1$d/%2$d онлайн</string>
+    <string name="fleet_node_online">ОНЛАЙН</string>
+    <string name="fleet_node_offline">ОФЛАЙН</string>
+    <string name="fleet_node_row_fmt">%1$s · %2$.1f Вт · %3$.1f Вт·ч сегодня · %4$.1f Вт·ч всего</string>
+    <string name="fleet_benchmark_title">Сравнение узлов A и B</string>
+    <string name="fleet_benchmark_node_a">Узел A:</string>
+    <string name="fleet_benchmark_node_b">Узел B:</string>
+    <string name="fleet_benchmark_delta_fmt">Δ Нагрузка: %1$+.1f Вт · Δ Сегодня: %2$+.1f Вт·ч · Δ Всего: %3$+.1f Вт·ч</string>
+    <string name="fleet_benchmark_mains_note">Потолок сети: Узел A %1$dВ (макс. %2$.0fВт) vs Узел B %3$dВ (макс. %4$.0fВт)</string>
+
+    <string name="settings_event_webhooks">Событийные Webhook-уведомления (подключение / аномалия / стоп)</string>
+    <string name="settings_mqtt_section_title">MQTT 3.1.1 и автообнаружение Home Assistant</string>
+    <string name="settings_mqtt_enable">Включить MQTT-мост</string>
+    <string name="settings_mqtt_broker_label">URL брокера (mqtt:// или mqtts://host:port)</string>
+    <string name="settings_mqtt_client_id_label">Client ID</string>
+    <string name="settings_mqtt_base_topic_label">Базовый топик</string>
+    <string name="settings_mqtt_user_label">Логин MQTT</string>
+    <string name="settings_mqtt_pass_label">Пароль MQTT</string>
+    <string name="settings_mqtt_ha_discovery">Публиковать HA Auto Discovery</string>
+    <string name="settings_mqtt_publish_discovery_btn">HA Discovery</string>
+    <string name="settings_mqtt_reconnect_btn">Переподкл.</string>
+    <string name="settings_mqtt_status_fmt">MQTT: %1$s (%2$s)</string>
+    <string name="settings_mqtt_state_connected">Подключено</string>
+    <string name="settings_mqtt_state_connecting">Подключение…</string>
+    <string name="settings_mqtt_state_error">Ошибка</string>
+    <string name="settings_mqtt_state_disconnected">Отключено</string>
+    <string name="toast_integrations_saved">Настройки Webhook и MQTT сохранены.</string>
+    <string name="toast_discovery_published">Пакеты Home Assistant Discovery поставлены в очередь.</string>
+
+    <string name="bridge_discover_btn">Найти мост в Wi-Fi (mDNS)</string>
+    <string name="bridge_discovering">Поиск моста в локальной сети…</string>
+    <string name="bridge_remote_ctrl_title">Удалённые команды через мост</string>
+    <string name="bridge_remote_c1_on">Мост: C1 ВКЛ</string>
+    <string name="bridge_remote_c1_off">Мост: C1 ВЫКЛ</string>
+    <string name="bridge_remote_scene_quiet">Мост: Ночная сцена</string>
+
+    <string name="settings_webdav_open_btn">Облако WebDAV</string>
+    <string name="webdav_sheet_title">Шифрованный бэкап WebDAV / Nextcloud</string>
+    <string name="webdav_sheet_desc">Загружает зашифрованные AES-256-GCM архивы .cukbackup на ваш WebDAV или Nextcloud-сервер. Пароли хранятся в Keystore.</string>
+    <string name="webdav_url_label">URL папки или файла WebDAV</string>
+    <string name="webdav_user_label">Логин</string>
+    <string name="webdav_pass_label">Пароль</string>
+    <string name="webdav_filename_label">Имя файла на сервере (.cukbackup)</string>
+    <string name="webdav_passphrase_label">Пароль шифрования архива (.cukbackup)</string>
+    <string name="webdav_include_secrets">Включить зашифрованные токены и ключи BLE</string>
+    <string name="webdav_replace_existing">Заменить локальную историю при восстановлении</string>
+    <string name="webdav_test_btn">Проверка</string>
+    <string name="webdav_upload_btn">В облако</string>
+    <string name="webdav_restore_btn">Из облака</string>
+    <string name="webdav_http_warning">Нешифрованный http:// передаёт Basic Auth открыто в сети — используйте https://.</string>
+
+    <!-- Этап 8: Power Doctor, Пространства и KPI, Безопасный экспорт конфига и Support Bundle -->
+    <string name="doctor_title">Объяснимый Power Doctor</string>
+    <string name="doctor_score_fmt">%1$d/100 · %2$s</string>
+    <string name="doctor_grade_excellent">ОТЛИЧНО</string>
+    <string name="doctor_grade_good">ХОРОШО</string>
+    <string name="doctor_grade_attention">ВНИМАНИЕ</string>
+    <string name="doctor_grade_critical">КРИТИЧНО</string>
+    <string name="doctor_copy_support_bundle_btn">Скопировать обезличенный Support Bundle</string>
+    <string name="toast_support_bundle_copied">Support Bundle скопирован (MAC, IP и токены удалены).</string>
+    <string name="doctor_cat_link">Связь BLE и непрерывность</string>
+    <string name="doctor_cat_cable">Кабель и просадка линии</string>
+    <string name="doctor_cat_stability">Стабильность протокола и аномалии</string>
+    <string name="doctor_cat_relay">Реле и аудит команд</string>
+    <string name="doctor_find_blind_gaps">Обнаружены слепые зоны вне радиуса BLE</string>
+    <string name="doctor_find_weak_rssi">Слабый сигнал Bluetooth RSSI</string>
+    <string name="doctor_find_cable_sag">Повышенная просадка напряжения кабеля под нагрузкой</string>
+    <string name="doctor_find_cable_mohm">Высокое сопротивление петли в Лаборатории кабелей</string>
+    <string name="doctor_find_anomalies">Активные аномалии тока или протокола</string>
+    <string name="doctor_find_cmd_rejects">Высокая доля отклонённых команд</string>
+    <string name="doctor_find_nominal">Все контролируемые подсистемы в норме</string>
+    <string name="doctor_act_bridge">Подключите стационарный мост в Wi-Fi или держите телефон ближе при долгой зарядке.</string>
+    <string name="doctor_act_closer">Поднесите телефон ближе к блоку питания или проверьте расположение розетки.</string>
+    <string name="doctor_act_swap_cable">Проверьте разъёмы или используйте кабель с меньшим сопротивлением и E-Marker.</string>
+    <string name="doctor_act_cable_lab">Запустите замер просадки в Лаборатории кабелей на фиксированной шине PD.</string>
+    <string name="doctor_act_inspect_blackbox">Проверьте снимки «чёрного ящика» инцидентов в Аналитике.</string>
+    <string name="doctor_act_check_lockout">Проверьте авторизацию MiOT, блокировку от детей и лимиты команд.</string>
+    <string name="doctor_act_none">Дополнительных действий не требуется.</string>
+
+    <string name="workspace_title">Пространство и пользовательские KPI</string>
+    <string name="workspace_all">Все</string>
+    <string name="workspace_home">Дом</string>
+    <string name="workspace_office">Офис</string>
+    <string name="workspace_travel">Поездка</string>
+    <string name="workspace_lab">Лаборатория</string>
+    <string name="kpi_section_title">Закреплённые KPI</string>
+    <string name="kpi_empty_hint">Закрепите свои метрики (нагрузка %, расход в час, запас мощности Вт) с автоматической проверкой единиц измерения.</string>
+    <string name="kpi_add_btn">Добавить KPI</string>
+    <string name="kpi_sheet_title">Новый пользовательский KPI</string>
+    <string name="kpi_title_label">Название KPI</string>
+    <string name="kpi_formula_label">Формула</string>
+    <string name="kpi_unit_label">Единица измерения</string>
+    <string name="kpi_target_label">Цель / максимум шкалы</string>
+    <string name="kpi_save_btn">Сохранить KPI</string>
+    <string name="kpi_formula_active_load_pct">Загрузка БП %</string>
+    <string name="kpi_formula_hourly_cost">Стоимость в час</string>
+    <string name="kpi_formula_avg_session_wh">Средняя сессия Вт·ч</string>
+    <string name="kpi_formula_peak_headroom_w">Запас мощности Вт</string>
+    <string name="kpi_formula_multi_port_share">Доля топ-порта %</string>
+    <string name="kpi_formula_daily_target">Дневная цель %</string>
+    <string name="kpi_err_title_empty">Введите название KPI.</string>
+    <string name="kpi_err_unit_empty">Введите единицу измерения.</string>
+    <string name="kpi_err_percent_required">Несовместимая единица: для процентной формулы нужен знак %.</string>
+    <string name="kpi_err_watts_required">Несовместимая единица: для мощности укажите W или Вт.</string>
+    <string name="kpi_err_wh_required">Несовместимая единица: для энергии укажите Wh или Вт·ч.</string>
+    <string name="kpi_err_cost_rate_required">Несовместимая единица: для тарифа нужен суффикс /h или /ч (напр. RUB/h).</string>
+
+    <string name="settings_config_share_open_btn">Поделиться конфигом</string>
+    <string name="config_share_sheet_title">Обмен конфигом и выборочный импорт</string>
+    <string name="config_share_desc">Экспортирует настройки, профили, правила автоматизации, пресеты и KPI без MAC-адресов, токенов MiOT, URL и паролей.</string>
+    <string name="config_share_copy_btn">Скопировать чистый Config JSON</string>
+    <string name="toast_config_share_copied">Обезличенный Config JSON скопирован.</string>
+    <string name="config_share_paste_label">Вставьте Config JSON для предпросмотра и импорта</string>
+    <string name="config_share_preview_btn">Проверить состав</string>
+    <string name="config_share_preview_fmt">Найдено: профилей %1$d · правил %2$d · пресетов %3$d · KPI %4$d</string>
+    <string name="config_share_inc_prefs">Настройки и тарифы</string>
+    <string name="config_share_inc_profiles">Пользовательские профили зарядки</string>
+    <string name="config_share_inc_rules">Правила автоматизации</string>
+    <string name="config_share_inc_presets">Пресеты устройств на портах</string>
+    <string name="config_share_inc_kpis">Пользовательские KPI</string>
+    <string name="config_share_import_btn">Импортировать выбранное</string>
+    <string name="toast_config_imported_fmt">Импортировано элементов: %1$d.</string>
 </resources>

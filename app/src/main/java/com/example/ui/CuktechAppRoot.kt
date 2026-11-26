@@ -146,6 +146,7 @@ fun CuktechAppRoot(
         )
     ),
     pendingNavTab: MutableState<String?> = remember { mutableStateOf(null) },
+    pendingNfcUri: MutableState<String?> = remember { mutableStateOf(null) },
     initialDestinationOverride: AppDestination? = null,
     requestPermissionsOnLaunch: Boolean = true,
     showOnboardingOverride: Boolean? = null
@@ -408,6 +409,14 @@ fun CuktechAppRoot(
         if (target != null) {
             navigateTopLevel(target)
             pendingNavTab.value = null
+        }
+    }
+
+    LaunchedEffect(pendingNfcUri.value, shouldShowOnboarding) {
+        val uri = pendingNfcUri.value
+        if (!uri.isNullOrBlank() && !shouldShowOnboarding) {
+            viewModel.executeNfcActionUri(uri)
+            pendingNfcUri.value = null
         }
     }
 

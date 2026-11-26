@@ -8,6 +8,7 @@ import android.os.ParcelUuid
 import android.os.SystemClock
 import com.example.BleBridgeService
 import com.example.cuktech.automation.ChargerCommand
+import com.example.cuktech.automation.CommandAuditListener
 import com.example.cuktech.automation.CommandDispatcher
 import com.example.cuktech.automation.CommandResult
 import com.example.cuktech.automation.CommandSource
@@ -15,16 +16,25 @@ import com.example.cuktech.automation.HardwareCommandAdapter
 import com.example.cuktech.automation.KillswitchSnapshot
 import com.example.cuktech.automation.LocalAutomationEngine
 import com.example.cuktech.automation.UndoAvailability
+import com.example.cuktech.bridge.BridgeSyncClient
 import com.example.cuktech.cloud.XiaomiCloudClient
 import com.example.cuktech.db.CuktechPersistence
 import com.example.cuktech.db.PowerChartPoint
+import com.example.cuktech.db.room.BleLinkEventEntity
+import com.example.cuktech.db.room.ChargerNodeEntity
+import com.example.cuktech.db.room.CommandAuditEntity
+import com.example.cuktech.db.room.IncidentBlackBoxEntity
+import com.example.cuktech.db.room.ScenarioObservationEntity
+import com.example.cuktech.db.room.SessionGapEntity
 import com.example.cuktech.energy.AdaptiveEnergyIntegrator
 import com.example.cuktech.energy.ChargeSessionDetector
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.energy.PortChargeLimit
 import com.example.cuktech.energy.SmartLoadTracker
+import com.example.cuktech.power.BlackBoxRingBuffer
 import com.example.cuktech.power.CableDiagnosticEngine
 import com.example.cuktech.power.PortCableDiagnostic
+import com.example.cuktech.power.ScenarioAndPdoEngine
 import com.example.cuktech.notifications.AnomalyAlert
 import com.example.cuktech.notifications.CableAnomalyDetector
 import com.example.cuktech.notifications.ChargerEventLog
@@ -44,6 +54,8 @@ import com.example.cuktech.security.CuktechDeviceCredentials
 import com.example.R
 import com.example.cuktech.security.LogSanitizer
 import com.example.cuktech.security.SecureCredentialStore
+import com.example.cuktech.telemetry.TelemetryIntegrityEngine
+import com.example.cuktech.telemetry.TelemetryIntegritySnapshot
 import com.example.ui.i18n.resolveLocale
 import com.example.ui.i18n.withAppLocale
 import kotlinx.coroutines.CancellationException
@@ -181,6 +193,14 @@ class CuktechBleManager @JvmOverloads constructor(
     private var totalTxCommands: Int = 0
     private var successfulTxCommands: Int = 0
     private var lastHistoryWriteMs: Long = 0L
+    @Volatile
+    private var lastUnplannedDisconnectEpochMs: Long = 0L
+    @Volatile
+    private var lastIntegritySampleFeedMs: Long = 0L
+    @Volatile
+    private var lastNodeUpsertMs: Long = 0L
+    @Volatile
+    private var lastTelemetryReceivedWallMs: Long = 0L
 
     // Energy integrators & session detectors per port (1..4)
     private val energyIntegrators = mapOf(
@@ -266,6 +286,20 @@ class CuktechBleManager @JvmOverloads constructor(
     val cableDiagnosticEngine = CableDiagnosticEngine()
     val cableDiagnostics: StateFlow<Map<Int, PortCableDiagnostic>> = cableDiagnosticEngine.diagnostics
     val localAutomationEngine = LocalAutomationEngine()
+    val integrityEngine = TelemetryIntegrityEngine()
+    private val _integritySnapshot = MutableStateFlow(TelemetryIntegritySnapshot())
+    val integritySnapshot: StateFlow<TelemetryIntegritySnapshot> = _integritySnapshot.asStateFlow()
+    private val _bridgeSyncing = MutableStateFlow(false)
+    val bridgeSyncing: StateFlow<Boolean> = _bridgeSyncing.asStateFlow()
+    private val _bridgeLastError = MutableStateFlow<String?>(null)
+    val bridgeLastError: StateFlow<String?> = _bridgeLastError.asStateFlow()
+    val blackBoxRingBuffer = BlackBoxRingBuffer()
+    @Volatile
+    private var lastScenarioObsMs = 0L
+    @Volatile
+    private var lastScenarioObsMask = 0
+    @Volatile
+    private var lastScenarioObsMode = -1
 
     // Telemetry & Sleep Policy StateFlows
     private val _telemetryMasterEnabled = MutableStateFlow(true)
@@ -354,6 +388,40 @@ class CuktechBleManager @JvmOverloads constructor(
                 if (isError) BleBridgeService.Companion.LogLevel.LEVEL1 else BleBridgeService.Companion.LogLevel.LEVEL2,
                 LogSanitizer.sanitize(msg)
             )
+        },
+        auditListener = CommandAuditListener { ts, src, cmdType, targetPort, summary, accepted, latencyMs, errCode ->
+            val mac = _deviceInfo.value.macAddress.takeIf { it.isNotBlank() && it != "--" }
+                ?: credentialStore.activeDevice.value?.mac.orEmpty()
+            val gattMutating = cmdType.startsWith("Set") &&
+                cmdType !in setOf(
+                    "SetPortLogging",
+                    "SetAutoReconnect",
+                    "SetTelemetryEnabled",
+                    "SetLogOnlyWhenPhoneCharging",
+                    "SetPausePollingWhenLocked",
+                    "SetPortChargeLimit"
+                )
+            val reconciled = when {
+                errCode == "GATT_WRITE_FAILED" -> false
+                accepted && errCode == null && (gattMutating || cmdType == "MasterKillswitch" || cmdType == "RestoreKillswitch" || cmdType == "SoftReset") -> true
+                else -> null
+            }
+            scope.launch(Dispatchers.IO) {
+                persistence.recordCommandAudit(
+                    CommandAuditEntity(
+                        timestampMs = ts,
+                        deviceMac = mac,
+                        source = src.name,
+                        commandType = cmdType,
+                        targetPortId = targetPort,
+                        summary = summary,
+                        accepted = accepted,
+                        reconciledConfirmed = reconciled,
+                        latencyMs = latencyMs,
+                        errorCode = errCode
+                    )
+                )
+            }
         }
     )
 
@@ -915,9 +983,20 @@ class CuktechBleManager @JvmOverloads constructor(
 
     fun onConnectionStateChange(address: String, status: Int, newState: Int) {
         lastConnectedMac = address
+        val nowEpochMs = System.currentTimeMillis()
         if (newState == BluetoothGatt.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
             _authState.value = CuktechAuthState.DISCOVERING_SERVICES
             _statusMessage.value = "GATT connected, discovering services..."
+            scope.launch(Dispatchers.IO) {
+                persistence.recordBleLinkEvent(
+                    BleLinkEventEntity(
+                        timestampMs = nowEpochMs,
+                        deviceMac = address.uppercase().trim(),
+                        eventType = "CONNECTED",
+                        detail = "GATT connected"
+                    )
+                )
+            }
         } else {
             val wasConnectedOrConnecting = _authState.value != CuktechAuthState.DISCONNECTED ||
                 BleBridgeService.bleConnectionState.value != BleBridgeService.Companion.BleConnectionState.DISCONNECTED
@@ -936,10 +1015,43 @@ class CuktechBleManager @JvmOverloads constructor(
             }
             pendingMiotResponses.clear()
             completionDetector.notifyBleDisconnected()
+            integrityEngine.onBleDisconnected(nowEpochMs, wasManual = userManuallyDisconnected)
 
             if (wasAuthenticated && !userManuallyDisconnected) {
+                lastUnplannedDisconnectEpochMs = nowEpochMs
                 // Pause active sessions instead of fabricating Wh across BLE gaps; stitches if reconnect within grace window
                 pauseAllActiveSessions("BLE_DISCONNECT")
+                scope.launch(Dispatchers.IO) {
+                    val normMac = address.uppercase().trim()
+                    persistence.recordBleLinkEvent(
+                        BleLinkEventEntity(
+                            timestampMs = nowEpochMs,
+                            deviceMac = normMac,
+                            eventType = "DISCONNECTED",
+                            rssiDbm = _deviceInfo.value.rssi,
+                            detail = "Unplanned BLE disconnect (status=$status)"
+                        )
+                    )
+                    val curNode = persistence.findChargerNode(normMac)
+                    if (curNode != null) {
+                        persistence.upsertChargerNode(curNode.copy(isOnline = false, lastSeenMs = nowEpochMs))
+                    }
+                    blackBoxRingBuffer.recordEvent(nowEpochMs, "BLE_DISCONNECT", "status=$status rssi=${_deviceInfo.value.rssi}")
+                    if (_activeSessions.value.isNotEmpty()) {
+                        val summary = "BLE dropped while ${_activeSessions.value.size} port(s) charging (status=$status)"
+                        persistence.recordIncidentBlackBox(
+                            IncidentBlackBoxEntity(
+                                timestampMs = nowEpochMs,
+                                deviceMac = normMac,
+                                portId = _activeSessions.value.keys.firstOrNull() ?: 0,
+                                incidentType = "UNEXPECTED_DROP",
+                                summary = summary,
+                                windowJson = blackBoxRingBuffer.exportJson("UNEXPECTED_DROP", summary)
+                            )
+                        )
+                    }
+                    refreshIntegritySnapshotSync(nowEpochMs)
+                }
                 anomalyDetector.recordUnplannedBleDisconnect()?.let { alert ->
                     BleBridgeService.addLogMessage(
                         BleBridgeService.Companion.LogLevel.LEVEL1,
@@ -958,6 +1070,9 @@ class CuktechBleManager @JvmOverloads constructor(
                         inQuietHours = preferencesRepository.preferences.value.isWithinQuietHours()
                     )
                 }
+            } else {
+                lastUnplannedDisconnectEpochMs = 0L
+                scope.launch(Dispatchers.IO) { refreshIntegritySnapshotSync(nowEpochMs) }
             }
 
             _authState.value = CuktechAuthState.DISCONNECTED
@@ -1124,6 +1239,67 @@ class CuktechBleManager @JvmOverloads constructor(
                 _authState.value = CuktechAuthState.AUTHENTICATED
                 _statusMessage.value = "CUKTECH 10 Ultra authenticated successfully! Live telemetry active."
                 consecutiveFailures = 0
+
+                val authNowMs = System.currentTimeMillis()
+                integrityEngine.onBleReconnect(authNowMs)
+                val normMac = gattMac.uppercase().trim()
+                val gapStart = lastUnplannedDisconnectEpochMs
+                lastUnplannedDisconnectEpochMs = 0L
+                scope.launch(Dispatchers.IO) {
+                    if (gapStart in 1L until authNowMs) {
+                        val gapDurMs = authNowMs - gapStart
+                        if (gapDurMs >= 5_000L) {
+                            persistence.recordSessionGap(
+                                SessionGapEntity(
+                                    sessionId = _activeSessions.value.values.firstOrNull()?.id ?: 0L,
+                                    deviceMac = normMac,
+                                    portId = 0,
+                                    gapStartMs = gapStart,
+                                    gapEndMs = authNowMs,
+                                    reason = "BLE_OUT_OF_RANGE"
+                                )
+                            )
+                            persistence.recordBleLinkEvent(
+                                BleLinkEventEntity(
+                                    timestampMs = authNowMs,
+                                    deviceMac = normMac,
+                                    eventType = "GAP_STITCHED",
+                                    detail = "${gapDurMs / 1000L}s blind gap recorded"
+                                )
+                            )
+                        }
+                    }
+                    persistence.recordBleLinkEvent(
+                        BleLinkEventEntity(
+                            timestampMs = authNowMs,
+                            deviceMac = normMac,
+                            eventType = "RECONNECT_SUCCESS",
+                            rssiDbm = _deviceInfo.value.rssi,
+                            detail = currentCred.name
+                        )
+                    )
+                    val existingNode = persistence.findChargerNode(normMac)
+                    persistence.upsertChargerNode(
+                        ChargerNodeEntity(
+                            deviceMac = normMac,
+                            name = existingNode?.name ?: currentCred.name,
+                            locationContext = existingNode?.locationContext ?: "Default",
+                            mainsVoltageMode = existingNode?.mainsVoltageMode ?: 220,
+                            bridgeEndpointUrl = existingNode?.bridgeEndpointUrl ?: "",
+                            lastSeenMs = authNowMs,
+                            lastTotalWatts = _totalPowerWatts.value,
+                            lastTotalWhToday = _ports.value.values.sumOf { it.cumulativeWh },
+                            lastRssiDbm = _deviceInfo.value.rssi,
+                            isOnline = true
+                        )
+                    )
+                    refreshIntegritySnapshotSync(authNowMs)
+                    val curPrefs = preferencesRepository.preferences.value
+                    if (curPrefs.bridgeSyncEnabled && BridgeSyncClient.isValidBridgeUrl(curPrefs.bridgeEndpointUrl)) {
+                        syncFromBridgeNow(silent = true)
+                    }
+                }
+
                 startBackgroundLoops()
                 queryInitialChargerState()
                 BleBridgeService.refreshClientsList()
@@ -1188,12 +1364,45 @@ class CuktechBleManager @JvmOverloads constructor(
     }
 
     fun onRemoteRssi(rssi: Int) {
+        val nowMs = System.currentTimeMillis()
+        integrityEngine.onRssiSample(rssi, nowMs)
         val current = _deviceInfo.value
         val quality = computeConnectionQuality(rssi)
         _deviceInfo.value = current.copy(
             rssi = rssi,
             connectionQualityScore = quality
         )
+
+        val prefs = preferencesRepository.preferences.value
+        val hasActiveLimit = _chargeLimits.value.values.any { it.enabled && !it.triggered }
+        val exitRes = integrityEngine.evaluateBleExitRisk(
+            rssiDbm = rssi,
+            totalWatts = _totalPowerWatts.value,
+            hasActiveWhLimit = hasActiveLimit,
+            thresholdDbm = prefs.bleExitRssiThreshold,
+            enabled = prefs.bleExitAlertEnabled,
+            nowMs = nowMs
+        )
+        if (exitRes.shouldAlert) {
+            val locCtx = context.withAppLocale(prefs.appLanguage)
+            val title = locCtx.getString(R.string.event_ble_exit_title)
+            val detail = locCtx.getString(R.string.event_ble_exit_detail_fmt, rssi, _totalPowerWatts.value)
+            eventLog.addEvent(
+                type = ChargerEventType.BLE_PROXIMITY_EXIT,
+                title = title,
+                detail = detail,
+                portId = 0,
+                timestampMs = nowMs
+            )
+            ChargingNotificationManager.postBleProximityExitNotification(
+                context = locCtx,
+                rssiDbm = rssi,
+                totalWatts = _totalPowerWatts.value,
+                hasActiveLimit = hasActiveLimit,
+                inQuietHours = prefs.isWithinQuietHours()
+            )
+        }
+        scope.launch(Dispatchers.IO) { refreshIntegritySnapshotSync(nowMs) }
     }
 
     private fun computeConnectionQuality(rssi: Int): Int {
@@ -1966,6 +2175,11 @@ class CuktechBleManager @JvmOverloads constructor(
         val curPorts = _ports.value.toMutableMap()
         val nowMs = System.currentTimeMillis()
         val nowSec = nowMs / 1000.0
+        lastTelemetryReceivedWallMs = nowMs
+        if (nowMs - lastIntegritySampleFeedMs >= 400L) {
+            lastIntegritySampleFeedMs = nowMs
+            integrityEngine.onTelemetrySampleReceived(nowMs)
+        }
         val prefs = preferencesRepository.preferences.value
         val isLoggingActiveForPort = isPortLoggingEnabled(portId) && (_telemetryMasterEnabled.value) &&
             (!_logOnlyWhenPhoneCharging.value || isPhoneCharging.value)
@@ -2029,6 +2243,17 @@ class CuktechBleManager @JvmOverloads constructor(
             BleBridgeService.addLogMessage(
                 BleBridgeService.Companion.LogLevel.LEVEL1,
                 "[Anomaly] ${alert.summary}"
+            )
+            blackBoxRingBuffer.recordEvent(nowMs, "ANOMALY", "${alert.type.name}: ${alert.summary}")
+            persistence.recordIncidentBlackBox(
+                IncidentBlackBoxEntity(
+                    timestampMs = nowMs,
+                    deviceMac = _deviceInfo.value.macAddress.takeIf { it != "--" }.orEmpty(),
+                    portId = alert.portId ?: 0,
+                    incidentType = "PROTOCOL_COLLAPSE",
+                    summary = alert.summary,
+                    windowJson = blackBoxRingBuffer.exportJson("PROTOCOL_COLLAPSE", alert.summary)
+                )
             )
             val locCtx = context.withAppLocale(prefs.appLanguage)
             eventLog.addEvent(
@@ -2348,6 +2573,12 @@ class CuktechBleManager @JvmOverloads constructor(
         }
         _powerChartHistory.value = chart
 
+        val portsSummary = (1..4).joinToString(" ") { pid ->
+            val p = portsMap[pid]
+            if (p == null) "P$pid:0W" else "P$pid:${String.format(java.util.Locale.US, "%.1f", p.powerW)}W(${p.protocolName})"
+        }
+        blackBoxRingBuffer.recordFrame(now, totalW, portsSummary)
+
         if (now - lastHistoryWriteMs >= 5000L) {
             lastHistoryWriteMs = now
             val prefs = preferencesRepository.preferences.value
@@ -2357,7 +2588,31 @@ class CuktechBleManager @JvmOverloads constructor(
                     ports = activeLoggingPorts,
                     timestampMs = now,
                     deviceMac = _deviceInfo.value.macAddress,
-                    retentionDays = prefs.retentionDays
+                    retentionDays = prefs.retentionDays,
+                    sourceMode = "BLE_DIRECT",
+                    rssiDbm = _deviceInfo.value.rssi
+                )
+            }
+            val curMask = ScenarioAndPdoEngine.buildMaskFromPorts(portsMap)
+            val curScene = _settings.value.sceneMode
+            if (curMask > 0 && (now - lastScenarioObsMs >= 10_000L || curMask != lastScenarioObsMask || curScene != lastScenarioObsMode)) {
+                lastScenarioObsMs = now
+                lastScenarioObsMask = curMask
+                lastScenarioObsMode = curScene
+                val c3aState = PortTelemetryDecoder.resolveC3ASharedBus(portsMap)
+                persistence.recordScenarioObservation(
+                    ScenarioObservationEntity(
+                        timestampMs = now,
+                        deviceMac = _deviceInfo.value.macAddress.takeIf { it != "--" }.orEmpty(),
+                        sceneMode = curScene,
+                        activePortsMask = curMask,
+                        c1W = portsMap[1]?.powerW ?: 0.0,
+                        c2W = portsMap[2]?.powerW ?: 0.0,
+                        c3W = portsMap[3]?.powerW ?: 0.0,
+                        aW = portsMap[4]?.powerW ?: 0.0,
+                        effectiveTotalW = totalW,
+                        c3aShared = c3aState.isSharedActive
+                    )
                 )
             }
             _activeSessions.value.values
@@ -2365,6 +2620,127 @@ class CuktechBleManager @JvmOverloads constructor(
                 .forEach { session ->
                     persistence.upsertActiveSession(session)
                 }
+            if (now - lastNodeUpsertMs >= 10_000L) {
+                lastNodeUpsertMs = now
+                val mac = _deviceInfo.value.macAddress.takeIf { it.isNotBlank() && it != "--" }
+                    ?: credentialStore.activeDevice.value?.mac.orEmpty()
+                if (mac.isNotBlank()) {
+                    val normMac = mac.uppercase().trim()
+                    val existingNode = persistence.findChargerNode(normMac)
+                    persistence.upsertChargerNode(
+                        ChargerNodeEntity(
+                            deviceMac = normMac,
+                            name = existingNode?.name ?: _deviceInfo.value.name,
+                            locationContext = existingNode?.locationContext ?: "Default",
+                            mainsVoltageMode = existingNode?.mainsVoltageMode ?: 220,
+                            bridgeEndpointUrl = existingNode?.bridgeEndpointUrl ?: "",
+                            lastSeenMs = now,
+                            lastTotalWatts = totalW,
+                            lastTotalWhToday = portsMap.values.sumOf { it.cumulativeWh },
+                            lastRssiDbm = _deviceInfo.value.rssi,
+                            isOnline = _authState.value == CuktechAuthState.AUTHENTICATED
+                        )
+                    )
+                }
+                refreshIntegritySnapshotSync(now)
+            }
+        }
+    }
+
+    fun refreshIntegritySnapshot(nowMs: Long = System.currentTimeMillis()) {
+        scope.launch(Dispatchers.IO) {
+            refreshIntegritySnapshotSync(nowMs)
+        }
+    }
+
+    private fun refreshIntegritySnapshotSync(nowMs: Long = System.currentTimeMillis()) {
+        val prefs = preferencesRepository.preferences.value
+        val windowStart = nowMs - 86_400_000L
+        val gaps24h = persistence.getSessionGapsSince(windowStart, 500)
+        val samples24h = persistence.getTelemetrySamplesSince(windowStart, 12_000)
+        val directCount = samples24h.count { it.sourceMode != "BRIDGE_SYNC" }
+        val bridgeCount = samples24h.count { it.sourceMode == "BRIDGE_SYNC" }
+        _integritySnapshot.value = integrityEngine.buildSnapshot(
+            nowMs = nowMs,
+            isAuthenticated = _authState.value == CuktechAuthState.AUTHENTICATED,
+            gapsLast24h = gaps24h,
+            directSamples24h = directCount,
+            bridgeSamples24h = bridgeCount,
+            rssiThresholdDbm = prefs.bleExitRssiThreshold,
+            windowStartMs = windowStart
+        )
+    }
+
+    fun captureManualBlackBox(note: String = "Manual capture"): Long {
+        val now = System.currentTimeMillis()
+        val mac = _deviceInfo.value.macAddress.takeIf { it.isNotBlank() && it != "--" }
+            ?: credentialStore.activeDevice.value?.mac.orEmpty()
+        blackBoxRingBuffer.recordEvent(now, "MANUAL", note)
+        return persistence.recordIncidentBlackBox(
+            IncidentBlackBoxEntity(
+                timestampMs = now,
+                deviceMac = mac,
+                portId = 0,
+                incidentType = "MANUAL_CAPTURE",
+                summary = note,
+                windowJson = blackBoxRingBuffer.exportJson("MANUAL_CAPTURE", note)
+            )
+        )
+    }
+
+    suspend fun syncFromBridgeNow(silent: Boolean = false): Result<Int> {
+        val prefs = preferencesRepository.preferences.value
+        if (!BridgeSyncClient.isValidBridgeUrl(prefs.bridgeEndpointUrl)) {
+            val err = "Bridge endpoint URL is missing or invalid"
+            if (!silent) _bridgeLastError.value = err
+            return Result.failure(IllegalArgumentException(err))
+        }
+        val mac = _deviceInfo.value.macAddress.takeIf { it.isNotBlank() && it != "--" }
+            ?: credentialStore.activeDevice.value?.mac.orEmpty()
+        val nowMs = System.currentTimeMillis()
+        val gaps24h = persistence.getSessionGapsSince(nowMs - 86_400_000L, 200)
+        val openGapStart = gaps24h.filter { !it.wasBackfilledByBridge }.minOfOrNull { it.gapStartMs }
+        val sinceMs = openGapStart ?: (nowMs - 6 * 3_600_000L)
+
+        _bridgeSyncing.value = true
+        _bridgeLastError.value = null
+        return try {
+            val token = credentialStore.getEncryptedSecret("bridge_bearer_token")
+            val pullRes = BridgeSyncClient.pullSamplesSince(
+                endpointUrl = prefs.bridgeEndpointUrl,
+                bearerToken = token,
+                deviceMac = mac,
+                sinceMs = sinceMs,
+                untilMs = nowMs
+            )
+            pullRes.map { rawSamples ->
+                val added = persistence.mergeBridgeBackfillSamples(mac, rawSamples, prefs.retentionDays)
+                integrityEngine.onBridgeSyncCompleted(added, nowMs)
+                if (added > 0) {
+                    persistence.recordBleLinkEvent(
+                        BleLinkEventEntity(
+                            timestampMs = nowMs,
+                            deviceMac = mac.uppercase().trim(),
+                            eventType = "BRIDGE_SYNCED",
+                            detail = "Backfilled $added sample(s)"
+                        )
+                    )
+                    val locCtx = context.withAppLocale(prefs.appLanguage)
+                    eventLog.addEvent(
+                        type = ChargerEventType.BRIDGE_SYNC_MERGED,
+                        title = locCtx.getString(R.string.event_bridge_sync_title),
+                        detail = locCtx.getString(R.string.event_bridge_sync_detail_fmt, added),
+                        portId = 0,
+                        timestampMs = nowMs
+                    )
+                }
+                refreshIntegritySnapshotSync(nowMs)
+                added
+            }.onFailure { ex ->
+                _bridgeLastError.value = ex.message ?: "Bridge sync failed"
+            }
+        } finally {
+            _bridgeSyncing.value = false
         }
     }
 
@@ -2605,12 +2981,23 @@ class CuktechBleManager @JvmOverloads constructor(
         if (_authState.value != CuktechAuthState.AUTHENTICATED) return
         val rules = persistence.getAutomationRules()
         if (rules.none { it.enabled }) return
+        val needsPhoneBatt = rules.any {
+            it.enabled && it.triggerType == LocalAutomationEngine.TRIGGER_PHONE_SOC_CUTOFF
+        }
+        val phoneBatt = if (needsPhoneBatt) {
+            runCatching {
+                com.example.cuktech.power.PhoneBatteryMonitor.readSnapshot(context, _ports.value, nowMs)
+            }.getOrNull()
+        } else null
         val triggered = localAutomationEngine.evaluate(
             rules = rules,
             ports = _ports.value,
             settings = _settings.value,
             isAuthenticated = true,
-            nowMs = nowMs
+            nowMs = nowMs,
+            lastTelemetryReceivedMs = lastTelemetryReceivedWallMs,
+            phoneBatterySocPct = phoneBatt?.socPct,
+            phoneIsCharging = phoneBatt?.isCharging == true
         )
         if (triggered.isNotEmpty()) {
             scope.launch {
@@ -2618,6 +3005,9 @@ class CuktechBleManager @JvmOverloads constructor(
                 for (item in triggered) {
                     persistence.markAutomationRuleTriggered(item.rule.id, item.firedAtMs)
                     val res = commandDispatcher.dispatch(CommandSource.AUTOMATION_RULE, item.command)
+                    for (extra in item.extraCommands) {
+                        commandDispatcher.dispatch(CommandSource.AUTOMATION_RULE, extra)
+                    }
                     eventLog.addEvent(
                         type = ChargerEventType.AUTOMATION_TRIGGERED,
                         title = locCtx.getString(R.string.event_automation_title_fmt, item.rule.name),

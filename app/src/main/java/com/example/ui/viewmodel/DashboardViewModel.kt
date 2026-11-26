@@ -1,7 +1,13 @@
 package com.example.ui.viewmodel
 
+import android.Manifest
 import android.app.Application
+import android.bluetooth.BluetoothManager
+import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -10,32 +16,79 @@ import com.example.BleBridgeService
 import com.example.R
 import com.example.ui.i18n.resolveLocale
 import com.example.ui.i18n.withAppLocale
+import com.example.cuktech.automation.AutomationSafetyAndDeadlineEngine
+import com.example.cuktech.automation.AutomationSafetyReport
+import com.example.cuktech.automation.AutomationSimulationReport
 import com.example.cuktech.automation.ChargerCommand
 import com.example.cuktech.automation.CommandDispatcher
 import com.example.cuktech.automation.CommandResult
 import com.example.cuktech.automation.CommandSource
+import com.example.cuktech.automation.DeadlineReadinessItem
+import com.example.cuktech.ble.CuktechAuthState
 import com.example.cuktech.ble.CuktechBleManager
+import com.example.cuktech.bridge.BridgeDiscoveryHelper
+import com.example.cuktech.bridge.BridgeStatusResult
+import com.example.cuktech.bridge.BridgeSyncClient
+import com.example.cuktech.bridge.DiscoveredBridgeEndpoint
 import com.example.cuktech.cloud.XiaomiCloudClient
 import com.example.cuktech.db.CuktechPersistence
 import com.example.cuktech.db.room.AutomationRuleEntity
+import com.example.cuktech.db.room.BleLinkEventEntity
+import com.example.cuktech.db.room.CableInventoryEntity
+import com.example.cuktech.db.room.CableLabTestEntity
+import com.example.cuktech.db.room.ChargerNodeEntity
 import com.example.cuktech.db.room.ChargingProfileEntity
+import com.example.cuktech.db.room.CommandAuditEntity
+import com.example.cuktech.db.room.DeadlineTaskEntity
 import com.example.cuktech.db.room.DeviceAliasEntity
+import com.example.cuktech.db.room.DeviceInventoryEntity
+import com.example.cuktech.db.room.IncidentBlackBoxEntity
 import com.example.cuktech.db.room.PortDevicePresetEntity
+import com.example.cuktech.db.room.ScenarioObservationEntity
+import com.example.cuktech.db.room.SessionAnnotationEntity
+import com.example.cuktech.db.room.SessionGapEntity
 import com.example.cuktech.db.room.TelemetrySampleEntity
 import com.example.cuktech.diagnostics.BleDiagnostics
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.integrations.CloudIntegrations
 import com.example.cuktech.integrations.IntegrationConfig
+import com.example.cuktech.integrations.MqttConnectionStatus
 import com.example.cuktech.notifications.AnomalyAlert
 import com.example.cuktech.notifications.ChargerEvent
+import com.example.cuktech.power.CableLabEvaluationResult
+import com.example.cuktech.power.CableLabRunnerState
+import com.example.cuktech.power.CableLabSampleInput
+import com.example.cuktech.power.ChargerPassportSummary
 import com.example.cuktech.power.ChargerSummaryCalculator
+import com.example.cuktech.power.ComparisonAlignmentMode
+import com.example.cuktech.power.ComprehensivePortAnalytics
+import com.example.cuktech.power.CustomKpiAndWorkspaceEngine
+import com.example.cuktech.power.CustomKpiDefinition
 import com.example.cuktech.power.DailyWhBucket
+import com.example.cuktech.power.DeviceMatchSuggestion
 import com.example.cuktech.power.EtaEstimate
 import com.example.cuktech.power.EtaEstimator
+import com.example.cuktech.power.EvaluatedCustomKpi
+import com.example.cuktech.power.FleetSummarySnapshot
+import com.example.cuktech.power.InventoryAndCableLabEngine
+import com.example.cuktech.power.KpiFormulaType
+import com.example.cuktech.power.LoadSimulationResult
+import com.example.cuktech.power.MultiChargerFleetEngine
 import com.example.cuktech.power.PeriodSummarySnapshot
+import com.example.cuktech.power.PhoneBatteryMonitor
+import com.example.cuktech.power.PhoneBatterySnapshot
 import com.example.cuktech.power.PortCableDiagnostic
+import com.example.cuktech.power.PortLifecycleAnalyzer
 import com.example.cuktech.power.PowerBudgetCalculator
 import com.example.cuktech.power.PowerBudgetSnapshot
+import com.example.cuktech.power.PowerDoctorEngine
+import com.example.cuktech.power.PowerDoctorReport
+import com.example.cuktech.power.ScenarioAndPdoEngine
+import com.example.cuktech.power.ScenarioAndPdoSnapshot
+import com.example.cuktech.power.SessionComparisonResult
+import com.example.cuktech.power.SessionDeepAnalysis
+import com.example.cuktech.power.SessionDeepAnalyzer
+import com.example.cuktech.power.SessionPersonalRecords
 import com.example.cuktech.power.SummaryPeriodMode
 import com.example.cuktech.prefs.AppPreferences
 import com.example.cuktech.prefs.AppPreferencesRepository
@@ -43,8 +96,17 @@ import com.example.cuktech.prefs.StartDestination
 import com.example.cuktech.protocol.C3ASharedBusState
 import com.example.cuktech.protocol.PortTelemetry
 import com.example.cuktech.protocol.PortTelemetryDecoder
+import com.example.cuktech.security.ConfigShareAndSupportBundle
 import com.example.cuktech.security.CuktechDeviceCredentials
 import com.example.cuktech.security.SafEncryptedBackupManager
+import com.example.cuktech.security.ShareableConfigBundle
+import com.example.cuktech.security.ShareableConfigImportSelection
+import com.example.cuktech.security.WebDavBackupClient
+import com.example.cuktech.security.WebDavConfig
+import com.example.cuktech.security.WebDavSyncStatus
+import com.example.cuktech.telemetry.ConnectionWizardStep
+import com.example.cuktech.telemetry.RssiPoint
+import com.example.cuktech.telemetry.TelemetryIntegritySnapshot
 import com.example.cuktech.updater.ReleaseUpdateInfo
 import com.example.cuktech.updater.UpdateDownloadState
 import kotlinx.coroutines.Dispatchers
@@ -63,9 +125,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.util.Arrays
 import java.util.Calendar
+import java.util.UUID
 import kotlin.math.abs
 
 enum class ChartInterval {
@@ -108,6 +172,14 @@ data class SessionReplayState(
         get() = samples.getOrNull(cursorIndex.coerceIn(0, (samples.size - 1).coerceAtLeast(0)))
 }
 
+data class CommandWearSummary(
+    val portToggleCounts: Map<Int, Int> = emptyMap(),
+    val softResetCount: Int = 0,
+    val killswitchCount: Int = 0,
+    val totalExecuted: Int = 0,
+    val totalRejected: Int = 0
+)
+
 class DashboardViewModel @JvmOverloads constructor(
     application: Application,
     val cuktechManager: CuktechBleManager = BleBridgeService.ensureCuktechManagersInitialized(application),
@@ -119,6 +191,9 @@ class DashboardViewModel @JvmOverloads constructor(
     val persistence: CuktechPersistence get() = cuktechManager.persistence
     val preferencesRepository: AppPreferencesRepository get() = cuktechManager.preferencesRepository
     val cloudClient: XiaomiCloudClient by lazy { XiaomiCloudClient() }
+    val webDavBackupClient: WebDavBackupClient by lazy {
+        WebDavBackupClient(getApplication(), cuktechManager.credentialStore)
+    }
 
     val preferences: StateFlow<AppPreferences> = preferencesRepository.preferences
     val preferencesLoaded: StateFlow<Boolean> = preferencesRepository.isLoaded
@@ -192,6 +267,224 @@ class DashboardViewModel @JvmOverloads constructor(
 
     val automationRules: StateFlow<List<AutomationRuleEntity>> = persistence.observeAutomationRules()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val automationSafetyReport: StateFlow<AutomationSafetyReport> = automationRules
+        .map { AutomationSafetyAndDeadlineEngine.detectConflictsAndSafety(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AutomationSafetyReport())
+
+    private val _automationSimResult = MutableStateFlow<AutomationSimulationReport?>(null)
+    val automationSimResult: StateFlow<AutomationSimulationReport?> = _automationSimResult.asStateFlow()
+
+    val deadlineTasks: StateFlow<List<DeadlineTaskEntity>> = persistence.observeDeadlineTasks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val deadlineReadiness: StateFlow<List<DeadlineReadinessItem>> = combine(
+        deadlineTasks,
+        ports,
+        activeSessions
+    ) { tasks, pMap, sessMap ->
+        AutomationSafetyAndDeadlineEngine.evaluateDeadlineQueue(tasks, pMap, sessMap)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _nfcLastStatus = MutableStateFlow<String?>(null)
+    val nfcLastStatus: StateFlow<String?> = _nfcLastStatus.asStateFlow()
+
+    val integritySnapshot: StateFlow<TelemetryIntegritySnapshot> = cuktechManager.integritySnapshot
+    val bridgeSyncing: StateFlow<Boolean> = cuktechManager.bridgeSyncing
+    val bridgeLastError: StateFlow<String?> = cuktechManager.bridgeLastError
+
+    val rssiHistory: StateFlow<List<RssiPoint>> = integritySnapshot
+        .map { cuktechManager.integrityEngine.getRssiHistory() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val sessionGaps: StateFlow<List<SessionGapEntity>> = persistence.observeSessionGaps()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val commandAuditLog: StateFlow<List<CommandAuditEntity>> = persistence.observeCommandAudit()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val bleLinkEvents: StateFlow<List<BleLinkEventEntity>> = persistence.observeBleLinkEvents()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val chargerNodes: StateFlow<List<ChargerNodeEntity>> = persistence.observeChargerNodes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val scenarioObservations: StateFlow<List<ScenarioObservationEntity>> = persistence.observeScenarioObservations()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val sessionAnnotations: StateFlow<List<SessionAnnotationEntity>> = persistence.observeAllSessionAnnotations()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val incidentBlackBoxes: StateFlow<List<IncidentBlackBoxEntity>> = persistence.observeIncidentBlackBoxes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val sessionPersonalRecords: StateFlow<SessionPersonalRecords> = completedSessions
+        .map { SessionDeepAnalyzer.computePersonalRecords(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SessionPersonalRecords())
+
+    val deviceInventory: StateFlow<List<DeviceInventoryEntity>> = persistence.observeDeviceInventory()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val cableInventory: StateFlow<List<CableInventoryEntity>> = persistence.observeCableInventory()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val cableLabTests: StateFlow<List<CableLabTestEntity>> = persistence.observeCableLabTests()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _phoneBattery = MutableStateFlow(
+        runCatching { PhoneBatteryMonitor.readSnapshot(application, ports.value) }
+            .getOrDefault(PhoneBatterySnapshot())
+    )
+    val phoneBattery: StateFlow<PhoneBatterySnapshot> = _phoneBattery.asStateFlow()
+
+    private val _cableLabRunner = MutableStateFlow(CableLabRunnerState())
+    val cableLabRunner: StateFlow<CableLabRunnerState> = _cableLabRunner.asStateFlow()
+
+    private val _cableLabLastNotice = MutableStateFlow<String?>(null)
+    val cableLabLastNotice: StateFlow<String?> = _cableLabLastNotice.asStateFlow()
+
+    val suggestedDeviceMatch: StateFlow<DeviceMatchSuggestion?> = combine(
+        completedSessions,
+        deviceInventory
+    ) { completed, devices ->
+        InventoryAndCableLabEngine.suggestMatchingDevice(completed.firstOrNull(), devices)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val chargerPassport: StateFlow<ChargerPassportSummary> = combine(
+        chargerNodes,
+        deviceInfo,
+        completedSessions,
+        activeSessions,
+        cableLabTests
+    ) { nodes, info, completed, active, tests ->
+        val activeMac = info.macAddress.takeIf { it.isNotBlank() && it != "--" } ?: activeCred.value?.mac.orEmpty()
+        val node = nodes.firstOrNull { it.deviceMac.equals(activeMac, ignoreCase = true) } ?: nodes.firstOrNull()
+        InventoryAndCableLabEngine.buildChargerPassport(
+            activeNode = node,
+            sessions = active.values.toList() + completed,
+            cableTests = tests
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        InventoryAndCableLabEngine.buildChargerPassport(null, emptyList(), emptyList())
+    )
+
+    val commandWearSummary: StateFlow<CommandWearSummary> = commandAuditLog
+        .map { entries ->
+            val toggles = mutableMapOf(1 to 0, 2 to 0, 3 to 0, 4 to 0)
+            var softResets = 0
+            var killswitches = 0
+            var execCount = 0
+            var rejCount = 0
+            for (e in entries) {
+                if (e.accepted) {
+                    execCount++
+                    when (e.commandType) {
+                        "SetPortEnabled" -> if (e.targetPortId in 1..4) {
+                            toggles[e.targetPortId] = (toggles[e.targetPortId] ?: 0) + 1
+                        }
+                        "SoftReset" -> softResets++
+                        "MasterKillswitch" -> {
+                            killswitches++
+                            for (pid in 1..4) toggles[pid] = (toggles[pid] ?: 0) + 1
+                        }
+                    }
+                } else {
+                    rejCount++
+                }
+            }
+            CommandWearSummary(
+                portToggleCounts = toggles,
+                softResetCount = softResets,
+                killswitchCount = killswitches,
+                totalExecuted = execCount,
+                totalRejected = rejCount
+            )
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CommandWearSummary())
+
+    val connectionWizardSteps: StateFlow<List<ConnectionWizardStep>> = combine(
+        authState,
+        discoveredDevices,
+        activeCred,
+        diagStatus
+    ) { auth, discovered, cred, _ ->
+        val ctx = getApplication<Application>()
+        val hasBtPerms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        }
+        val btAdapter = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+        val btEnabled = btAdapter?.isEnabled == true
+        cuktechManager.integrityEngine.buildConnectionWizardSteps(
+            hasBtPerms = hasBtPerms,
+            btEnabled = btEnabled,
+            discoveredCount = discovered.size,
+            hasActiveCred = cred?.hasValidToken == true,
+            authStateName = auth.name
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _bridgeStatusResult = MutableStateFlow<BridgeStatusResult?>(null)
+    val bridgeStatusResult: StateFlow<BridgeStatusResult?> = _bridgeStatusResult.asStateFlow()
+
+    private val _analyticsWindowDays = MutableStateFlow(7)
+    val analyticsWindowDays: StateFlow<Int> = _analyticsWindowDays.asStateFlow()
+
+    private val _portLifecycleAnalytics = MutableStateFlow(ComprehensivePortAnalytics())
+    val portLifecycleAnalytics: StateFlow<ComprehensivePortAnalytics> = _portLifecycleAnalytics.asStateFlow()
+
+    private val _scenarioAndPdoSnapshot = MutableStateFlow(ScenarioAndPdoSnapshot())
+    val scenarioAndPdoSnapshot: StateFlow<ScenarioAndPdoSnapshot> = _scenarioAndPdoSnapshot.asStateFlow()
+
+    private val _simSceneMode = MutableStateFlow(1)
+    val simSceneMode: StateFlow<Int> = _simSceneMode.asStateFlow()
+
+    private val _simPortsMask = MutableStateFlow(0x03)
+    val simPortsMask: StateFlow<Int> = _simPortsMask.asStateFlow()
+
+    val loadSimulationResult: StateFlow<LoadSimulationResult> = combine(
+        _simSceneMode,
+        _simPortsMask,
+        scenarioObservations,
+        chargerNodes,
+        deviceInfo
+    ) { mode, mask, obs, nodes, info ->
+        val activeMac = info.macAddress.takeIf { it.isNotBlank() && it != "--" } ?: activeCred.value?.mac.orEmpty()
+        val mainsMode = nodes.firstOrNull { it.deviceMac.equals(activeMac, ignoreCase = true) }?.mainsVoltageMode ?: 220
+        val ratedMax = if (mainsMode == 110) 110.0 else 120.0
+        ScenarioAndPdoEngine.simulateLoad(
+            sceneMode = mode,
+            activeMask = mask,
+            ratedMainsMaxW = ratedMax,
+            observations = obs
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        ScenarioAndPdoEngine.simulateLoad(sceneMode = 1, activeMask = 0x03)
+    )
+
+    private val _replayDeepAnalysis = MutableStateFlow<SessionDeepAnalysis?>(null)
+    val replayDeepAnalysis: StateFlow<SessionDeepAnalysis?> = _replayDeepAnalysis.asStateFlow()
+
+    private val _replayGaps = MutableStateFlow<List<SessionGapEntity>>(emptyList())
+    val replayGaps: StateFlow<List<SessionGapEntity>> = _replayGaps.asStateFlow()
+
+    private val _comparisonSessionAId = MutableStateFlow<Long?>(null)
+    val comparisonSessionAId: StateFlow<Long?> = _comparisonSessionAId.asStateFlow()
+
+    private val _comparisonSessionBId = MutableStateFlow<Long?>(null)
+    val comparisonSessionBId: StateFlow<Long?> = _comparisonSessionBId.asStateFlow()
+
+    private val _comparisonAlignment = MutableStateFlow(ComparisonAlignmentMode.BY_TIME)
+    val comparisonAlignment: StateFlow<ComparisonAlignmentMode> = _comparisonAlignment.asStateFlow()
+
+    private val _sessionComparisonResult = MutableStateFlow(SessionComparisonResult())
+    val sessionComparisonResult: StateFlow<SessionComparisonResult> = _sessionComparisonResult.asStateFlow()
 
     private val _summaryPeriodMode = MutableStateFlow(SummaryPeriodMode.WEEK)
     val summaryPeriodMode: StateFlow<SummaryPeriodMode> = _summaryPeriodMode.asStateFlow()
@@ -325,9 +618,124 @@ class DashboardViewModel @JvmOverloads constructor(
     private val _uiMessages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val uiMessages: SharedFlow<String> = _uiMessages.asSharedFlow()
 
+    // --- Stage 7 & Stage 8 Flows: MQTT, Bridge Discovery, WebDAV, Fleet, Power Doctor, Workspaces/KPIs ---
+
+    val mqttStatus: StateFlow<MqttConnectionStatus> = cloudIntegrations.mqttStatus
+
+    private val _discoveredBridges = MutableStateFlow<List<DiscoveredBridgeEndpoint>>(emptyList())
+    val discoveredBridges: StateFlow<List<DiscoveredBridgeEndpoint>> = _discoveredBridges.asStateFlow()
+
+    private val _isDiscoveringBridges = MutableStateFlow(false)
+    val isDiscoveringBridges: StateFlow<Boolean> = _isDiscoveringBridges.asStateFlow()
+
+    private val _bridgeRemoteCmdStatus = MutableStateFlow<String?>(null)
+    val bridgeRemoteCmdStatus: StateFlow<String?> = _bridgeRemoteCmdStatus.asStateFlow()
+
+    private val _webDavConfig = MutableStateFlow(webDavBackupClient.loadConfig())
+    val webDavConfig: StateFlow<WebDavConfig> = _webDavConfig.asStateFlow()
+
+    private val _webDavStatus = MutableStateFlow(WebDavSyncStatus())
+    val webDavStatus: StateFlow<WebDavSyncStatus> = _webDavStatus.asStateFlow()
+
+    val fleetSummary: StateFlow<FleetSummarySnapshot> = combine(
+        savedDevices,
+        chargerNodes,
+        completedSessions,
+        activeSessions,
+        dailyAggregates,
+        ports,
+        authState,
+        preferences,
+        activeCred,
+        deviceInfo
+    ) { arr ->
+        @Suppress("UNCHECKED_CAST")
+        val devs = arr[0] as List<CuktechDeviceCredentials>
+        @Suppress("UNCHECKED_CAST")
+        val nodes = arr[1] as List<ChargerNodeEntity>
+        @Suppress("UNCHECKED_CAST")
+        val completed = arr[2] as List<ChargeSessionRecord>
+        @Suppress("UNCHECKED_CAST")
+        val active = arr[3] as Map<Int, ChargeSessionRecord>
+        @Suppress("UNCHECKED_CAST")
+        val aggs = arr[4] as List<com.example.cuktech.db.room.DailyEnergyAggregateEntity>
+        @Suppress("UNCHECKED_CAST")
+        val portsMap = arr[5] as Map<Int, PortTelemetry>
+        val auth = arr[6] as CuktechAuthState
+        val curPrefs = arr[7] as AppPreferences
+        val cred = arr[8] as CuktechDeviceCredentials?
+        val info = arr[9] as com.example.cuktech.ble.ChargerDeviceInfo
+        val resolvedMac = info.macAddress.takeIf { it.isNotBlank() && it != "--" } ?: cred?.mac.orEmpty()
+        MultiChargerFleetEngine.buildFleetSummary(
+            savedDevices = devs,
+            chargerNodes = nodes,
+            completedSessions = completed,
+            activeSessions = active,
+            dailyAggregates = aggs,
+            activeMac = resolvedMac,
+            activeLivePorts = portsMap,
+            isActiveOnline = auth == CuktechAuthState.AUTHENTICATED,
+            currencyCode = curPrefs.currencyCode
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FleetSummarySnapshot())
+
+    val powerDoctorReport: StateFlow<PowerDoctorReport> = combine(
+        integritySnapshot,
+        cableDiagnostics,
+        cableLabTests,
+        anomalyAlerts,
+        commandWearSummary
+    ) { integrity, cables, tests, alerts, wear ->
+        PowerDoctorEngine.evaluate(
+            integrity = integrity,
+            cableDiagnostics = cables,
+            cableLabTests = tests,
+            anomalyAlerts = alerts,
+            wearSummary = wear
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PowerDoctorReport())
+
+    val evaluatedKpis: StateFlow<List<EvaluatedCustomKpi>> = combine(
+        preferences,
+        ports,
+        completedSessions,
+        dailyWhBuckets,
+        chargerNodes,
+        deviceInfo,
+        activeCred
+    ) { arr ->
+        val curPrefs = arr[0] as AppPreferences
+        @Suppress("UNCHECKED_CAST")
+        val portsMap = arr[1] as Map<Int, PortTelemetry>
+        @Suppress("UNCHECKED_CAST")
+        val completed = arr[2] as List<ChargeSessionRecord>
+        @Suppress("UNCHECKED_CAST")
+        val buckets = arr[3] as List<DailyWhBucket>
+        @Suppress("UNCHECKED_CAST")
+        val nodes = arr[4] as List<ChargerNodeEntity>
+        val info = arr[5] as com.example.cuktech.ble.ChargerDeviceInfo
+        val cred = arr[6] as CuktechDeviceCredentials?
+        val activeMac = info.macAddress.takeIf { it.isNotBlank() && it != "--" } ?: cred?.mac.orEmpty()
+        val mains = nodes.firstOrNull { it.deviceMac.equals(activeMac, ignoreCase = true) }?.mainsVoltageMode ?: 220
+        val ratedMaxW = if (mains == 110) 110.0 else 120.0
+        val todayWh = buckets.lastOrNull()?.totalWh ?: 0.0
+        val defs = CustomKpiAndWorkspaceEngine.deserializeKpis(curPrefs.customKpisJson)
+        CustomKpiAndWorkspaceEngine.evaluateKpis(
+            definitions = defs,
+            ports = portsMap,
+            ratedMaxW = ratedMaxW,
+            effectiveTariffPerKwh = curPrefs.resolveEffectiveTariffPerKwh(),
+            currencyCode = curPrefs.currencyCode,
+            completedSessions = completed,
+            todayWh = todayWh
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private var replayJob: Job? = null
+    private var cableLabJob: Job? = null
 
     init {
+        cuktechManager.refreshIntegritySnapshot()
         viewModelScope.launch {
             combine(
                 _chartInterval,
@@ -341,6 +749,57 @@ class DashboardViewModel @JvmOverloads constructor(
                 reloadChartSeries(req)
             }
         }
+        viewModelScope.launch {
+            combine(
+                _analyticsWindowDays,
+                completedSessions,
+                activeSessions,
+                sessionGaps,
+                powerChartHistory
+            ) { days, completed, active, gaps, live ->
+                AnalyticsQueryRequest(days, completed.size, active.size, gaps.size, live.size)
+            }.collect { req ->
+                recomputePortLifecycleAnalytics(req.days)
+            }
+        }
+    }
+
+    private data class AnalyticsQueryRequest(
+        val days: Int,
+        val completedCount: Int,
+        val activeCount: Int,
+        val gapsCount: Int,
+        val liveCount: Int
+    )
+
+    private suspend fun recomputePortLifecycleAnalytics(days: Int) {
+        val nowMs = System.currentTimeMillis()
+        val windowStart = nowMs - (days.coerceIn(1, 30).toLong() * 86_400_000L)
+        val activeMac = deviceInfo.value.macAddress.takeIf { it.isNotBlank() && it != "--" }
+            ?: activeCred.value?.mac
+        val (lifecycleRes, scenarioRes) = withContext(Dispatchers.Default) {
+            val samples = persistence.getTelemetrySamplesSince(windowStart, 18_000)
+            val allSessions = activeSessions.value.values.toList() + completedSessions.value
+            val gaps = persistence.getSessionGapsSince(windowStart, 500)
+            val obs = persistence.getScenarioObservationsSince(windowStart, 10_000)
+            val lifecycle = PortLifecycleAnalyzer.analyze(
+                samples = samples,
+                sessions = allSessions,
+                gaps = gaps,
+                windowStartMs = windowStart,
+                windowEndMs = nowMs,
+                deviceMacFilter = activeMac
+            )
+            val scenarioPdo = ScenarioAndPdoEngine.analyze(
+                ports = ports.value,
+                settings = settings.value,
+                samples = samples,
+                observations = obs
+            )
+            lifecycle to scenarioPdo
+        }
+        _portLifecycleAnalytics.value = lifecycleRes
+        _scenarioAndPdoSnapshot.value = scenarioRes
     }
 
     private data class ChartQueryRequest(
@@ -489,21 +948,36 @@ class DashboardViewModel @JvmOverloads constructor(
     fun openSessionReplay(session: ChargeSessionRecord) {
         replayJob?.cancel()
         _replayState.value = SessionReplayState(session = session, isLoading = true)
+        _replayDeepAnalysis.value = null
+        _replayGaps.value = emptyList()
         viewModelScope.launch {
             val startMs = (session.startTimeSec * 1000.0).toLong() - 5000L
             val endMs = ((session.endTimeSec ?: (System.currentTimeMillis() / 1000.0)) * 1000.0).toLong() + 5000L
-            val rows = withContext(Dispatchers.IO) {
-                persistence.getTelemetrySamplesSince(startMs, 10_000)
-                    .filter { it.portId == session.portId && it.timestampMs in startMs..endMs }
+            val loaded = withContext(Dispatchers.IO) {
+                val allInWindow = persistence.getTelemetrySamplesSince(startMs, 12_000)
+                    .filter { it.timestampMs in startMs..endMs }
                     .sortedBy { it.timestampMs }
+                val portRows = allInWindow.filter { it.portId == session.portId }
+                val gaps = persistence.getSessionGapsSince(startMs, 200)
+                    .filter { it.gapEndMs >= startMs && it.gapStartMs <= endMs }
+                val deep = SessionDeepAnalyzer.analyzeSession(
+                    session = session,
+                    portSamples = portRows,
+                    allPortSamplesInWindow = allInWindow,
+                    gaps = gaps,
+                    peerSessions = completedSessions.value
+                )
+                Triple(portRows, gaps, deep)
             }
             _replayState.value = SessionReplayState(
                 session = session,
-                samples = rows,
+                samples = loaded.first,
                 cursorIndex = 0,
                 isPlaying = false,
                 isLoading = false
             )
+            _replayGaps.value = loaded.second
+            _replayDeepAnalysis.value = loaded.third
         }
     }
 
@@ -543,6 +1017,8 @@ class DashboardViewModel @JvmOverloads constructor(
     fun closeSessionReplay() {
         replayJob?.cancel()
         _replayState.value = SessionReplayState()
+        _replayDeepAnalysis.value = null
+        _replayGaps.value = emptyList()
     }
 
     // --- Hardware & Dispatcher Commands ---
@@ -929,13 +1405,36 @@ class DashboardViewModel @JvmOverloads constructor(
 
     fun updateHomeAssistantConfig(enabled: Boolean, url: String, bearerToken: String?) {
         cloudIntegrations.updateConfig(
-            IntegrationConfig(
+            haConfig.value.copy(
                 haWebhookEnabled = enabled,
-                haWebhookUrl = url,
-                hasBearerToken = haConfig.value.hasBearerToken
+                haWebhookUrl = url
             ),
             bearerToken = bearerToken
         )
+    }
+
+    fun updateIntegrationsConfig(
+        config: IntegrationConfig,
+        bearerToken: String? = null,
+        mqttPassword: String? = null
+    ) {
+        cloudIntegrations.updateConfig(config, bearerToken = bearerToken, mqttPassword = mqttPassword)
+    }
+
+    fun reconnectMqtt() {
+        val activeMac = deviceInfo.value.macAddress.takeIf { it.isNotBlank() && it != "--" }
+            ?: activeCred.value?.mac.orEmpty()
+        val nodeId = if (activeMac.isNotBlank()) "cuktech_${activeMac.replace(":", "").lowercase()}" else "cuktech10_ultra"
+        val devName = deviceInfo.value.name.takeIf { it.isNotBlank() } ?: "CUKTECH 10 Ultra"
+        cloudIntegrations.connectOrReconnectMqtt(nodeId = nodeId, deviceName = devName)
+    }
+
+    fun publishHaDiscovery() {
+        val activeMac = deviceInfo.value.macAddress.takeIf { it.isNotBlank() && it != "--" }
+            ?: activeCred.value?.mac.orEmpty()
+        val nodeId = if (activeMac.isNotBlank()) "cuktech_${activeMac.replace(":", "").lowercase()}" else "cuktech10_ultra"
+        val devName = deviceInfo.value.name.takeIf { it.isNotBlank() } ?: "CUKTECH 10 Ultra"
+        cloudIntegrations.publishHaDiscoveryNow(nodeId = nodeId, deviceName = devName)
     }
 
     // --- History Export & Clear ---
@@ -1116,9 +1615,688 @@ class DashboardViewModel @JvmOverloads constructor(
         BleBridgeService.resetUpdateDownloadState()
     }
 
+    // --- Hybrid Continuity, Stationary Bridge Sync, Multi-Charger & BLE Exit Policy ---
+
+    fun setAnalyticsWindowDays(days: Int) {
+        _analyticsWindowDays.value = days.coerceIn(1, 30)
+    }
+
+    fun updateBridgeConfig(enabled: Boolean, url: String, token: String?) {
+        viewModelScope.launch {
+            val trimmedUrl = url.trim()
+            if (enabled && !BridgeSyncClient.isValidBridgeUrl(trimmedUrl)) {
+                _bridgeStatusResult.value = BridgeStatusResult(online = false, errorMessage = "Invalid URL")
+                return@launch
+            }
+            preferencesRepository.updateBridgeSettings(enabled, trimmedUrl)
+            if (!token.isNullOrBlank()) {
+                cuktechManager.credentialStore.putEncryptedSecret("bridge_bearer_token", token.trim())
+            } else if (token == "") {
+                // Keep existing token if user left field empty
+            }
+            if (enabled && BridgeSyncClient.isValidBridgeUrl(trimmedUrl)) {
+                testBridgeConnection(trimmedUrl, token)
+            }
+        }
+    }
+
+    fun clearBridgeToken() {
+        viewModelScope.launch(Dispatchers.IO) {
+            cuktechManager.credentialStore.removeEncryptedSecret("bridge_bearer_token")
+        }
+    }
+
+    fun testBridgeConnection(url: String, overrideToken: String? = null) {
+        viewModelScope.launch {
+            val token = overrideToken?.takeIf { it.isNotBlank() }
+                ?: withContext(Dispatchers.IO) {
+                    cuktechManager.credentialStore.getEncryptedSecret("bridge_bearer_token")
+                }
+            _bridgeStatusResult.value = BridgeSyncClient.fetchStatus(url, token)
+        }
+    }
+
+    fun syncFromBridgeNow(onDone: ((Result<Int>) -> Unit)? = null) {
+        viewModelScope.launch {
+            val res = withContext(Dispatchers.IO) { cuktechManager.syncFromBridgeNow(silent = false) }
+            recomputePortLifecycleAnalytics(_analyticsWindowDays.value)
+            onDone?.invoke(res)
+        }
+    }
+
+    fun updateBleExitAlertPolicy(enabled: Boolean, thresholdDbm: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updateBleExitAlertPolicy(enabled, thresholdDbm)
+            cuktechManager.refreshIntegritySnapshot()
+        }
+    }
+
+    fun updateChargerNodeMeta(mac: String, name: String, locationContext: String, mainsVoltageMode: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val norm = mac.uppercase().trim()
+            val cur = persistence.findChargerNode(norm)
+            persistence.upsertChargerNode(
+                (cur ?: ChargerNodeEntity(deviceMac = norm, name = name)).copy(
+                    name = name.trim().ifBlank { cur?.name ?: "CUKTECH 10 Ultra" },
+                    locationContext = locationContext.trim().ifBlank { "Default" },
+                    mainsVoltageMode = if (mainsVoltageMode == 110) 110 else 220
+                )
+            )
+        }
+    }
+
+    fun switchActiveCharger(mac: String) {
+        val norm = mac.uppercase().trim()
+        cuktechManager.credentialStore.selectActiveDevice(norm)
+        viewModelScope.launch {
+            dispatcher.dispatch(CommandSource.UI, ChargerCommand.ConnectCharger(norm))
+        }
+    }
+
+    // --- Stage 3 & Stage 4 Actions: Simulator, Bookmarks/Tags, Two-Session Compare, Black Box ---
+
+    fun setSimulatorConfig(sceneMode: Int, portsMask: Int) {
+        _simSceneMode.value = sceneMode.coerceIn(1, 4)
+        _simPortsMask.value = portsMask and 0x0F
+    }
+
+    fun toggleSimulatorPortBit(portId: Int) {
+        if (portId !in 1..4) return
+        val bit = 1 shl (portId - 1)
+        _simPortsMask.value = _simPortsMask.value xor bit
+    }
+
+    fun addReplayBookmark(
+        sessionId: Long,
+        sample: TelemetrySampleEntity?,
+        tagLabel: String,
+        noteText: String,
+        isFavorite: Boolean = false
+    ) {
+        val cleanTag = tagLabel.trim().take(32).ifBlank { "Bookmark" }
+        val cleanNote = noteText.trim().take(240)
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.saveSessionAnnotation(
+                SessionAnnotationEntity(
+                    sessionId = sessionId,
+                    timestampMs = sample?.timestampMs ?: 0L,
+                    tagLabel = cleanTag,
+                    noteText = cleanNote,
+                    isFavorite = isFavorite,
+                    voltageV = sample?.voltageV ?: 0.0,
+                    currentA = sample?.currentA ?: 0.0,
+                    powerW = sample?.powerW ?: 0.0,
+                    protocolName = sample?.protocolName.orEmpty(),
+                    createdAtMs = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun deleteSessionAnnotation(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.deleteSessionAnnotation(id)
+        }
+    }
+
+    fun selectComparisonSessions(idA: Long?, idB: Long?) {
+        _comparisonSessionAId.value = idA
+        _comparisonSessionBId.value = idB
+        recomputeComparison()
+    }
+
+    fun setComparisonAlignment(mode: ComparisonAlignmentMode) {
+        _comparisonAlignment.value = mode
+        recomputeComparison()
+    }
+
+    private fun recomputeComparison() {
+        val all = activeSessions.value.values.toList() + completedSessions.value
+        val sA = all.firstOrNull { it.id == _comparisonSessionAId.value }
+        val sB = all.firstOrNull { it.id == _comparisonSessionBId.value }
+        val mode = _comparisonAlignment.value
+        viewModelScope.launch(Dispatchers.Default) {
+            val samplesA = if (sA != null) {
+                val startMs = (sA.startTimeSec * 1000.0).toLong() - 2000L
+                val endMs = ((sA.endTimeSec ?: sA.lastSampleTimeSec) * 1000.0).toLong() + 2000L
+                persistence.getTelemetrySamplesSince(startMs, 6000)
+                    .filter { it.portId == sA.portId && it.timestampMs in startMs..endMs }
+            } else emptyList()
+            val samplesB = if (sB != null) {
+                val startMs = (sB.startTimeSec * 1000.0).toLong() - 2000L
+                val endMs = ((sB.endTimeSec ?: sB.lastSampleTimeSec) * 1000.0).toLong() + 2000L
+                persistence.getTelemetrySamplesSince(startMs, 6000)
+                    .filter { it.portId == sB.portId && it.timestampMs in startMs..endMs }
+            } else emptyList()
+            _sessionComparisonResult.value = SessionDeepAnalyzer.compareSessions(
+                sessionA = sA,
+                samplesA = samplesA,
+                sessionB = sB,
+                samplesB = samplesB,
+                alignment = mode
+            )
+        }
+    }
+
+    fun buildAnnotatedReplayJson(session: ChargeSessionRecord, onReady: (String) -> Unit) {
+        val state = _replayState.value
+        val deep = _replayDeepAnalysis.value
+        val gaps = _replayGaps.value
+        viewModelScope.launch(Dispatchers.IO) {
+            val annotations = persistence.getSessionAnnotationsForSession(session.id)
+            val json = SessionDeepAnalyzer.exportAnnotatedReplayJson(
+                session = session,
+                samples = state.samples,
+                gaps = gaps,
+                annotations = annotations,
+                deepAnalysis = deep
+            )
+            withContext(Dispatchers.Main) { onReady(json) }
+        }
+    }
+
+    fun captureManualBlackBox(note: String = "Manual capture") {
+        viewModelScope.launch(Dispatchers.IO) {
+            cuktechManager.captureManualBlackBox(note)
+        }
+    }
+
+    // --- Stage 5: Phone Battery Calibration, Device & Cable Inventory, Cable Lab & Passport ---
+
+    fun refreshPhoneBattery() {
+        viewModelScope.launch(Dispatchers.Default) {
+            _phoneBattery.value = runCatching {
+                PhoneBatteryMonitor.readSnapshot(getApplication(), ports.value)
+            }.getOrDefault(PhoneBatterySnapshot())
+        }
+    }
+
+    fun saveDeviceInventory(device: DeviceInventoryEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.saveDeviceInventory(device)
+        }
+    }
+
+    fun deleteDeviceInventory(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.deleteDeviceInventory(id)
+        }
+    }
+
+    fun saveCableInventory(cable: CableInventoryEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.saveCableInventory(cable)
+        }
+    }
+
+    fun deleteCableInventory(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.deleteCableInventory(id)
+        }
+    }
+
+    fun deleteCableLabTest(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.deleteCableLabTest(id)
+        }
+    }
+
+    fun confirmSuggestedDeviceMatch(suggestion: DeviceMatchSuggestion) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val dev = suggestion.device
+            val sess = suggestion.session
+            val updated = dev.copy(
+                assignedPortId = if (dev.assignedPortId == 0) sess.portId else dev.assignedPortId,
+                totalRecordedWh = dev.totalRecordedWh + sess.whAccumulated,
+                sessionCount = dev.sessionCount + 1,
+                lastChargeMs = System.currentTimeMillis()
+            )
+            persistence.saveDeviceInventory(updated)
+            val activeMac = deviceInfo.value.macAddress.takeIf { it.isNotBlank() && it != "--" }
+                ?: activeCred.value?.mac.orEmpty()
+            if (activeMac.isNotBlank()) {
+                persistence.saveAlias(activeMac, sess.portId, dev.name)
+            }
+            val presetType = when (dev.category.uppercase()) {
+                "LAPTOP" -> "LAPTOP_14"
+                "PHONE" -> "PHONE"
+                "TABLET" -> "TABLET"
+                "POWERBANK" -> "POWERBANK"
+                else -> "CUSTOM"
+            }
+            persistence.savePortDevicePreset(
+                PortDevicePresetEntity(
+                    portId = sess.portId,
+                    presetType = presetType,
+                    deviceLabel = dev.name,
+                    targetWh = dev.ratedWh.coerceIn(1.0, 200.0),
+                    initialSocPct = 20,
+                    capacityMah = ((dev.ratedWh * 1000.0) / 3.85).toInt().coerceIn(500, 30_000),
+                    cellSeriesCount = if (dev.category.equals("LAPTOP", ignoreCase = true)) 3 else 1,
+                    updatedAtMs = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun clearCableLabNotice() {
+        _cableLabLastNotice.value = null
+    }
+
+    fun analyzeRecentWindowForCableLab(portId: Int, cable: CableInventoryEntity?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            val samples = persistence.getTelemetrySamplesSince(now - 30 * 60_000L, 1000)
+            when (val res = InventoryAndCableLabEngine.evaluateFromTelemetryEntities(portId, cable, samples)) {
+                is CableLabEvaluationResult.Valid -> {
+                    persistence.recordCableLabTest(res.toEntity(now))
+                    _cableLabLastNotice.value = "OK"
+                }
+                is CableLabEvaluationResult.Insufficient -> {
+                    _cableLabLastNotice.value = res.reasonCode
+                }
+            }
+        }
+    }
+
+    fun startGuidedCableLabTest(portId: Int, cable: CableInventoryEntity?) {
+        cableLabJob?.cancel()
+        _cableLabLastNotice.value = null
+        val targetSamples = 12
+        _cableLabRunner.value = CableLabRunnerState(
+            isRunning = true,
+            portId = portId,
+            cableId = cable?.id ?: 0L,
+            collectedCount = 0,
+            targetCount = targetSamples,
+            lastStatusCode = ""
+        )
+        cableLabJob = viewModelScope.launch(Dispatchers.Default) {
+            val collected = mutableListOf<CableLabSampleInput>()
+            for (i in 1..targetSamples) {
+                if (!isActive) break
+                val port = ports.value[portId]
+                if (port != null && port.enabled && port.voltageV >= 4.0) {
+                    collected += CableLabSampleInput(
+                        voltageV = port.voltageV,
+                        currentA = port.currentA,
+                        protocolName = port.protocolName
+                    )
+                }
+                _cableLabRunner.value = _cableLabRunner.value.copy(collectedCount = i)
+                if (i < targetSamples) delay(1000L)
+            }
+            val result = InventoryAndCableLabEngine.evaluateCableLabSamples(
+                portId = portId,
+                cableId = cable?.id ?: 0L,
+                cableName = cable?.name ?: "Port $portId Probe",
+                samples = collected
+            )
+            when (result) {
+                is CableLabEvaluationResult.Valid -> {
+                    withContext(Dispatchers.IO) {
+                        persistence.recordCableLabTest(result.toEntity())
+                    }
+                    _cableLabLastNotice.value = "OK"
+                    _cableLabRunner.value = _cableLabRunner.value.copy(isRunning = false, lastStatusCode = "OK")
+                }
+                is CableLabEvaluationResult.Insufficient -> {
+                    _cableLabLastNotice.value = result.reasonCode
+                    _cableLabRunner.value = _cableLabRunner.value.copy(
+                        isRunning = false,
+                        lastStatusCode = result.reasonCode
+                    )
+                }
+            }
+        }
+    }
+
+    fun cancelGuidedCableLabTest() {
+        cableLabJob?.cancel()
+        _cableLabRunner.value = _cableLabRunner.value.copy(isRunning = false)
+    }
+
+    fun buildAnonymizedLabJson(): String {
+        return InventoryAndCableLabEngine.exportAnonymizedLabJson(
+            passport = chargerPassport.value,
+            cableTests = cableLabTests.value,
+            cables = cableInventory.value,
+            scenarioSnapshot = _scenarioAndPdoSnapshot.value
+        )
+    }
+
+    // --- Stage 6: Automation Safety Simulation, Deadline Queue & NFC URI Action ---
+
+    fun runAutomationSimulation(hoursBack: Int = 24) {
+        viewModelScope.launch(Dispatchers.Default) {
+            val now = System.currentTimeMillis()
+            val samples = persistence.getTelemetrySamplesSince(
+                now - hoursBack.coerceIn(1, 168) * 3_600_000L,
+                limit = 10_000
+            )
+            val report = AutomationSafetyAndDeadlineEngine.simulateRulesOnHistory(
+                rules = automationRules.value,
+                telemetrySamples = samples,
+                initialSceneMode = settings.value.sceneMode,
+                phoneSocPct = _phoneBattery.value.socPct,
+                phoneIsCharging = _phoneBattery.value.isCharging
+            )
+            _automationSimResult.value = report
+        }
+    }
+
+    fun saveDeadlineTask(task: DeadlineTaskEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.saveDeadlineTask(task)
+        }
+    }
+
+    fun toggleDeadlineTaskEnabled(id: Long, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.setDeadlineTaskEnabled(id, enabled)
+        }
+    }
+
+    fun deleteDeadlineTask(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            persistence.deleteDeadlineTask(id)
+        }
+    }
+
+    fun executeNfcActionUri(rawUri: String) {
+        val parsed = AutomationSafetyAndDeadlineEngine.parseNfcActionUri(rawUri, ports.value)
+        if (parsed == null) {
+            _nfcLastStatus.value = "Invalid URI: $rawUri"
+            _uiMessages.tryEmit(_nfcLastStatus.value!!)
+            return
+        }
+        viewModelScope.launch {
+            val res = dispatcher.dispatch(
+                source = CommandSource.WIDGET,
+                command = parsed.command,
+                clientKey = "nfc_uri:${parsed.description}"
+            )
+            val status = "${parsed.description} → ${res.message}"
+            _nfcLastStatus.value = status
+            _uiMessages.tryEmit(status)
+        }
+    }
+
+    // --- Stage 7 & Stage 8 Actions: LAN Bridge Discovery & Remote Control, WebDAV, Workspaces/KPIs, Config Share & Support Bundle ---
+
+    fun discoverLanBridges() {
+        if (_isDiscoveringBridges.value) return
+        _isDiscoveringBridges.value = true
+        viewModelScope.launch {
+            try {
+                _discoveredBridges.value = BridgeDiscoveryHelper.discoverOnLan(getApplication())
+            } finally {
+                _isDiscoveringBridges.value = false
+            }
+        }
+    }
+
+    fun sendRemoteBridgePortToggle(portId: Int, enabled: Boolean) {
+        val cmdJson = JSONObject().apply {
+            put("type", "set_port")
+            put("port", portId)
+            put("enabled", enabled)
+        }.toString()
+        sendRemoteBridgeCommand(cmdJson, "Port $portId -> ${if (enabled) "ON" else "OFF"}")
+    }
+
+    fun sendRemoteBridgeScene(mode: Int) {
+        val cmdJson = JSONObject().apply {
+            put("type", "set_scene")
+            put("mode", mode)
+        }.toString()
+        sendRemoteBridgeCommand(cmdJson, "Scene -> $mode")
+    }
+
+    private fun sendRemoteBridgeCommand(cmdJson: String, label: String) {
+        val url = preferences.value.bridgeEndpointUrl
+        if (!BridgeSyncClient.isValidBridgeUrl(url)) {
+            _bridgeRemoteCmdStatus.value = "Invalid bridge URL"
+            return
+        }
+        val activeMac = deviceInfo.value.macAddress.takeIf { it.isNotBlank() && it != "--" }
+            ?: activeCred.value?.mac.orEmpty()
+        viewModelScope.launch {
+            val token = withContext(Dispatchers.IO) {
+                cuktechManager.credentialStore.getEncryptedSecret("bridge_bearer_token")
+            }
+            val res = BridgeSyncClient.sendRemoteCommand(url, token, activeMac, cmdJson)
+            _bridgeRemoteCmdStatus.value = res.fold(
+                onSuccess = { "$label OK" },
+                onFailure = { "$label FAIL: ${it.message ?: "error"}" }
+            )
+        }
+    }
+
+    fun saveWebDavConfig(config: WebDavConfig, passwordOverride: String?): Result<WebDavConfig> {
+        val res = webDavBackupClient.saveConfig(config, passwordOverride)
+        res.onSuccess { saved ->
+            _webDavConfig.value = saved
+            _webDavStatus.value = _webDavStatus.value.copy(lastMessage = "Saved", isError = false)
+        }.onFailure { err ->
+            _webDavStatus.value = _webDavStatus.value.copy(lastMessage = err.message, isError = true)
+        }
+        return res
+    }
+
+    fun testWebDavConnection(baseUrl: String, username: String, passwordOverride: String?) {
+        viewModelScope.launch {
+            _webDavStatus.value = _webDavStatus.value.copy(busy = true, lastMessage = null, isError = false)
+            val res = webDavBackupClient.testConnection(baseUrl, username, passwordOverride)
+            _webDavStatus.value = res.fold(
+                onSuccess = { msg ->
+                    WebDavSyncStatus(busy = false, lastSuccessMs = System.currentTimeMillis(), lastMessage = msg, isError = false)
+                },
+                onFailure = { err ->
+                    WebDavSyncStatus(busy = false, lastMessage = err.message ?: "Error", isError = true)
+                }
+            )
+        }
+    }
+
+    fun uploadEncryptedWebDavBackup(
+        baseUrl: String,
+        username: String,
+        passwordOverride: String?,
+        remoteFilename: String,
+        passphrase: CharArray,
+        includeSecrets: Boolean
+    ) {
+        viewModelScope.launch {
+            _webDavStatus.value = _webDavStatus.value.copy(busy = true, lastMessage = null, isError = false)
+            try {
+                val payload = withContext(Dispatchers.IO) {
+                    persistence.buildBackupPayload(
+                        preferencesJson = preferences.value.toJson(),
+                        includeSecrets = includeSecrets,
+                        devices = if (includeSecrets) savedDevices.value else emptyList()
+                    )
+                }
+                val res = webDavBackupClient.uploadEncryptedBackup(
+                    baseUrl = baseUrl,
+                    username = username,
+                    passwordOverride = passwordOverride,
+                    remoteFilename = remoteFilename,
+                    payload = payload,
+                    backupPassphrase = passphrase
+                )
+                _webDavStatus.value = res.fold(
+                    onSuccess = { bytes ->
+                        WebDavSyncStatus(
+                            busy = false,
+                            lastSuccessMs = System.currentTimeMillis(),
+                            lastMessage = "Uploaded $bytes bytes (AES-256-GCM)",
+                            isError = false
+                        )
+                    },
+                    onFailure = { err ->
+                        WebDavSyncStatus(busy = false, lastMessage = err.message ?: "Upload failed", isError = true)
+                    }
+                )
+            } finally {
+                Arrays.fill(passphrase, '\u0000')
+            }
+        }
+    }
+
+    fun restoreEncryptedWebDavBackup(
+        baseUrl: String,
+        username: String,
+        passwordOverride: String?,
+        remoteFilename: String,
+        passphrase: CharArray,
+        replaceExisting: Boolean
+    ) {
+        viewModelScope.launch {
+            _webDavStatus.value = _webDavStatus.value.copy(busy = true, lastMessage = null, isError = false)
+            try {
+                val res = webDavBackupClient.downloadAndDecryptBackup(
+                    baseUrl = baseUrl,
+                    username = username,
+                    passwordOverride = passwordOverride,
+                    remoteFilename = remoteFilename,
+                    backupPassphrase = passphrase
+                )
+                if (res.isSuccess) {
+                    val payload = res.getOrThrow()
+                    withContext(Dispatchers.IO) {
+                        persistence.restoreBackupPayload(payload, replaceExisting)
+                        preferencesRepository.applyFromBackupJson(payload.preferencesJson)
+                    }
+                    cuktechManager.reloadSessionsFromDb()
+                    _webDavStatus.value = WebDavSyncStatus(
+                        busy = false,
+                        lastSuccessMs = System.currentTimeMillis(),
+                        lastMessage = "Restored ${payload.sessionsArray.length()} sessions, ${payload.profilesArray.length()} profiles",
+                        isError = false
+                    )
+                } else {
+                    _webDavStatus.value = WebDavSyncStatus(
+                        busy = false,
+                        lastMessage = res.exceptionOrNull()?.message ?: "Restore failed",
+                        isError = true
+                    )
+                }
+            } finally {
+                Arrays.fill(passphrase, '\u0000')
+            }
+        }
+    }
+
+    fun selectWorkspace(workspaceId: String) {
+        viewModelScope.launch {
+            preferencesRepository.updateActiveWorkspace(workspaceId)
+        }
+    }
+
+    fun addCustomKpi(
+        title: String,
+        formulaType: KpiFormulaType,
+        unit: String,
+        targetValue: Double
+    ): String? {
+        val cleanTitle = title.trim()
+        if (cleanTitle.isBlank()) return "kpi_err_title_empty"
+        val unitErr = CustomKpiAndWorkspaceEngine.validateUnitCompatibility(formulaType, unit)
+        if (unitErr != null) return unitErr
+        val current = CustomKpiAndWorkspaceEngine.deserializeKpis(preferences.value.customKpisJson)
+        val updated = current + CustomKpiDefinition(
+            id = UUID.randomUUID().toString().take(8),
+            title = cleanTitle,
+            formulaType = formulaType,
+            unit = unit.trim(),
+            targetValue = targetValue.coerceAtLeast(0.0)
+        )
+        viewModelScope.launch {
+            preferencesRepository.updateCustomKpisJson(CustomKpiAndWorkspaceEngine.serializeKpis(updated))
+        }
+        return null
+    }
+
+    fun deleteCustomKpi(kpiId: String) {
+        val current = CustomKpiAndWorkspaceEngine.deserializeKpis(preferences.value.customKpisJson)
+        val updated = current.filterNot { it.id == kpiId }
+        viewModelScope.launch {
+            preferencesRepository.updateCustomKpisJson(CustomKpiAndWorkspaceEngine.serializeKpis(updated))
+        }
+    }
+
+    fun buildShareableConfigJson(): String {
+        val kpis = CustomKpiAndWorkspaceEngine.deserializeKpis(preferences.value.customKpisJson)
+        return ConfigShareAndSupportBundle.buildShareableConfigJson(
+            preferences = preferences.value,
+            profiles = profiles.value,
+            rules = automationRules.value,
+            presets = portDevicePresets.value.values.toList(),
+            kpis = kpis
+        )
+    }
+
+    fun previewShareableConfig(rawJson: String): Result<ShareableConfigBundle> {
+        return ConfigShareAndSupportBundle.parseShareableConfigJson(rawJson)
+    }
+
+    fun importShareableConfig(
+        bundle: ShareableConfigBundle,
+        selection: ShareableConfigImportSelection,
+        onDone: (Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            var count = 0
+            if (selection.includePreferences) {
+                preferencesRepository.applyFromBackupJson(bundle.preferencesJson)
+                count++
+            }
+            if (selection.includeKpis && bundle.kpis.isNotEmpty()) {
+                val existing = CustomKpiAndWorkspaceEngine.deserializeKpis(preferences.value.customKpisJson)
+                val merged = (existing + bundle.kpis).distinctBy { "${it.title}_${it.formulaType.name}" }
+                preferencesRepository.updateCustomKpisJson(CustomKpiAndWorkspaceEngine.serializeKpis(merged))
+                count += bundle.kpis.size
+            }
+            withContext(Dispatchers.IO) {
+                if (selection.includeProfiles) {
+                    bundle.profiles.forEach { prof ->
+                        persistence.saveProfile(prof.copy(id = 0L))
+                        count++
+                    }
+                }
+                if (selection.includeRules) {
+                    bundle.rules.forEach { rule ->
+                        persistence.saveAutomationRule(rule.copy(id = 0L))
+                        count++
+                    }
+                }
+                if (selection.includePresets) {
+                    bundle.presets.forEach { preset ->
+                        persistence.savePortDevicePreset(preset)
+                        count++
+                    }
+                }
+            }
+            onDone(count)
+        }
+    }
+
+    fun buildAnonymizedSupportBundle(): String {
+        return ConfigShareAndSupportBundle.buildAnonymizedSupportBundle(
+            stackDiagnosticsText = diagStatus.value.lastDiagnosticOutput,
+            doctorReport = powerDoctorReport.value,
+            integrity = integritySnapshot.value,
+            linkEvents = bleLinkEvents.value,
+            commandAudit = commandAuditLog.value,
+            recentLogLines = logs.value.map { it.message }
+        )
+    }
+
     override fun onCleared() {
         _revealedToken.value = null
         replayJob?.cancel()
+        cableLabJob?.cancel()
         super.onCleared()
     }
 

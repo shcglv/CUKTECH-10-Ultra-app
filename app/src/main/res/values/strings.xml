@@ -813,4 +813,446 @@
     <string name="port_manual_multi_34p">• C1 + C2 + C3: balanced 3-port split (e.g., 45W + 45W + 30W)\n• All 4 ports (C1+C2+C3+A): up to 110–120W total with C3+A locked to 5V / 15W shared</string>
     <string name="port_manual_scenarios_header">ADC 2.0 Power Scenarios (App Control)</string>
     <string name="port_manual_scenarios_body">• AI Mode: adaptive balancing across all active ports in real time.\n• Hybrid: reserves high-wattage laptop budget on USB-C1 first.\n• Single: dedicates full charger ceiling to a single high-draw port.\n• Dual: reserves balanced dual-laptop power across C1 &amp; C2 to reduce handshake resets.</string>
+
+    <!-- Stage 1: Hybrid BLE Continuity, Multi-Charger Hub, Signal Radar & Command Audit -->
+    <string name="event_ble_exit_title">Leaving Charger BLE Range</string>
+    <string name="event_ble_exit_detail_fmt">Signal dropped to %1$d dBm while delivering %2$.1f W</string>
+    <string name="notif_ble_exit_limit_body_fmt">Signal %1$d dBm (%2$.1f W active). Wh cutoff automation requires phone BLE or a stationary bridge in range.</string>
+    <string name="event_bridge_sync_title">Stationary Bridge Backfill</string>
+    <string name="event_bridge_sync_detail_fmt">Merged %1$d telemetry sample(s) from away period</string>
+
+    <string name="overview_multi_charger_strip_fmt">%1$s · %2$d node(s)</string>
+    <string name="overview_confidence_high">High Trust</string>
+    <string name="overview_confidence_medium">Gap / Fair</string>
+    <string name="overview_confidence_low">Offline / Gap</string>
+    <string name="overview_confidence_score_fmt">Data %1$d%%</string>
+
+    <string name="multi_charger_hub_title">Chargers Hub</string>
+    <string name="multi_charger_hub_desc">Switch between saved CUKTECH 10 Ultra units and configure outlet location or mains voltage (110V = 110W ceiling vs 220V = 120W ceiling).</string>
+    <string name="multi_charger_active_badge">Active</string>
+    <string name="multi_charger_connect_btn">Switch</string>
+    <string name="multi_charger_location_label">Room / Outlet Context</string>
+    <string name="multi_charger_mains_label">AC Mains Ceiling</string>
+    <string name="multi_charger_mains_220">220V (120W max)</string>
+    <string name="multi_charger_mains_110">110V (110W max)</string>
+    <string name="multi_charger_empty">Connect or sync a CUKTECH 10 Ultra charger to manage multiple hardware nodes.</string>
+
+    <string name="integrity_sheet_title">Telemetry Integrity &amp; BLE Radar</string>
+    <string name="integrity_score_title_fmt">Telemetry Confidence: %1$d%%</string>
+    <string name="integrity_cadence_fmt">Cadence %1$d ms · Jitter %2$d ms</string>
+    <string name="integrity_uptime_fmt">24h Coverage %1$.1f%% · Reconnects %2$d</string>
+    <string name="integrity_sources_fmt">Direct BLE: %1$d · Bridge Sync: %2$d</string>
+    <string name="integrity_blind_gaps_fmt">Unmeasured BLE gaps: %1$d (%2$.1f min — zero Wh fabricated)</string>
+    <string name="integrity_backfill_btn">Sync Stationary Bridge</string>
+    <string name="integrity_rssi_radar_title">BLE Proximity Radar &amp; Disconnect Risk</string>
+    <string name="integrity_rssi_risk_low">Strong Link</string>
+    <string name="integrity_rssi_risk_medium">Moving Away</string>
+    <string name="integrity_rssi_risk_high">Exit Imminent</string>
+    <string name="integrity_gaps_log_title">Recorded Blind Gaps (24h)</string>
+    <string name="integrity_gap_backfilled_fmt">Bridge backfilled (%1$d pts)</string>
+    <string name="integrity_gap_open_label">Unmeasured BLE gap</string>
+    <string name="integrity_reason_live_direct">Live phone BLE polling active</string>
+    <string name="integrity_reason_bridge_backfilled">Gaps recovered via stationary bridge</string>
+    <string name="integrity_reason_ble_disconnected">Disconnected (awaiting proximity or bridge)</string>
+    <string name="integrity_reason_telemetry_stale">Telemetry delayed (&gt;8s without packet)</string>
+    <string name="integrity_reason_weak_signal">Weak RSSI signal — risk of leaving BLE range</string>
+    <string name="integrity_reason_blind_gap_open">Contains unbackfilled away-from-charger intervals</string>
+
+    <string name="diag_wizard_title">6-Step Connection &amp; Auth Wizard</string>
+    <string name="wizard_bt_perm">Bluetooth Nearby Permissions</string>
+    <string name="wizard_bt_adapter">System Bluetooth Adapter ON</string>
+    <string name="wizard_ble_scan">CUKTECH BLE Beacon Discovered</string>
+    <string name="wizard_creds_ready">MiOT Device Token Provisioned</string>
+    <string name="wizard_gatt_a4">GATT Services &amp; 0xA4 Phase A</string>
+    <string name="wizard_miot_session">Encrypted MiOT Live Telemetry</string>
+    <string name="diag_audit_title">Command Audit &amp; Relay Wear Counters</string>
+    <string name="diag_wear_soft_resets_fmt">Soft resets: %1$d · Killswitch: %2$d</string>
+    <string name="diag_audit_empty">No commands logged yet.</string>
+    <string name="diag_audit_reconciled">Verified</string>
+    <string name="diag_audit_rejected">Rejected</string>
+
+    <string name="settings_section_continuity">Hybrid BLE Continuity &amp; Stationary Bridge</string>
+    <string name="settings_bridge_enable">Enable Stationary Bridge Backfill</string>
+    <string name="settings_bridge_desc">Pair an always-on home bridge (HTTP/JSON) so charging periods while you leave BLE range are automatically stitched when returning home.</string>
+    <string name="settings_bridge_url_label">Bridge Endpoint URL (e.g. http://192.168.1.50:8787)</string>
+    <string name="settings_bridge_token_label">Bridge Bearer Token (optional)</string>
+    <string name="settings_bridge_test_btn">Test</string>
+    <string name="settings_bridge_sync_now_btn">Sync Now</string>
+    <string name="settings_bridge_status_online_fmt">Bridge online %1$s · %2$d buffered sample(s)</string>
+    <string name="settings_bridge_status_offline_fmt">Bridge unreachable: %1$s</string>
+    <string name="settings_ble_exit_enable">Warn When Leaving BLE Range Under Load</string>
+    <string name="settings_ble_exit_threshold_fmt">RSSI Alert Threshold: %1$d dBm</string>
+    <string name="toast_bridge_sync_ok_fmt">Bridge sync merged %1$d new sample(s)</string>
+    <string name="toast_bridge_sync_fail_fmt">Bridge sync failed: %1$s</string>
+
+    <!-- Stage 2: Comprehensive Port Lifecycle & Protocol Analytics -->
+    <string name="analytics_tab_summary">Summary</string>
+    <string name="analytics_tab_lifecycle">Ports Lifecycle</string>
+    <string name="analytics_tab_power_protocols">Power &amp; Protocols</string>
+    <string name="analytics_window_1d">24h</string>
+    <string name="analytics_window_7d">7d</string>
+    <string name="analytics_window_30d">30d</string>
+    <string name="analytics_source_badge_bridge">BRIDGE_SYNC</string>
+    <string name="analytics_source_badge_mixed_fmt">Direct %1$d · Bridge %2$d</string>
+
+    <string name="lifecycle_ports_card_title">Per-Port Lifecycle Metrics</string>
+    <string name="lifecycle_ports_empty">No port lifecycle telemetry collected in this window yet.</string>
+    <string name="lifecycle_conn_count_fmt">Rank #%1$d · %2$d session(s)</string>
+    <string name="lifecycle_occ_util_eff_fmt">Occ %1$.0f%% · Active %2$.0f%% · Eff %3$.0f%%</string>
+    <string name="lifecycle_idle_fmt">Idle attached: %1$.0f min (%2$.2f Wh)</string>
+    <string name="lifecycle_rapid_drops_fmt">Rapid reconnects (&lt;60s): %1$d · Confirmed drops: %2$d</string>
+    <string name="lifecycle_ble_gap_note">Unexpected disconnects are only counted during verified BLE cadence (&lt;=10s), never during out-of-range gaps.</string>
+    <string name="lifecycle_multiport_title">Simultaneous Multi-Port Concurrency</string>
+    <string name="lifecycle_multiport_row_fmt">1P: %1$.0fm · 2P: %2$.0fm · 3P: %3$.0fm · 4P: %4$.0fm (Peak %5$d)</string>
+    <string name="lifecycle_heatmap_title">Weekly Activity Heatmap (Mon–Sun · 4h Blocks)</string>
+    <string name="lifecycle_heatmap_subtitle">Normalized Wh load density per 4-hour block</string>
+    <string name="lifecycle_hourly_title">24h Hourly Energy Profile (Wh)</string>
+
+    <string name="power_bands_title">Power Operating Bands (0–120W)</string>
+    <string name="power_plateaus_fmt">Peak hold (&gt;=85%%): %1$.1f min (%2$d plateaus) · Median %3$.1f W · Rate %4$.1f Wh/h</string>
+    <string name="power_hist_voltage_title">Voltage Rails Distribution</string>
+    <string name="power_hist_current_title">Current Load Distribution</string>
+    <string name="power_peaks_dips_title">Top Peaks &amp; Notable Power Drops</string>
+    <string name="power_protocols_title">Fast-Charge Protocol Attribution</string>
+    <string name="power_protocols_honesty_note">C1/C2 report exact hardware registers (PIID 17). C3/USB-A use PIID 18 &amp; V·A heuristics (±0.1V/0.1A ADC resolution).</string>
+    <string name="proto_badge_exact_c12">Exact PIID 17</string>
+    <string name="proto_badge_heuristic_c3a">C3/A Heuristic</string>
+
+    <!-- Stage 3: Scenes, PDO Explorer, Port Matrix & Load Simulator -->
+    <string name="analytics_tab_scenes_pdo">Scenes &amp; PDO</string>
+    <string name="analytics_tab_session_lab">Session Lab</string>
+
+    <string name="pdo_explorer_title">PDO &amp; Voltage Rail Explorer</string>
+    <string name="pdo_explorer_hw_badge">Hardware PIID 7/8</string>
+    <string name="pdo_explorer_est_badge">V·A Observation Only</string>
+    <string name="pdo_explorer_c3a_notice">C1/C2 report exact hardware PDO profiles (PIID 7/8) &amp; protocol toggles. C3/USB-A omit hardware PDO capability frames and are analyzed strictly from observed V·A bands.</string>
+    <string name="pdo_explorer_pps_fmt">PPS ≤%1$.0fV</string>
+    <string name="pdo_explorer_declared_fmt">Declared PDO: %1$s</string>
+    <string name="pdo_explorer_samples_fmt">%1$d samples</string>
+    <string name="pdo_explorer_no_bands">No active voltage bands recorded in this window yet.</string>
+    <string name="pdo_explorer_perm_enabled">%1$s ON</string>
+    <string name="pdo_explorer_perm_disabled">%1$s OFF</string>
+
+    <string name="scene_matrix_title">Empirical Scene &amp; Port Matrix</string>
+    <string name="scene_matrix_obs_fmt">%1$d multi-port observations</string>
+    <string name="scene_matrix_empty">Plug in devices to record real-world power distribution across AI, Hybrid, Single, and Dual modes.</string>
+    <string name="scene_stat_row_fmt">%1$d obs · Avg %2$.1f W · Peak %3$.1f W · Top %4$s</string>
+    <string name="scene_matrix_combos_header">Observed Port Combinations</string>
+    <string name="scene_matrix_combo_row_fmt">%1$d obs · Avg %2$.1f W · Peak %3$.1f W</string>
+    <string name="scene_matrix_c3a_shared_badge">C3+A 5V Shared (%1$d)</string>
+
+    <string name="load_sim_title">Multi-Port Load Distribution Simulator</string>
+    <string name="load_sim_desc">Select active ports and ADC 2.0 scenario to inspect expected ceilings based on your recorded charger history or rated 110V/220V hardware envelope.</string>
+    <string name="load_sim_conf_high">Empirical · High (%1$d obs)</string>
+    <string name="load_sim_conf_medium">Empirical · Medium (%1$d obs)</string>
+    <string name="load_sim_conf_estimate">Hardware Estimate (%1$d obs)</string>
+    <string name="load_sim_ceiling_fmt">Est. Ceiling %1$.1f / %2$.0f W</string>
+    <string name="load_sim_headroom_fmt">Headroom %1$.1f W</string>
+    <string name="load_sim_c3a_alert">C3 + USB-A active together: secondary rail locks to shared 5V / 15W max.</string>
+    <string name="load_sim_idle_prompt">Tap at least one port (C1–A) to simulate allocation.</string>
+    <string name="load_sim_disclaimer_history">Derived from actual telemetry observations under matching scenario &amp; port load.</string>
+    <string name="load_sim_disclaimer_estimate">Estimated from AD1204 hardware power table (no sufficient empirical history yet).</string>
+
+    <string name="proto_transitions_title">Protocol Handshake Transitions</string>
+    <string name="proto_transitions_empty">No protocol transitions (&lt;=15s cadence) detected in this window.</string>
+    <string name="proto_transition_row_fmt">%1$s: %2$s → %3$s (%4$d×)</string>
+    <string name="proto_transition_delta_fmt">%1$.1f → %2$.1f W (%3$+.1f W)</string>
+    <string name="proto_transition_osc_badge">Oscillation ≥3/2m</string>
+
+    <!-- Stage 4: Session Lab, Personal Records, Comparison, Deep Replay & Incident Black Box -->
+    <string name="session_records_title">Personal Records &amp; Norms</string>
+    <string name="session_records_empty">Complete at least one charging session to unlock personal records and norms.</string>
+    <string name="session_rec_peak">Record Peak</string>
+    <string name="session_rec_wh">Max Energy</string>
+    <string name="session_rec_dur">Longest Run</string>
+    <string name="session_rec_rate">Fastest Rate</string>
+    <string name="session_rec_rate_fmt">%1$.1f Wh/h</string>
+    <string name="session_rec_failure_fmt">Completed: %1$d · Unexpected/Cutoff Rate: %2$.1f%%</string>
+    <string name="session_class_fast_boost">Fast Boost</string>
+    <string name="session_class_long_steady">Long Steady</string>
+    <string name="session_class_short_burst">Short Burst</string>
+    <string name="session_class_interrupted">BLE Interrupted</string>
+    <string name="session_class_trickle">Trickle</string>
+    <string name="session_class_multiport">Multi-Port</string>
+    <string name="session_class_drop">Drop / Cutoff</string>
+
+    <string name="session_compare_title">Two-Session Curve Overlay</string>
+    <string name="session_compare_empty">Record at least 2 charging sessions to overlay curves side-by-side.</string>
+    <string name="session_compare_pick_a">Session A</string>
+    <string name="session_compare_pick_b">Session B</string>
+    <string name="session_compare_align_time">Align by Time (min)</string>
+    <string name="session_compare_align_wh">Align by Energy (Wh)</string>
+    <string name="session_compare_delta_fmt">ΔEnergy %1$+.2f Wh · ΔPeak %2$+.1f W · ΔAvg %3$+.1f W · ΔTime %4$s</string>
+    <string name="session_compare_item_fmt">#%1$d %2$s · %3$.2f Wh (%4$.0fW pk)</string>
+
+    <string name="blackbox_title">Incident Black Box (5-Min Ring Buffer)</string>
+    <string name="blackbox_desc">Auto-captures the last 5 minutes of multi-port snapshots and protocol/BLE events on unexpected drops or cable resets.</string>
+    <string name="blackbox_capture_btn">Capture Black Box</string>
+    <string name="blackbox_empty">No black box snapshots captured yet.</string>
+    <string name="blackbox_type_manual">Manual Snapshot</string>
+    <string name="blackbox_type_drop">Unexpected Drop</string>
+    <string name="blackbox_type_proto">Cable / Protocol Fault</string>
+    <string name="blackbox_copy_json">Copy JSON</string>
+    <string name="toast_blackbox_captured">Black box snapshot saved</string>
+    <string name="toast_json_copied">JSON copied to clipboard</string>
+
+    <!-- Enhanced Session Replay Dialog -->
+    <string name="replay_phases_header">Detected Phases &amp; Quality</string>
+    <string name="replay_phase_ramp_up">Ramp-Up</string>
+    <string name="replay_phase_stable">Stable</string>
+    <string name="replay_phase_taper">Taper</string>
+    <string name="replay_phase_drop">Drop</string>
+    <string name="replay_phase_interruption">BLE Gap</string>
+    <string name="replay_phase_idle">Idle</string>
+    <string name="replay_metrics_fmt">Volatility %1$.1f%% · V-Stab %2$d%% · A-Stab %3$d%% · vs Norm %4$.2f× Wh</string>
+    <string name="replay_ramp_fmt">Ramp-up %1$ds · Stabilization %2$ds (cadence %3$d ms)</string>
+    <string name="replay_cadence_insufficient_fmt">Ramp-up omitted: cadence %1$d ms (&gt;3.5s) or startup BLE gap</string>
+    <string name="replay_bridge_badge_fmt">BRIDGE_SYNC · %1$d pts</string>
+    <string name="replay_drops_header">Power Drop Explanations</string>
+    <string name="replay_drop_neighbor">Sibling port activated</string>
+    <string name="replay_drop_protocol">Protocol step-down</string>
+    <string name="replay_drop_ble_gap">BLE gap overlap</string>
+    <string name="replay_drop_taper">Device taper / load change</string>
+    <string name="replay_bookmarks_header">Replay Bookmarks &amp; Tags</string>
+    <string name="replay_bookmark_tag_label">Tag (e.g. Peak, Thermal)</string>
+    <string name="replay_bookmark_note_label">Note (optional)</string>
+    <string name="replay_add_bookmark_btn">Add Bookmark</string>
+    <string name="replay_export_json_btn">Export Annotated JSON</string>
+
+    <!-- Stage 5: Inventory, 0.1V Compensator Cable Lab, Phone Battery Calibration & Charger Passport -->
+    <string name="analytics_tab_inventory_lab">Inventory &amp; Lab</string>
+
+    <string name="phone_batt_title">Phone Battery Calibration</string>
+    <string name="phone_batt_refresh_btn">Refresh</string>
+    <string name="phone_batt_soc_fmt">Battery %1$d%% · %2$.2f V · %3$d mA</string>
+    <string name="phone_batt_power_temp_fmt">Intake %1$.2f W · Temp %2$.1f °C · Source %3$s</string>
+    <string name="phone_batt_eff_fmt">Matched %1$s · Est. Net Battery Intake Efficiency: %2$d%%</string>
+    <string name="phone_batt_unplugged">Phone is not charging on a matched charger port right now.</string>
+    <string name="phone_batt_disclaimer">Estimate only: Android BatteryManager measures net cell charge after screen/CPU/modem power draw.</string>
+
+    <string name="device_inv_title">Device Inventory &amp; Curve Match</string>
+    <string name="device_inv_add_btn">Add Device</string>
+    <string name="device_inv_empty">No devices registered yet. Add your laptop, phone, or powerbank to auto-match sessions.</string>
+    <string name="device_inv_meta_fmt">%1$s · %2$.0f Wh · %3$.0f W max · %4$s</string>
+    <string name="device_inv_stats_fmt">Recorded: %1$.2f Wh · %2$d session(s)</string>
+    <string name="device_suggest_title_fmt">Match latest session to %1$s? (%2$d%%)</string>
+    <string name="device_suggest_detail_fmt">Peak %1$.1f W · %2$.2f Wh on %3$s (%4$s)</string>
+    <string name="device_suggest_confirm_btn">Confirm &amp; Link</string>
+    <string name="device_dialog_title">Add Inventory Device</string>
+    <string name="device_dialog_name_label">Device Name (e.g. Pixel 9 Pro)</string>
+    <string name="device_dialog_wh_label">Battery Capacity (Wh)</string>
+    <string name="device_dialog_maxw_label">Rated Max Power (W)</string>
+    <string name="device_dialog_proto_label">Preferred Protocol (PD / PPS / QC)</string>
+    <string name="device_cat_phone">Phone</string>
+    <string name="device_cat_laptop">Laptop</string>
+    <string name="device_cat_tablet">Tablet</string>
+    <string name="device_cat_powerbank">Powerbank</string>
+
+    <string name="cable_lab_title">Cable Inventory &amp; 0.1V Compensator Lab</string>
+    <string name="cable_lab_add_btn">Add Cable</string>
+    <string name="cable_lab_empty">No cables saved yet. Add a cable or probe any fixed-rail port (≥1.5A).</string>
+    <string name="cable_lab_meta_fmt">%1$s · %2$dA · %3$d cm · E-Marker: %4$s</string>
+    <string name="cable_lab_last_fmt">Last loop: %1$d ±%2$d mΩ (sag %3$d mV · %4$d tests)</string>
+    <string name="cable_lab_select_label">Active Probe Cable</string>
+    <string name="cable_lab_adhoc">Ad-hoc (No Saved Cable)</string>
+    <string name="cable_lab_start_btn">Start 12s Guided Test</string>
+    <string name="cable_lab_cancel_btn">Cancel (%1$d/%2$d)</string>
+    <string name="cable_lab_analyze_recent_btn">Analyze Last 30m</string>
+    <string name="cable_lab_disclaimer">Measures full loop (port + cable + connector) on fixed PD/QC rails ≥1.5A. Uncertainty ±mΩ comes from the charger 0.1V ADC step; PPS/Xiaomi excluded.</string>
+    <string name="cable_lab_err_pps">Variable PPS / HyperCharge active — switch to a fixed voltage rail (5/9/12/15/20V) for sag measurement.</string>
+    <string name="cable_lab_err_low_current">Current below 1.5A — draw at least 1.5A so voltage sag exceeds 0.1V ADC noise.</string>
+    <string name="cable_lab_err_few_samples">Need at least 5 steady high-load samples on a fixed rail.</string>
+    <string name="cable_lab_err_no_rail">Voltage does not match a standard fixed PD/QC rail (5/9/12/15/20V).</string>
+    <string name="cable_lab_ok_msg">Cable loop test saved with quantization error bounds.</string>
+    <string name="cable_lab_result_row_fmt">%1$s · %2$s @ %3$.0fV (%4$.1fA) → %5$d ±%6$d mΩ · %7$s</string>
+    <string name="cable_dialog_title">Add USB Cable</string>
+    <string name="cable_dialog_name_label">Cable Name (e.g. Cuktech 6A Braided)</string>
+    <string name="cable_dialog_amps_label">Rated Current (3 / 5 / 6 A)</string>
+    <string name="cable_dialog_length_label">Length (cm)</string>
+    <string name="cable_dialog_emarker">Built-in E-Marker Chip</string>
+
+    <string name="passport_title">Charger Passport &amp; Research Export</string>
+    <string name="passport_header_fmt">%1$s · %2$s · %3$dV AC</string>
+    <string name="passport_stats_fmt">Sessions: %1$d · Delivered: %2$.2f Wh · Cable Tests: %3$d</string>
+    <string name="passport_avg_mohm_fmt">Average Measured Cable Loop: %1$d mΩ</string>
+    <string name="passport_export_btn">Export Anonymized Lab JSON</string>
+    <string name="passport_export_note">Strips MAC addresses, MiOT tokens, device names, and personal notes before copying.</string>
+    <string name="action_delete">Delete</string>
+
+    <!-- Stage 6: Automation Safety, Rule Simulator, Deadline Queue, QS Tile, NFC Actions & Port Widget -->
+    <string name="qs_tile_label">CUKTECH C1</string>
+    <string name="widget_port_name">Single Port Focus (2×2)</string>
+    <string name="widget_port_desc">Live voltage, current, watts, and mini chart for one selected port.</string>
+    <string name="widget_preview_port_title">Single Port + Mini Chart (2×2)</string>
+
+    <string name="automation_trig_power_guard">Power Guard (SW)</string>
+    <string name="automation_trig_phone_soc">Phone Battery %</string>
+    <string name="automation_act_usba_trickle">USB-A Trickle (4h)</string>
+    <string name="automation_act_smart_display">Night Display</string>
+    <string name="automation_priority_label">Rule Priority</string>
+    <string name="automation_priority_high">P1 High</string>
+    <string name="automation_priority_normal">P5 Normal</string>
+    <string name="automation_priority_low">P10 Low</string>
+    <string name="automation_phone_soc_fmt">Stop port when phone reaches %1$d%%</string>
+    <string name="automation_power_guard_note">Software guard via BLE polling (~1–2s latency); not a hardware fuse/OCP replacement.</string>
+    <string name="automation_display_night_note">Sets charger screen idle-off ON and 10s display timeout.</string>
+
+    <string name="automation_safety_title">Safety Gate &amp; 24h Simulator</string>
+    <string name="automation_safety_stale_note">Stale BLE Guard active: rules never fire if telemetry is older than 12s or disconnected.</string>
+    <string name="automation_safety_clean">No rule conflicts or oscillation cycles detected.</string>
+    <string name="automation_simulate_btn">Simulate on 24h History</string>
+    <string name="automation_sim_result_fmt">Scanned %1$d samples (%2$d stale gaps skipped) · %3$d simulated trigger(s)</string>
+
+    <string name="deadline_queue_title">Priority Queue &amp; Deadlines</string>
+    <string name="deadline_add_btn">Add Deadline</string>
+    <string name="deadline_empty">No deadline targets yet. Add a target Wh and departure time to track charge readiness.</string>
+    <string name="deadline_status_completed">DONE</string>
+    <string name="deadline_status_on_track">ON TRACK</string>
+    <string name="deadline_status_at_risk">AT RISK</string>
+    <string name="deadline_status_will_miss">WILL MISS</string>
+    <string name="deadline_status_paused">NO LOAD</string>
+    <string name="deadline_row_meta_fmt">%1$s · %2$.1f/%3$.0f Wh · %4$.1f W</string>
+    <string name="deadline_eta_fmt">ETA %1$d min · Deadline in %2$d min</string>
+    <string name="deadline_sheet_title">New Charging Deadline</string>
+    <string name="deadline_name_label">Task Name (e.g. Laptop Before Flight)</string>
+    <string name="deadline_wh_label">Target Energy (Wh)</string>
+    <string name="deadline_hours_label">Deadline In (Hours)</string>
+
+    <string name="nfc_actions_title">NFC Tags &amp; Quick Settings Tile</string>
+    <string name="nfc_actions_desc">Write a CUKTECH deep-link URI to any NFC sticker or add the CUKTECH Quick Settings tile from the Android notification shade.</string>
+    <string name="nfc_copy_btn">Copy URI</string>
+    <string name="nfc_test_btn">Test URI Action</string>
+    <string name="nfc_preset_night">Scene: AI + Night</string>
+    <string name="nfc_preset_burst">Scene: 120W Burst</string>
+    <string name="nfc_preset_c1_toggle">Toggle USB-C1</string>
+    <string name="nfc_preset_usba_trickle">USB-A Trickle ON</string>
+
+    <!-- Stage 7: Fleet, MQTT 3.1.1, Event Webhooks, LAN Bridge Discovery & WebDAV Cloud Backup -->
+    <string name="fleet_summary_title">Multi-Charger Fleet &amp; Benchmark</string>
+    <string name="fleet_summary_desc">Aggregates live load and energy totals across all saved chargers and compares node headroom side-by-side.</string>
+    <string name="fleet_live_total_label">Fleet Load</string>
+    <string name="fleet_today_wh_label">Fleet Today</string>
+    <string name="fleet_all_time_label">Fleet Total</string>
+    <string name="fleet_nodes_online_fmt">%1$d/%2$d online</string>
+    <string name="fleet_node_online">ONLINE</string>
+    <string name="fleet_node_offline">OFFLINE</string>
+    <string name="fleet_node_row_fmt">%1$s · %2$.1f W · %3$.1f Wh today · %4$.1f Wh total</string>
+    <string name="fleet_benchmark_title">Node A vs Node B Benchmark</string>
+    <string name="fleet_benchmark_node_a">Node A:</string>
+    <string name="fleet_benchmark_node_b">Node B:</string>
+    <string name="fleet_benchmark_delta_fmt">Δ Load: %1$+.1f W · Δ Today: %2$+.1f Wh · Δ Total: %3$+.1f Wh</string>
+    <string name="fleet_benchmark_mains_note">Mains ceiling: Node A %1$dV (%2$.0fW max) vs Node B %3$dV (%4$.0fW max)</string>
+
+    <string name="settings_event_webhooks">Real-Time Event Webhooks (Connect / Anomaly / Cutoff)</string>
+    <string name="settings_mqtt_section_title">MQTT 3.1.1 &amp; Home Assistant Discovery</string>
+    <string name="settings_mqtt_enable">Enable MQTT Bridge</string>
+    <string name="settings_mqtt_broker_label">Broker URL (mqtt:// or mqtts://host:port)</string>
+    <string name="settings_mqtt_client_id_label">Client ID</string>
+    <string name="settings_mqtt_base_topic_label">Base Topic</string>
+    <string name="settings_mqtt_user_label">MQTT Username</string>
+    <string name="settings_mqtt_pass_label">MQTT Password</string>
+    <string name="settings_mqtt_ha_discovery">Publish HA Auto Discovery</string>
+    <string name="settings_mqtt_publish_discovery_btn">HA Discovery</string>
+    <string name="settings_mqtt_reconnect_btn">Reconnect</string>
+    <string name="settings_mqtt_status_fmt">MQTT: %1$s (%2$s)</string>
+    <string name="settings_mqtt_state_connected">Connected</string>
+    <string name="settings_mqtt_state_connecting">Connecting…</string>
+    <string name="settings_mqtt_state_error">Error</string>
+    <string name="settings_mqtt_state_disconnected">Disconnected</string>
+    <string name="toast_integrations_saved">Webhook &amp; MQTT integration saved.</string>
+    <string name="toast_discovery_published">Home Assistant MQTT discovery payloads queued.</string>
+
+    <string name="bridge_discover_btn">Discover Bridge on Wi-Fi (mDNS)</string>
+    <string name="bridge_discovering">Scanning LAN for bridges…</string>
+    <string name="bridge_remote_ctrl_title">Remote Bridge Commands</string>
+    <string name="bridge_remote_c1_on">Remote C1 ON</string>
+    <string name="bridge_remote_c1_off">Remote C1 OFF</string>
+    <string name="bridge_remote_scene_quiet">Remote Night Scene</string>
+
+    <string name="settings_webdav_open_btn">WebDAV Cloud</string>
+    <string name="webdav_sheet_title">Encrypted WebDAV / Nextcloud</string>
+    <string name="webdav_sheet_desc">Uploads zero-knowledge AES-256-GCM .cukbackup archives to your own WebDAV or Nextcloud server. Passwords stay in Android Keystore.</string>
+    <string name="webdav_url_label">WebDAV Folder or File URL</string>
+    <string name="webdav_user_label">Username</string>
+    <string name="webdav_pass_label">Password</string>
+    <string name="webdav_filename_label">Remote Filename (.cukbackup)</string>
+    <string name="webdav_passphrase_label">Encryption Passphrase (.cukbackup)</string>
+    <string name="webdav_include_secrets">Include encrypted charger tokens &amp; BLE keys</string>
+    <string name="webdav_replace_existing">Replace existing local history on restore</string>
+    <string name="webdav_test_btn">Test</string>
+    <string name="webdav_upload_btn">Upload Cloud</string>
+    <string name="webdav_restore_btn">Restore Cloud</string>
+    <string name="webdav_http_warning">Plaintext http:// exposes Basic Auth headers on the network — prefer https://.</string>
+
+    <!-- Stage 8: Power Doctor, Workspaces & Custom KPIs, Sanitized Config Share & Support Bundle -->
+    <string name="doctor_title">Explainable Power Doctor</string>
+    <string name="doctor_score_fmt">%1$d/100 · %2$s</string>
+    <string name="doctor_grade_excellent">EXCELLENT</string>
+    <string name="doctor_grade_good">GOOD</string>
+    <string name="doctor_grade_attention">ATTENTION</string>
+    <string name="doctor_grade_critical">CRITICAL</string>
+    <string name="doctor_copy_support_bundle_btn">Copy Anonymized Support Bundle</string>
+    <string name="toast_support_bundle_copied">Anonymized support bundle copied (MACs, IPs &amp; tokens stripped).</string>
+    <string name="doctor_cat_link">BLE &amp; Telemetry Continuity</string>
+    <string name="doctor_cat_cable">Cable &amp; Voltage Rail</string>
+    <string name="doctor_cat_stability">Protocol &amp; Anomaly Stability</string>
+    <string name="doctor_cat_relay">Relay &amp; Command Audit</string>
+    <string name="doctor_find_blind_gaps">Unmeasured BLE out-of-range gaps detected</string>
+    <string name="doctor_find_weak_rssi">Weak Bluetooth RSSI signal</string>
+    <string name="doctor_find_cable_sag">Elevated cable voltage sag under load</string>
+    <string name="doctor_find_cable_mohm">High loop resistance measured in Cable Lab</string>
+    <string name="doctor_find_anomalies">Active protocol / current anomalies</string>
+    <string name="doctor_find_cmd_rejects">High command rejection rate</string>
+    <string name="doctor_find_nominal">All monitored subsystems nominal</string>
+    <string name="doctor_act_bridge">Pair a stationary LAN bridge or stay closer during long charges.</string>
+    <string name="doctor_act_closer">Move phone closer to charger or check wall placement.</string>
+    <string name="doctor_act_swap_cable">Inspect connectors or test a lower-resistance E-Marker cable.</string>
+    <string name="doctor_act_cable_lab">Run a guided Cable Lab sag test on a fixed PD rail.</string>
+    <string name="doctor_act_inspect_blackbox">Review Incident Black Box snapshots in Analytics.</string>
+    <string name="doctor_act_check_lockout">Verify MiOT auth status and child-lock / command guard rules.</string>
+    <string name="doctor_act_none">No corrective action required.</string>
+
+    <string name="workspace_title">Workspace &amp; Custom KPIs</string>
+    <string name="workspace_all">All</string>
+    <string name="workspace_home">Home</string>
+    <string name="workspace_office">Office</string>
+    <string name="workspace_travel">Travel</string>
+    <string name="workspace_lab">Lab</string>
+    <string name="kpi_section_title">Pinned Custom KPIs</string>
+    <string name="kpi_empty_hint">Pin live KPI cards (e.g. Load %, Hourly Cost, Headroom W) with automatic unit safety checks.</string>
+    <string name="kpi_add_btn">Add KPI</string>
+    <string name="kpi_sheet_title">New Custom KPI</string>
+    <string name="kpi_title_label">KPI Title</string>
+    <string name="kpi_formula_label">Formula</string>
+    <string name="kpi_unit_label">Display Unit</string>
+    <string name="kpi_target_label">Target / Scale Max</string>
+    <string name="kpi_save_btn">Save KPI</string>
+    <string name="kpi_formula_active_load_pct">Charger Load %</string>
+    <string name="kpi_formula_hourly_cost">Hourly Cost Rate</string>
+    <string name="kpi_formula_avg_session_wh">Avg Session Wh</string>
+    <string name="kpi_formula_peak_headroom_w">Peak Headroom W</string>
+    <string name="kpi_formula_multi_port_share">Top Port Share %</string>
+    <string name="kpi_formula_daily_target">Daily Target %</string>
+    <string name="kpi_err_title_empty">Enter a KPI title.</string>
+    <string name="kpi_err_unit_empty">Enter a unit.</string>
+    <string name="kpi_err_percent_required">Incompatible unit: percentage formulas require %.</string>
+    <string name="kpi_err_watts_required">Incompatible unit: power formulas require W.</string>
+    <string name="kpi_err_wh_required">Incompatible unit: energy formulas require Wh.</string>
+    <string name="kpi_err_cost_rate_required">Incompatible unit: rate formulas require /h (e.g. USD/h).</string>
+
+    <string name="settings_config_share_open_btn">Share Config</string>
+    <string name="config_share_sheet_title">Sanitized Config Share &amp; Import</string>
+    <string name="config_share_desc">Exports preferences, profiles, automation rules, presets, and KPIs without MACs, MiOT keys, URLs, or passwords.</string>
+    <string name="config_share_copy_btn">Copy Sanitized Config JSON</string>
+    <string name="toast_config_share_copied">Sanitized Config JSON copied to clipboard.</string>
+    <string name="config_share_paste_label">Paste Config JSON to Preview &amp; Import</string>
+    <string name="config_share_preview_btn">Preview Import Contents</string>
+    <string name="config_share_preview_fmt">Found: %1$d profiles · %2$d rules · %3$d presets · %4$d KPIs</string>
+    <string name="config_share_inc_prefs">Preferences &amp; tariff settings</string>
+    <string name="config_share_inc_profiles">Custom charging profiles</string>
+    <string name="config_share_inc_rules">Automation rules</string>
+    <string name="config_share_inc_presets">Port device presets</string>
+    <string name="config_share_inc_kpis">Custom KPIs</string>
+    <string name="config_share_import_btn">Import Selected Categories</string>
+    <string name="toast_config_imported_fmt">Imported %1$d config item(s).</string>
 </resources>

@@ -39,6 +39,7 @@ object ChargingNotificationManager {
 
     const val COMPLETION_NOTIF_BASE_ID = 20200
     const val ANOMALY_NOTIF_BASE_ID = 20300
+    const val BLE_PROXIMITY_NOTIF_ID = 20400
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -308,5 +309,49 @@ object ChargingNotificationManager {
             .build()
 
         nm.notify(ANOMALY_NOTIF_BASE_ID + (alert.portId ?: 0), notif)
+    }
+
+    fun postBleProximityExitNotification(
+        context: Context,
+        rssiDbm: Int,
+        totalWatts: Double,
+        hasActiveLimit: Boolean,
+        inQuietHours: Boolean
+    ) {
+        ensureChannels(context)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("EXTRA_NAV_TAB", "OVERVIEW")
+        }
+        val pi = PendingIntent.getActivity(
+            context,
+            BLE_PROXIMITY_NOTIF_ID,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val title = context.getString(R.string.event_ble_exit_title)
+        val body = if (hasActiveLimit) {
+            context.getString(R.string.notif_ble_exit_limit_body_fmt, rssiDbm, totalWatts)
+        } else {
+            context.getString(R.string.event_ble_exit_detail_fmt, rssiDbm, totalWatts)
+        }
+        val notif = NotificationCompat.Builder(context, CHANNEL_ANOMALY_ALERT)
+            .setSmallIcon(R.drawable.ic_stat_cuktech)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setSubText(context.getString(R.string.app_name))
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .setBigContentTitle(title)
+                    .bigText(body)
+            )
+            .setAutoCancel(true)
+            .setSilent(inQuietHours)
+            .setContentIntent(pi)
+            .setLocalOnly(true)
+            .build()
+
+        nm.notify(BLE_PROXIMITY_NOTIF_ID, notif)
     }
 }

@@ -20,10 +20,24 @@ enum class CommandSource {
     ADB_BROADCAST,
     TCP_GATEWAY,
     AUTOMATION_RULE,
-    INTERNAL_SAFETY;
+    INTERNAL_SAFETY,
+    BRIDGE;
 
     val requiresExternalAuth: Boolean
         get() = this == TASKER || this == ADB_BROADCAST || this == TCP_GATEWAY
+}
+
+fun interface CommandAuditListener {
+    fun onCommandAudited(
+        timestampMs: Long,
+        source: CommandSource,
+        commandType: String,
+        targetPortId: Int,
+        summary: String,
+        accepted: Boolean,
+        latencyMs: Long,
+        errorCode: String?
+    )
 }
 
 sealed class ChargerCommand {
@@ -196,7 +210,8 @@ class CommandDispatcher(
     private val authManager: AutomationAuthManager,
     private val adapter: HardwareCommandAdapter,
     private val clockMs: () -> Long = { System.currentTimeMillis() },
-    private val logger: (isError: Boolean, message: String) -> Unit = { _, _ -> }
+    private val logger: (isError: Boolean, message: String) -> Unit = { _, _ -> },
+    private val auditListener: CommandAuditListener? = null
 ) {
     private val executionMutex = Mutex()
 
@@ -245,6 +260,25 @@ class CommandDispatcher(
     ): CommandResult {
         val now = clockMs()
 
+        val commandType = command::class.simpleName ?: "Unknown"
+        val targetPortId = resolveTargetPortId(command)
+
+        fun emitAudit(res: CommandResult): CommandResult {
+            val latency = maxOf(0L, clockMs() - now)
+            val errCode = (res as? CommandResult.Rejected)?.code
+            auditListener?.onCommandAudited(
+                timestampMs = now,
+                source = source,
+                commandType = commandType,
+                targetPortId = targetPortId,
+                summary = res.message,
+                accepted = res.accepted,
+                latencyMs = latency,
+                errorCode = errCode
+            )
+            return res
+        }
+
         // 1. Security gate for external automation channels
         if (source.requiresExternalAuth) {
             val secCfg = authManager.config.value
@@ -256,25 +290,31 @@ class CommandDispatcher(
             }
             if (!channelEnabled) {
                 logSecurityRejection(source, "CHANNEL_DISABLED", "Channel ${source.name} is disabled (opt-in required)")
-                return CommandResult.Rejected(
-                    code = "CHANNEL_DISABLED",
-                    message = "External automation channel ${source.name} is disabled in settings."
+                return emitAudit(
+                    CommandResult.Rejected(
+                        code = "CHANNEL_DISABLED",
+                        message = "External automation channel ${source.name} is disabled in settings."
+                    )
                 )
             }
             if (authManager.isAuthLockedOut(clientKey, now)) {
                 logSecurityRejection(source, "AUTH_LOCKED_OUT", "Source locked out after repeated failures")
-                return CommandResult.Rejected(
-                    code = "AUTH_LOCKED_OUT",
-                    message = "Too many failed authorization attempts; temporarily locked out."
+                return emitAudit(
+                    CommandResult.Rejected(
+                        code = "AUTH_LOCKED_OUT",
+                        message = "Too many failed authorization attempts; temporarily locked out."
+                    )
                 )
             }
             val tokenValid = authManager.verifyTokenConstantTime(authToken)
             authManager.recordAuthResult(clientKey, tokenValid, now)
             if (!tokenValid) {
                 logSecurityRejection(source, "UNAUTHORIZED", "Invalid or missing authorization token")
-                return CommandResult.Rejected(
-                    code = "UNAUTHORIZED",
-                    message = "Missing or invalid automation security token."
+                return emitAudit(
+                    CommandResult.Rejected(
+                        code = "UNAUTHORIZED",
+                        message = "Missing or invalid automation security token."
+                    )
                 )
             }
         }
@@ -284,9 +324,11 @@ class CommandDispatcher(
             val limit = if (source.requiresExternalAuth) 20 else 40
             if (!authManager.allowCommandExecution(clientKey, maxPerWindow = limit, windowMs = 10_000L, nowMs = now)) {
                 logSecurityRejection(source, "RATE_LIMITED", "Rate limit exceeded for $clientKey")
-                return CommandResult.Rejected(
-                    code = "RATE_LIMITED",
-                    message = "Command rate limit exceeded. Try again shortly."
+                return emitAudit(
+                    CommandResult.Rejected(
+                        code = "RATE_LIMITED",
+                        message = "Command rate limit exceeded. Try again shortly."
+                    )
                 )
             }
         }
@@ -294,12 +336,23 @@ class CommandDispatcher(
         // 3. Parameter bounds validation before acquiring execution lock
         validateParameters(command)?.let { err ->
             logger(true, LogSanitizer.sanitize("[Dispatcher] Rejected ${source.name}: $err"))
-            return CommandResult.Rejected(code = "INVALID_PARAMS", message = err)
+            return emitAudit(CommandResult.Rejected(code = "INVALID_PARAMS", message = err))
         }
 
-        return executionMutex.withLock {
+        val result = executionMutex.withLock {
             executeValidatedLocked(source, command, now)
         }
+        return emitAudit(result)
+    }
+
+    private fun resolveTargetPortId(command: ChargerCommand): Int = when (command) {
+        is ChargerCommand.SetPortEnabled -> command.portId
+        is ChargerCommand.SetPortCountdown -> command.portId
+        is ChargerCommand.SetPortProtocol -> command.portId
+        is ChargerCommand.SetPortChargeLimit -> command.portId
+        is ChargerCommand.SetPortLogging -> command.portId
+        is ChargerCommand.SetUsbALowCurrent -> 4
+        else -> 0
     }
 
     private fun validateParameters(command: ChargerCommand): String? = when (command) {

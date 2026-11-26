@@ -13,7 +13,10 @@ enum class ChargerEventType {
     ANOMALY,
     AUTOMATION_TRIGGERED,
     HIGH_LOAD_ALERT,
-    LOW_POWER_DROP_ALERT
+    LOW_POWER_DROP_ALERT,
+    BLE_PROXIMITY_EXIT,
+    BRIDGE_SYNC_MERGED,
+    TELEMETRY_STALE
 }
 
 data class ChargerEvent(

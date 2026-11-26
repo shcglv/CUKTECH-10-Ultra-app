@@ -607,12 +607,18 @@ fun AutomationRuleEditorSheet(
     var actionType by remember { mutableStateOf(existingRule?.actionType ?: LocalAutomationEngine.ACTION_PORT_OFF) }
     var actionSceneMode by remember { mutableIntStateOf(existingRule?.actionSceneMode ?: 4) }
     var cooldownMin by remember { mutableIntStateOf(existingRule?.cooldownMinutes ?: 15) }
+    var priority by remember { mutableIntStateOf(existingRule?.priority ?: 5) }
+    var targetPhoneSocPct by remember { mutableIntStateOf(existingRule?.targetPhoneSocPct ?: 85) }
+    var actionIdleScreenOff by remember { mutableStateOf(existingRule?.actionIdleScreenOff ?: true) }
+    var actionScreenTimeout by remember { mutableIntStateOf(existingRule?.actionScreenTimeout ?: 0) }
 
     val unitH = stringResource(R.string.unit_h)
     val unitM = stringResource(R.string.unit_m)
     val defaultRuleName = when (triggerType) {
         LocalAutomationEngine.TRIGGER_LOW_POWER_CUTOFF -> stringResource(R.string.automation_tpl_idle_off_name)
         LocalAutomationEngine.TRIGGER_DAILY_SCHEDULE -> stringResource(R.string.automation_tpl_night_mode_name)
+        LocalAutomationEngine.TRIGGER_POWER_GUARD -> stringResource(R.string.automation_trig_power_guard)
+        LocalAutomationEngine.TRIGGER_PHONE_SOC_CUTOFF -> stringResource(R.string.automation_trig_phone_soc)
         else -> stringResource(R.string.automation_tpl_laptop_burst_name)
     }
 
@@ -655,28 +661,51 @@ fun AutomationRuleEditorSheet(
                 listOf(
                     LocalAutomationEngine.TRIGGER_LOW_POWER_CUTOFF to stringResource(R.string.automation_trig_low_power),
                     LocalAutomationEngine.TRIGGER_DAILY_SCHEDULE to stringResource(R.string.automation_trig_schedule),
-                    LocalAutomationEngine.TRIGGER_HIGH_LOAD_SCENE to stringResource(R.string.automation_trig_high_load)
+                    LocalAutomationEngine.TRIGGER_HIGH_LOAD_SCENE to stringResource(R.string.automation_trig_high_load),
+                    LocalAutomationEngine.TRIGGER_POWER_GUARD to stringResource(R.string.automation_trig_power_guard),
+                    LocalAutomationEngine.TRIGGER_PHONE_SOC_CUTOFF to stringResource(R.string.automation_trig_phone_soc)
                 ).forEach { (code, label) ->
                     FilterChip(
                         selected = triggerType == code,
                         onClick = {
                             triggerType = code
-                            if (code == LocalAutomationEngine.TRIGGER_HIGH_LOAD_SCENE) {
-                                thresholdText = "65.0"
-                                actionType = LocalAutomationEngine.ACTION_SET_SCENE_MODE
-                                holdSeconds = 15
-                            } else if (code == LocalAutomationEngine.TRIGGER_LOW_POWER_CUTOFF) {
-                                thresholdText = "1.5"
-                                actionType = LocalAutomationEngine.ACTION_PORT_OFF
-                                holdSeconds = 180
-                            } else {
-                                actionType = LocalAutomationEngine.ACTION_SET_SCENE_MODE
+                            when (code) {
+                                LocalAutomationEngine.TRIGGER_HIGH_LOAD_SCENE -> {
+                                    thresholdText = "65.0"
+                                    actionType = LocalAutomationEngine.ACTION_SET_SCENE_MODE
+                                    holdSeconds = 15
+                                }
+                                LocalAutomationEngine.TRIGGER_POWER_GUARD -> {
+                                    thresholdText = "95.0"
+                                    actionType = LocalAutomationEngine.ACTION_PORT_OFF
+                                    holdSeconds = 10
+                                }
+                                LocalAutomationEngine.TRIGGER_PHONE_SOC_CUTOFF -> {
+                                    actionType = LocalAutomationEngine.ACTION_PORT_OFF
+                                    holdSeconds = 30
+                                }
+                                LocalAutomationEngine.TRIGGER_LOW_POWER_CUTOFF -> {
+                                    thresholdText = "1.5"
+                                    actionType = LocalAutomationEngine.ACTION_PORT_OFF
+                                    holdSeconds = 180
+                                }
+                                else -> {
+                                    actionType = LocalAutomationEngine.ACTION_SET_SCENE_MODE
+                                }
                             }
                         },
                         label = { Text(label) },
                         modifier = Modifier.heightIn(min = 48.dp)
                     )
                 }
+            }
+
+            if (triggerType == LocalAutomationEngine.TRIGGER_POWER_GUARD) {
+                Text(
+                    text = stringResource(R.string.automation_power_guard_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
             }
 
             if (triggerType != LocalAutomationEngine.TRIGGER_DAILY_SCHEDULE) {
@@ -692,14 +721,31 @@ fun AutomationRuleEditorSheet(
                     }
                 }
 
-                OutlinedTextField(
-                    value = thresholdText,
-                    onValueChange = { thresholdText = it },
-                    label = { Text(stringResource(R.string.automation_threshold_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (triggerType == LocalAutomationEngine.TRIGGER_PHONE_SOC_CUTOFF) {
+                    Text(
+                        text = stringResource(R.string.automation_phone_soc_fmt, targetPhoneSocPct),
+                        style = MaterialTheme.typography.labelLarge.tabularNums()
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(80, 85, 90, 95, 100).forEach { soc ->
+                            FilterChip(
+                                selected = targetPhoneSocPct == soc,
+                                onClick = { targetPhoneSocPct = soc },
+                                label = { Text("$soc%") },
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            )
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = thresholdText,
+                        onValueChange = { thresholdText = it },
+                        label = { Text(stringResource(R.string.automation_threshold_label)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 Text(
                     text = stringResource(R.string.automation_hold_label_fmt, holdSeconds),
@@ -768,7 +814,10 @@ fun AutomationRuleEditorSheet(
 
             HorizontalDivider()
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 FilterChip(
                     selected = actionType == LocalAutomationEngine.ACTION_PORT_OFF,
                     onClick = { actionType = LocalAutomationEngine.ACTION_PORT_OFF },
@@ -779,6 +828,22 @@ fun AutomationRuleEditorSheet(
                     selected = actionType == LocalAutomationEngine.ACTION_SET_SCENE_MODE,
                     onClick = { actionType = LocalAutomationEngine.ACTION_SET_SCENE_MODE },
                     label = { Text(stringResource(R.string.automation_act_set_scene)) },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                )
+                FilterChip(
+                    selected = actionType == LocalAutomationEngine.ACTION_USB_A_LOW_CURRENT_ON,
+                    onClick = { actionType = LocalAutomationEngine.ACTION_USB_A_LOW_CURRENT_ON },
+                    label = { Text(stringResource(R.string.automation_act_usba_trickle)) },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                )
+                FilterChip(
+                    selected = actionType == LocalAutomationEngine.ACTION_SMART_DISPLAY,
+                    onClick = {
+                        actionType = LocalAutomationEngine.ACTION_SMART_DISPLAY
+                        actionIdleScreenOff = true
+                        actionScreenTimeout = 0
+                    },
+                    label = { Text(stringResource(R.string.automation_act_smart_display)) },
                     modifier = Modifier.heightIn(min = 48.dp)
                 )
             }
@@ -805,6 +870,28 @@ fun AutomationRuleEditorSheet(
                             modifier = Modifier.heightIn(min = 48.dp)
                         )
                     }
+                }
+            } else if (actionType == LocalAutomationEngine.ACTION_SMART_DISPLAY) {
+                Text(
+                    text = stringResource(R.string.automation_display_night_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Text(stringResource(R.string.automation_priority_label), style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    1 to stringResource(R.string.automation_priority_high),
+                    5 to stringResource(R.string.automation_priority_normal),
+                    10 to stringResource(R.string.automation_priority_low)
+                ).forEach { (pVal, pLabel) ->
+                    FilterChip(
+                        selected = priority == pVal,
+                        onClick = { priority = pVal },
+                        label = { Text(pLabel) },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    )
                 }
             }
 
@@ -849,7 +936,12 @@ fun AutomationRuleEditorSheet(
                                 actionSceneMode = actionSceneMode.coerceIn(1, 4),
                                 lastTriggeredMs = existingRule?.lastTriggeredMs ?: 0L,
                                 cooldownMinutes = cooldownMin.coerceIn(1, 1440),
-                                createdAtMs = existingRule?.createdAtMs ?: System.currentTimeMillis()
+                                createdAtMs = existingRule?.createdAtMs ?: System.currentTimeMillis(),
+                                priority = priority.coerceIn(1, 100),
+                                targetPhoneSocPct = targetPhoneSocPct.coerceIn(50, 100),
+                                actionOrientationLock = existingRule?.actionOrientationLock ?: false,
+                                actionIdleScreenOff = actionIdleScreenOff,
+                                actionScreenTimeout = actionScreenTimeout
                             )
                         )
                     },

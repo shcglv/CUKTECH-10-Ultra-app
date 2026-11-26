@@ -119,12 +119,18 @@ import com.example.cuktech.notifications.ChargingNotificationManager
 import com.example.cuktech.prefs.StartDestination
 import com.example.cuktech.protocol.CuktechProtocol
 import com.example.ui.components.AutomationRuleEditorSheet
+import com.example.ui.components.AutomationSafetyAndSimulatorCard
+import com.example.ui.components.ConfigShareAndImportSheet
+import com.example.ui.components.DeadlineQueueAndReadinessCard
 import com.example.ui.components.EncryptedBackupExportDialog
 import com.example.ui.components.EncryptedBackupRestoreDialog
 import com.example.ui.components.GitHubUpdateDialog
 import com.example.ui.components.MiHomeSwitchDialog
+import com.example.ui.components.MqttAndWebhookSettingsCard
+import com.example.ui.components.NfcAndQuickActionsCard
 import com.example.ui.components.PortManualBottomSheet
 import com.example.ui.components.SoftResetConfirmDialog
+import com.example.ui.components.WebDavBackupSheet
 import com.example.ui.components.explicitPortName
 import com.example.ui.components.formatMinuteOfDay
 import com.example.ui.components.localizedScenarioName
@@ -135,6 +141,7 @@ import com.example.ui.theme.tabularNums
 import com.example.ui.viewmodel.DashboardViewModel
 import com.example.widget.CuktechGlanceCompactReceiver
 import com.example.widget.CuktechGlanceControlReceiver
+import com.example.widget.CuktechGlancePortReceiver
 import java.text.SimpleDateFormat
 import java.util.Arrays
 import java.util.Date
@@ -179,6 +186,18 @@ fun SettingsHubScreen(
     val releaseUpdateInfo by viewModel.releaseUpdateInfo.collectAsStateWithLifecycle()
     val updateDownloadState by viewModel.updateDownloadState.collectAsStateWithLifecycle()
     val automationRules by viewModel.automationRules.collectAsStateWithLifecycle()
+    val automationSafetyReport by viewModel.automationSafetyReport.collectAsStateWithLifecycle()
+    val automationSimResult by viewModel.automationSimResult.collectAsStateWithLifecycle()
+    val deadlineReadiness by viewModel.deadlineReadiness.collectAsStateWithLifecycle()
+    val nfcLastStatus by viewModel.nfcLastStatus.collectAsStateWithLifecycle()
+    val bridgeStatusResult by viewModel.bridgeStatusResult.collectAsStateWithLifecycle()
+    val bridgeSyncing by viewModel.bridgeSyncing.collectAsStateWithLifecycle()
+    val mqttStatus by viewModel.mqttStatus.collectAsStateWithLifecycle()
+    val discoveredBridges by viewModel.discoveredBridges.collectAsStateWithLifecycle()
+    val isDiscoveringBridges by viewModel.isDiscoveringBridges.collectAsStateWithLifecycle()
+    val bridgeRemoteCmdStatus by viewModel.bridgeRemoteCmdStatus.collectAsStateWithLifecycle()
+    val webDavConfig by viewModel.webDavConfig.collectAsStateWithLifecycle()
+    val webDavStatus by viewModel.webDavStatus.collectAsStateWithLifecycle()
 
     val isConnected = authState == CuktechAuthState.AUTHENTICATED
 
@@ -187,6 +206,8 @@ fun SettingsHubScreen(
     var showSignOutConfirm by remember { mutableStateOf(false) }
     var showBackupExportDialog by remember { mutableStateOf(false) }
     var showBackupRestoreDialog by remember { mutableStateOf(false) }
+    var showWebDavSheet by remember { mutableStateOf(false) }
+    var showConfigShareSheet by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var isCheckingUpdates by remember { mutableStateOf(false) }
     var showRuleEditor by remember { mutableStateOf(false) }
@@ -256,16 +277,36 @@ fun SettingsHubScreen(
     var tariffCurrencyText by remember(prefs.currencyCode) { mutableStateOf(prefs.currencyCode) }
     var tcpPortText by remember(automationConfig.tcpPort) { mutableStateOf(automationConfig.tcpPort.toString()) }
 
-    var haEnabledDraft by remember(haConfig.haWebhookEnabled) { mutableStateOf(haConfig.haWebhookEnabled) }
-    var haUrlDraft by remember(haConfig.haWebhookUrl) { mutableStateOf(haConfig.haWebhookUrl) }
-    var haTokenDraft by remember { mutableStateOf("") }
-    var haTokenVisible by remember { mutableStateOf(false) }
-
     val isBatteryWhitelisted = remember(context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
             pm?.isIgnoringBatteryOptimizations(context.packageName) == true
         } else true
+    }
+
+    if (showWebDavSheet) {
+        WebDavBackupSheet(
+            config = webDavConfig,
+            status = webDavStatus,
+            onSaveConfig = { cfg, pass -> viewModel.saveWebDavConfig(cfg, pass) },
+            onTestConnection = { url, user, pass -> viewModel.testWebDavConnection(url, user, pass) },
+            onUploadBackup = { url, user, pass, file, phrase, incSec ->
+                viewModel.uploadEncryptedWebDavBackup(url, user, pass, file, phrase, incSec)
+            },
+            onRestoreBackup = { url, user, pass, file, phrase, rep ->
+                viewModel.restoreEncryptedWebDavBackup(url, user, pass, file, phrase, rep)
+            },
+            onDismiss = { showWebDavSheet = false }
+        )
+    }
+
+    if (showConfigShareSheet) {
+        ConfigShareAndImportSheet(
+            onBuildConfigJson = { viewModel.buildShareableConfigJson() },
+            onPreviewConfig = { raw -> viewModel.previewShareableConfig(raw) },
+            onImportConfig = { bundle, sel, onDone -> viewModel.importShareableConfig(bundle, sel, onDone) },
+            onDismiss = { showConfigShareSheet = false }
+        )
     }
 
     if (showPortManualSheet) {
@@ -1149,6 +1190,29 @@ fun SettingsHubScreen(
                     Text(stringResource(R.string.settings_backup_restore_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = { showWebDavSheet = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("settings_webdav_open_btn")
+                ) {
+                    Text(stringResource(R.string.settings_webdav_open_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                OutlinedButton(
+                    onClick = { showConfigShareSheet = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("settings_config_share_open_btn")
+                ) {
+                    Text(stringResource(R.string.settings_config_share_open_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
 
         // 4d. Local Automation Rules Engine
@@ -1254,12 +1318,20 @@ fun SettingsHubScreen(
                                 "${explicitPortName(rule.portId)} < ${String.format(Locale.US, "%.1f", rule.thresholdWatts)} W (${rule.holdSeconds}s)"
                             LocalAutomationEngine.TRIGGER_DAILY_SCHEDULE ->
                                 String.format(Locale.US, "%02d:%02d", rule.minuteOfDay / 60, rule.minuteOfDay % 60)
+                            LocalAutomationEngine.TRIGGER_POWER_GUARD ->
+                                "Guard ${explicitPortName(rule.portId)} >= ${String.format(Locale.US, "%.0f", rule.thresholdWatts)} W (${rule.holdSeconds}s)"
+                            LocalAutomationEngine.TRIGGER_PHONE_SOC_CUTOFF ->
+                                "${explicitPortName(rule.portId)} @ Phone ${rule.targetPhoneSocPct}%"
                             else ->
                                 "${explicitPortName(rule.portId)} >= ${String.format(Locale.US, "%.0f", rule.thresholdWatts)} W (${rule.holdSeconds}s)"
                         }
                         val actionSummary = when (rule.actionType) {
                             LocalAutomationEngine.ACTION_PORT_OFF ->
                                 "${stringResource(R.string.automation_act_port_off)} (${explicitPortName(rule.portId)})"
+                            LocalAutomationEngine.ACTION_USB_A_LOW_CURRENT_ON ->
+                                stringResource(R.string.automation_act_usba_trickle)
+                            LocalAutomationEngine.ACTION_SMART_DISPLAY ->
+                                stringResource(R.string.automation_act_smart_display)
                             else ->
                                 localizedScenarioName(rule.actionSceneMode)
                         }
@@ -1349,6 +1421,24 @@ fun SettingsHubScreen(
                 }
             }
         }
+
+        AutomationSafetyAndSimulatorCard(
+            safetyReport = automationSafetyReport,
+            simReport = automationSimResult,
+            onRunSimulation = { viewModel.runAutomationSimulation(24) }
+        )
+
+        DeadlineQueueAndReadinessCard(
+            items = deadlineReadiness,
+            onSaveTask = { viewModel.saveDeadlineTask(it) },
+            onToggleEnabled = { id, en -> viewModel.toggleDeadlineTaskEnabled(id, en) },
+            onDeleteTask = { viewModel.deleteDeadlineTask(it) }
+        )
+
+        NfcAndQuickActionsCard(
+            lastStatus = nfcLastStatus,
+            onExecuteUri = { viewModel.executeNfcActionUri(it) }
+        )
 
         // 4e. Home Screen Widgets Gallery & Shape Customizer
         SettingsSectionCard(
@@ -1455,6 +1545,45 @@ fun SettingsHubScreen(
                             modifier = Modifier
                                 .heightIn(min = 48.dp)
                                 .testTag("widget_pin_compact_button")
+                        ) {
+                            Text(stringResource(R.string.widget_pin_btn))
+                        }
+                    }
+                }
+
+                // Single Port Focus + Mini Chart (2x2) Preview + Pin
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.widget_preview_port_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "V / A / W / Wh · 2×2",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = { pinWidget(CuktechGlancePortReceiver::class.java) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("widget_pin_port_button")
                         ) {
                             Text(stringResource(R.string.widget_pin_btn))
                         }
@@ -1792,6 +1921,247 @@ fun SettingsHubScreen(
             }
         }
 
+        // 5B. Hybrid BLE Continuity, Stationary Bridge & Walk-Away Radar Alerts
+        SettingsSectionCard(
+            title = stringResource(R.string.settings_section_continuity),
+            icon = Icons.Default.Sync,
+            modifier = Modifier.testTag("settings_continuity_card")
+        ) {
+            var draftBridgeUrl by remember(prefs.bridgeEndpointUrl) { mutableStateOf(prefs.bridgeEndpointUrl) }
+            var draftBridgeToken by remember { mutableStateOf("") }
+            var showBridgeToken by remember { mutableStateOf(false) }
+
+            Text(
+                text = stringResource(R.string.settings_bridge_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_bridge_enable),
+                checked = prefs.bridgeSyncEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.updateBridgeConfig(enabled, draftBridgeUrl, draftBridgeToken.takeIf { it.isNotBlank() })
+                },
+                tag = "bridge_sync_switch"
+            )
+
+            OutlinedTextField(
+                value = draftBridgeUrl,
+                onValueChange = { draftBridgeUrl = it },
+                label = { Text(stringResource(R.string.settings_bridge_url_label)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("bridge_url_input")
+            )
+
+            OutlinedTextField(
+                value = draftBridgeToken,
+                onValueChange = { draftBridgeToken = it },
+                label = { Text(stringResource(R.string.settings_bridge_token_label)) },
+                singleLine = true,
+                visualTransformation = if (showBridgeToken) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(
+                        onClick = { showBridgeToken = !showBridgeToken },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (showBridgeToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = null
+                        )
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("bridge_token_input")
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = {
+                        viewModel.updateBridgeConfig(
+                            enabled = prefs.bridgeSyncEnabled,
+                            url = draftBridgeUrl,
+                            token = draftBridgeToken.takeIf { it.isNotBlank() }
+                        )
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("bridge_save_btn")
+                ) {
+                    Text(stringResource(R.string.action_save), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                OutlinedButton(
+                    onClick = {
+                        viewModel.testBridgeConnection(draftBridgeUrl, draftBridgeToken.takeIf { it.isNotBlank() })
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("bridge_test_btn")
+                ) {
+                    Text(stringResource(R.string.settings_bridge_test_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Button(
+                    onClick = {
+                        viewModel.syncFromBridgeNow { res ->
+                            val msg = res.fold(
+                                onSuccess = { context.getString(R.string.toast_bridge_sync_ok_fmt, it) },
+                                onFailure = { context.getString(R.string.toast_bridge_sync_fail_fmt, it.message ?: "") }
+                            )
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !bridgeSyncing && prefs.bridgeSyncEnabled,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("bridge_sync_now_btn")
+                ) {
+                    Text(stringResource(R.string.settings_bridge_sync_now_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+
+            bridgeStatusResult?.let { st ->
+                Text(
+                    text = if (st.online) {
+                        stringResource(R.string.settings_bridge_status_online_fmt, st.version.ifBlank { "v1" }, st.bufferedSamples)
+                    } else {
+                        stringResource(R.string.settings_bridge_status_offline_fmt, st.errorMessage ?: "--")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (st.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+            }
+
+            // LAN mDNS / NSD Discovery & Remote Bridge Commands
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = { viewModel.discoverLanBridges() },
+                    enabled = !isDiscoveringBridges,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("bridge_discover_btn")
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (isDiscoveringBridges) {
+                            stringResource(R.string.bridge_discovering)
+                        } else {
+                            stringResource(R.string.bridge_discover_btn)
+                        }
+                    )
+                }
+            }
+
+            if (discoveredBridges.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    discoveredBridges.forEach { ep ->
+                        AssistChip(
+                            onClick = {
+                                draftBridgeUrl = ep.baseUrl
+                                viewModel.testBridgeConnection(ep.baseUrl, draftBridgeToken.takeIf { it.isNotBlank() })
+                            },
+                            label = { Text("${ep.serviceName} (${ep.host}:${ep.port})") },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("discovered_bridge_chip_${ep.port}")
+                        )
+                    }
+                }
+            }
+
+            if (prefs.bridgeSyncEnabled && prefs.bridgeEndpointUrl.isNotBlank()) {
+                Text(
+                    text = stringResource(R.string.bridge_remote_ctrl_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = { viewModel.sendRemoteBridgePortToggle(1, true) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("bridge_remote_c1_on_btn")
+                    ) {
+                        Text(stringResource(R.string.bridge_remote_c1_on))
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.sendRemoteBridgePortToggle(1, false) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("bridge_remote_c1_off_btn")
+                    ) {
+                        Text(stringResource(R.string.bridge_remote_c1_off))
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.sendRemoteBridgeScene(2) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("bridge_remote_quiet_btn")
+                    ) {
+                        Text(stringResource(R.string.bridge_remote_scene_quiet))
+                    }
+                }
+                bridgeRemoteCmdStatus?.let { msg ->
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = TelemetryMonoFontFamily),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_ble_exit_enable),
+                checked = prefs.bleExitAlertEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.updateBleExitAlertPolicy(enabled, prefs.bleExitRssiThreshold)
+                },
+                tag = "ble_exit_alert_switch"
+            )
+
+            Text(
+                text = stringResource(R.string.settings_ble_exit_threshold_fmt, prefs.bleExitRssiThreshold),
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily).tabularNums()
+            )
+            var rssiSlider by remember(prefs.bleExitRssiThreshold) { mutableFloatStateOf(prefs.bleExitRssiThreshold.toFloat()) }
+            Slider(
+                value = rssiSlider,
+                onValueChange = { rssiSlider = it },
+                onValueChangeFinished = {
+                    viewModel.updateBleExitAlertPolicy(prefs.bleExitAlertEnabled, rssiSlider.toInt())
+                },
+                valueRange = -95f..-70f,
+                modifier = Modifier.testTag("ble_exit_rssi_slider")
+            )
+        }
+
         // 6. Telemetry Policies & Keepalive
         SettingsSectionCard(
             title = stringResource(R.string.settings_section_telemetry_policies),
@@ -2054,72 +2424,21 @@ fun SettingsHubScreen(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-            // Home Assistant Webhook Configuration
-            SettingsSwitchRow(
-                title = stringResource(R.string.settings_ha_webhook),
-                checked = haEnabledDraft,
-                onCheckedChange = { haEnabledDraft = it }
-            )
-            OutlinedTextField(
-                value = haUrlDraft,
-                onValueChange = { haUrlDraft = it },
-                label = { Text(stringResource(R.string.settings_ha_url_label)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            if (haUrlDraft.trim().lowercase().startsWith("http://")) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                    Text(
-                        text = stringResource(R.string.settings_ha_http_warning),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
+            // Home Assistant Webhook + Event Webhooks + MQTT 3.1.1 & HA Auto Discovery
+            MqttAndWebhookSettingsCard(
+                config = haConfig,
+                mqttStatus = mqttStatus,
+                lastError = haError,
+                onSaveConfig = { cfg, tok, mqttPass ->
+                    viewModel.updateIntegrationsConfig(cfg, bearerToken = tok, mqttPassword = mqttPass)
+                    Toast.makeText(context, context.getString(R.string.toast_integrations_saved), Toast.LENGTH_SHORT).show()
+                },
+                onReconnectMqtt = { viewModel.reconnectMqtt() },
+                onPublishHaDiscovery = {
+                    viewModel.publishHaDiscovery()
+                    Toast.makeText(context, context.getString(R.string.toast_discovery_published), Toast.LENGTH_SHORT).show()
                 }
-            }
-            OutlinedTextField(
-                value = haTokenDraft,
-                onValueChange = { haTokenDraft = it },
-                label = {
-                    Text(
-                        if (haConfig.hasBearerToken) {
-                            "${stringResource(R.string.settings_ha_token_label)} (${stringResource(R.string.settings_ha_token_configured)})"
-                        } else {
-                            stringResource(R.string.settings_ha_token_label)
-                        }
-                    )
-                },
-                visualTransformation = if (haTokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { haTokenVisible = !haTokenVisible }) {
-                        Icon(
-                            imageVector = if (haTokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = stringResource(R.string.cd_toggle_password)
-                        )
-                    }
-                },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
             )
-            if (!haError.isNullOrBlank()) {
-                Text(haError!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            }
-            FilledTonalButton(
-                onClick = {
-                    viewModel.updateHomeAssistantConfig(
-                        enabled = haEnabledDraft,
-                        url = haUrlDraft,
-                        bearerToken = haTokenDraft.ifBlank { null }
-                    )
-                    haTokenDraft = ""
-                    Toast.makeText(context, context.getString(R.string.toast_webhook_saved), Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-            ) {
-                Text(stringResource(R.string.action_save))
-            }
         }
 
         Text(
@@ -2140,12 +2459,13 @@ fun SettingsHubScreen(
 private fun SettingsSectionCard(
     title: String,
     icon: ImageVector,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         shape = RoundedCornerShape(22.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier

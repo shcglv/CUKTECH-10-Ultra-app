@@ -57,7 +57,13 @@ data class AppPreferences(
     val consoleLogLevel: String = "LEVEL1",
     val thresholdAlertsEnabled: Boolean = false,
     val highLoadAlertWatts: Double = 105.0,
-    val lowPowerDropAlertWatts: Double = 1.5
+    val lowPowerDropAlertWatts: Double = 1.5,
+    val bridgeSyncEnabled: Boolean = false,
+    val bridgeEndpointUrl: String = "",
+    val bleExitAlertEnabled: Boolean = true,
+    val bleExitRssiThreshold: Int = -86,
+    val activeWorkspaceId: String = "ALL",
+    val customKpisJson: String = "[]"
 ) {
     fun isWithinQuietHours(minuteOfDay: Int = currentLocalMinuteOfDay()): Boolean {
         if (!quietHoursEnabled) return false
@@ -107,6 +113,12 @@ data class AppPreferences(
         put("thresholdAlertsEnabled", thresholdAlertsEnabled)
         put("highLoadAlertWatts", highLoadAlertWatts)
         put("lowPowerDropAlertWatts", lowPowerDropAlertWatts)
+        put("bridgeSyncEnabled", bridgeSyncEnabled)
+        put("bridgeEndpointUrl", bridgeEndpointUrl)
+        put("bleExitAlertEnabled", bleExitAlertEnabled)
+        put("bleExitRssiThreshold", bleExitRssiThreshold)
+        put("activeWorkspaceId", activeWorkspaceId)
+        put("customKpisJson", customKpisJson)
     }
 
     companion object {
@@ -215,7 +227,13 @@ class AppPreferencesRepository(context: Context) {
             consoleLogLevel = prefs[KEY_CONSOLE_LOG_LEVEL] ?: "LEVEL1",
             thresholdAlertsEnabled = prefs[KEY_THRESHOLD_ALERTS_ENABLED] ?: false,
             highLoadAlertWatts = (prefs[KEY_HIGH_LOAD_ALERT_W] ?: 105.0).coerceIn(40.0, 120.0),
-            lowPowerDropAlertWatts = (prefs[KEY_LOW_POWER_DROP_ALERT_W] ?: 1.5).coerceIn(0.5, 15.0)
+            lowPowerDropAlertWatts = (prefs[KEY_LOW_POWER_DROP_ALERT_W] ?: 1.5).coerceIn(0.5, 15.0),
+            bridgeSyncEnabled = prefs[KEY_BRIDGE_SYNC_ENABLED] ?: false,
+            bridgeEndpointUrl = prefs[KEY_BRIDGE_ENDPOINT_URL] ?: "",
+            bleExitAlertEnabled = prefs[KEY_BLE_EXIT_ALERT_ENABLED] ?: true,
+            bleExitRssiThreshold = (prefs[KEY_BLE_EXIT_RSSI_THRESHOLD] ?: -86).coerceIn(-96, -65),
+            activeWorkspaceId = (prefs[KEY_ACTIVE_WORKSPACE_ID] ?: "ALL").ifBlank { "ALL" },
+            customKpisJson = (prefs[KEY_CUSTOM_KPIS_JSON] ?: "[]").ifBlank { "[]" }
         )
     }
 
@@ -330,6 +348,40 @@ class AppPreferencesRepository(context: Context) {
         _preferences.value = mapFromDataStore(updated)
     }
 
+    suspend fun updateBridgeSettings(enabled: Boolean, endpointUrl: String) {
+        val cleaned = endpointUrl.trim().take(240)
+        val updated = dataStore.edit {
+            it[KEY_BRIDGE_SYNC_ENABLED] = enabled
+            it[KEY_BRIDGE_ENDPOINT_URL] = cleaned
+        }
+        _preferences.value = mapFromDataStore(updated)
+    }
+
+    suspend fun updateBleExitAlertPolicy(enabled: Boolean, rssiThreshold: Int) {
+        val clamped = rssiThreshold.coerceIn(-96, -65)
+        val updated = dataStore.edit {
+            it[KEY_BLE_EXIT_ALERT_ENABLED] = enabled
+            it[KEY_BLE_EXIT_RSSI_THRESHOLD] = clamped
+        }
+        _preferences.value = mapFromDataStore(updated)
+    }
+
+    suspend fun updateActiveWorkspace(workspaceId: String) {
+        val clean = workspaceId.trim().uppercase().take(24).ifBlank { "ALL" }
+        val updated = dataStore.edit {
+            it[KEY_ACTIVE_WORKSPACE_ID] = clean
+        }
+        _preferences.value = mapFromDataStore(updated)
+    }
+
+    suspend fun updateCustomKpisJson(json: String) {
+        val clean = json.trim().ifBlank { "[]" }
+        val updated = dataStore.edit {
+            it[KEY_CUSTOM_KPIS_JSON] = clean
+        }
+        _preferences.value = mapFromDataStore(updated)
+    }
+
     suspend fun applyFromBackupJson(json: JSONObject) {
         if (json.length() == 0) return
         dataStore.edit { edit ->
@@ -424,6 +476,24 @@ class AppPreferencesRepository(context: Context) {
             if (json.has("lowPowerDropAlertWatts")) {
                 edit[KEY_LOW_POWER_DROP_ALERT_W] = json.optDouble("lowPowerDropAlertWatts", 1.5).coerceIn(0.5, 15.0)
             }
+            if (json.has("bridgeSyncEnabled")) {
+                edit[KEY_BRIDGE_SYNC_ENABLED] = json.optBoolean("bridgeSyncEnabled", false)
+            }
+            if (json.has("bridgeEndpointUrl")) {
+                edit[KEY_BRIDGE_ENDPOINT_URL] = json.optString("bridgeEndpointUrl", "").trim().take(240)
+            }
+            if (json.has("bleExitAlertEnabled")) {
+                edit[KEY_BLE_EXIT_ALERT_ENABLED] = json.optBoolean("bleExitAlertEnabled", true)
+            }
+            if (json.has("bleExitRssiThreshold")) {
+                edit[KEY_BLE_EXIT_RSSI_THRESHOLD] = json.optInt("bleExitRssiThreshold", -86).coerceIn(-96, -65)
+            }
+            if (json.has("activeWorkspaceId")) {
+                edit[KEY_ACTIVE_WORKSPACE_ID] = json.optString("activeWorkspaceId", "ALL").trim().uppercase().take(24).ifBlank { "ALL" }
+            }
+            if (json.has("customKpisJson")) {
+                edit[KEY_CUSTOM_KPIS_JSON] = json.optString("customKpisJson", "[]").ifBlank { "[]" }
+            }
             edit[KEY_MIGRATED_LEGACY] = true
         }
         val refreshed = mapFromDataStore(dataStore.data.first())
@@ -461,5 +531,11 @@ class AppPreferencesRepository(context: Context) {
         private val KEY_THRESHOLD_ALERTS_ENABLED = booleanPreferencesKey("threshold_alerts_enabled")
         private val KEY_HIGH_LOAD_ALERT_W = doublePreferencesKey("high_load_alert_watts")
         private val KEY_LOW_POWER_DROP_ALERT_W = doublePreferencesKey("low_power_drop_alert_watts")
+        private val KEY_BRIDGE_SYNC_ENABLED = booleanPreferencesKey("bridge_sync_enabled")
+        private val KEY_BRIDGE_ENDPOINT_URL = stringPreferencesKey("bridge_endpoint_url")
+        private val KEY_BLE_EXIT_ALERT_ENABLED = booleanPreferencesKey("ble_exit_alert_enabled")
+        private val KEY_BLE_EXIT_RSSI_THRESHOLD = intPreferencesKey("ble_exit_rssi_threshold")
+        private val KEY_ACTIVE_WORKSPACE_ID = stringPreferencesKey("active_workspace_id")
+        private val KEY_CUSTOM_KPIS_JSON = stringPreferencesKey("custom_kpis_json")
     }
 }

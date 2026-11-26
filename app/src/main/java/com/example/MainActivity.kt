@@ -25,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
     private val pendingNavTab = mutableStateOf<String?>(null)
+    private val pendingNfcUri = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,7 +52,10 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        BleBridgeDashboard(pendingNavTab = pendingNavTab)
+                        BleBridgeDashboard(
+                            pendingNavTab = pendingNavTab,
+                            pendingNfcUri = pendingNfcUri
+                        )
                     }
                 }
             }
@@ -76,12 +80,17 @@ class MainActivity : ComponentActivity() {
         if (!nav.isNullOrBlank()) {
             pendingNavTab.value = nav
         }
+        val uriData = intent?.dataString
+        if (!uriData.isNullOrBlank() && uriData.startsWith("cuktech://action", ignoreCase = true)) {
+            pendingNfcUri.value = uriData
+        }
     }
 }
 
 @Composable
 fun BleBridgeDashboard(
-    pendingNavTab: MutableState<String?> = remember { mutableStateOf(null) }
+    pendingNavTab: MutableState<String?> = remember { mutableStateOf(null) },
+    pendingNfcUri: MutableState<String?> = remember { mutableStateOf(null) }
 ) {
     val context = LocalContext.current
     val viewModel: DashboardViewModel = viewModel(
@@ -91,6 +100,7 @@ fun BleBridgeDashboard(
     )
     CuktechAppRoot(
         viewModel = viewModel,
-        pendingNavTab = pendingNavTab
+        pendingNavTab = pendingNavTab,
+        pendingNfcUri = pendingNfcUri
     )
 }

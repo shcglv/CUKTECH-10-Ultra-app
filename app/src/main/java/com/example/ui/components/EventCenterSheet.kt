@@ -19,12 +19,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TimerOff
 import androidx.compose.material.icons.filled.TrendingDown
 import androidx.compose.material.icons.filled.Warning
@@ -196,6 +199,21 @@ fun EventCenterSheet(
                                 Icons.Default.TrendingDown,
                                 MaterialTheme.colorScheme.secondaryContainer,
                                 MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            ChargerEventType.BLE_PROXIMITY_EXIT -> Triple(
+                                Icons.Default.BluetoothDisabled,
+                                MaterialTheme.colorScheme.errorContainer,
+                                MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            ChargerEventType.BRIDGE_SYNC_MERGED -> Triple(
+                                Icons.Default.Sync,
+                                MaterialTheme.colorScheme.primaryContainer,
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            ChargerEventType.TELEMETRY_STALE -> Triple(
+                                Icons.Default.HourglassEmpty,
+                                MaterialTheme.colorScheme.tertiaryContainer,
+                                MaterialTheme.colorScheme.onTertiaryContainer
                             )
                         }
 

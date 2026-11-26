@@ -5,14 +5,25 @@ import android.content.Context
 import android.os.Build
 import android.provider.MediaStore
 import com.example.cuktech.db.room.AutomationRuleEntity
+import com.example.cuktech.db.room.BleLinkEventEntity
+import com.example.cuktech.db.room.CableInventoryEntity
+import com.example.cuktech.db.room.CableLabTestEntity
 import com.example.cuktech.db.room.ChargeSessionEntity
+import com.example.cuktech.db.room.ChargerNodeEntity
 import com.example.cuktech.db.room.ChargingProfileEntity
+import com.example.cuktech.db.room.CommandAuditEntity
 import com.example.cuktech.db.room.CuktechDatabase
 import com.example.cuktech.db.room.DailyEnergyAggregateEntity
+import com.example.cuktech.db.room.DeadlineTaskEntity
 import com.example.cuktech.db.room.DeviceAliasEntity
+import com.example.cuktech.db.room.DeviceInventoryEntity
+import com.example.cuktech.db.room.IncidentBlackBoxEntity
 import com.example.cuktech.db.room.LegacySqliteMigrator
 import com.example.cuktech.db.room.PortChargeLimitEntity
 import com.example.cuktech.db.room.PortDevicePresetEntity
+import com.example.cuktech.db.room.ScenarioObservationEntity
+import com.example.cuktech.db.room.SessionAnnotationEntity
+import com.example.cuktech.db.room.SessionGapEntity
 import com.example.cuktech.db.room.TelemetrySampleEntity
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.energy.PortChargeLimit
@@ -65,6 +76,17 @@ class CuktechPersistence @JvmOverloads constructor(
     private val profileDao = db.chargingProfileDao()
     private val presetDao = db.portDevicePresetDao()
     private val ruleDao = db.automationRuleDao()
+    private val gapDao = db.sessionGapDao()
+    private val auditDao = db.commandAuditDao()
+    private val linkEventDao = db.bleLinkEventDao()
+    private val chargerNodeDao = db.chargerNodeDao()
+    private val scenarioObsDao = db.scenarioObservationDao()
+    private val annotationDao = db.sessionAnnotationDao()
+    private val blackBoxDao = db.incidentBlackBoxDao()
+    private val deviceInvDao = db.deviceInventoryDao()
+    private val cableInvDao = db.cableInventoryDao()
+    private val cableLabDao = db.cableLabTestDao()
+    private val deadlineTaskDao = db.deadlineTaskDao()
 
     init {
         if (runLegacyMigration) {
@@ -127,11 +149,39 @@ class CuktechPersistence @JvmOverloads constructor(
 
     fun observeAutomationRules(): Flow<List<AutomationRuleEntity>> = ruleDao.observeAll()
 
+    fun observeSessionGaps(limit: Int = 200): Flow<List<SessionGapEntity>> = gapDao.observeRecentGaps(limit)
+
+    fun observeCommandAudit(limit: Int = 200): Flow<List<CommandAuditEntity>> = auditDao.observeRecent(limit)
+
+    fun observeBleLinkEvents(limit: Int = 300): Flow<List<BleLinkEventEntity>> = linkEventDao.observeRecent(limit)
+
+    fun observeChargerNodes(): Flow<List<ChargerNodeEntity>> = chargerNodeDao.observeAll()
+
+    fun observeScenarioObservations(limit: Int = 2000): Flow<List<ScenarioObservationEntity>> =
+        scenarioObsDao.observeRecent(limit)
+
+    fun observeAllSessionAnnotations(limit: Int = 500): Flow<List<SessionAnnotationEntity>> =
+        annotationDao.observeAll(limit)
+
+    fun observeIncidentBlackBoxes(limit: Int = 50): Flow<List<IncidentBlackBoxEntity>> =
+        blackBoxDao.observeRecent(limit)
+
+    fun observeDeviceInventory(): Flow<List<DeviceInventoryEntity>> = deviceInvDao.observeAll()
+
+    fun observeCableInventory(): Flow<List<CableInventoryEntity>> = cableInvDao.observeAll()
+
+    fun observeCableLabTests(limit: Int = 50): Flow<List<CableLabTestEntity>> =
+        cableLabDao.observeRecent(limit)
+
+    fun observeDeadlineTasks(): Flow<List<DeadlineTaskEntity>> = deadlineTaskDao.observeAll()
+
     fun recordPortSnapshot(
         ports: Collection<PortTelemetry>,
         timestampMs: Long = System.currentTimeMillis(),
         deviceMac: String = "",
-        retentionDays: Int = 30
+        retentionDays: Int = 30,
+        sourceMode: String = "BLE_DIRECT",
+        rssiDbm: Int = 0
     ) {
         if (ports.isEmpty()) return
         runCatching {
@@ -144,19 +194,207 @@ class CuktechPersistence @JvmOverloads constructor(
                     powerW = p.powerW,
                     protocolName = p.protocolName,
                     cumulativeWh = p.cumulativeWh,
-                    deviceMac = deviceMac
+                    deviceMac = deviceMac,
+                    sourceMode = sourceMode,
+                    rssiDbm = rssiDbm
                 )
             }
             val pruneCutoffMs = timestampMs - retentionDays.coerceIn(1, 3650).toLong() * 86_400_000L
             db.runInTransaction {
                 telemetryDao.insertAll(entities)
                 telemetryDao.deleteOlderThan(pruneCutoffMs)
+                gapDao.deleteOlderThan(pruneCutoffMs)
+                linkEventDao.deleteOlderThan(pruneCutoffMs)
+                scenarioObsDao.deleteOlderThan(pruneCutoffMs)
             }
         }
     }
 
+    /**
+     * Merges telemetry snapshots pulled from a stationary bridge (`BRIDGE_SYNC`) while
+     * strictly deduplicating against samples already recorded by direct phone BLE within 1.5s.
+     */
+    fun mergeBridgeBackfillSamples(
+        deviceMac: String,
+        samples: List<TelemetrySampleEntity>,
+        retentionDays: Int = 30
+    ): Int {
+        if (samples.isEmpty()) return 0
+        val normalizedMac = deviceMac.uppercase().trim()
+        val sorted = samples.sortedBy { it.timestampMs }
+        val minTs = sorted.first().timestampMs - 2000L
+        val maxTs = sorted.last().timestampMs + 2000L
+        var insertedCount = 0
+        runCatching {
+            db.runInTransaction {
+                val existing = telemetryDao.getSamplesInRange(minTs, maxTs)
+                    .filter { normalizedMac.isBlank() || it.deviceMac.isBlank() || it.deviceMac.equals(normalizedMac, ignoreCase = true) }
+                val existingByPort = existing.groupBy { it.portId }
+                val toInsert = mutableListOf<TelemetrySampleEntity>()
+                for (s in sorted) {
+                    val samePort = existingByPort[s.portId].orEmpty()
+                    val duplicate = samePort.any { kotlin.math.abs(it.timestampMs - s.timestampMs) <= 1500L }
+                    if (!duplicate) {
+                        toInsert += s.copy(
+                            id = 0L,
+                            deviceMac = normalizedMac.ifBlank { s.deviceMac },
+                            sourceMode = "BRIDGE_SYNC"
+                        )
+                    }
+                }
+                if (toInsert.isNotEmpty()) {
+                    telemetryDao.insertAll(toInsert)
+                    insertedCount = toInsert.size
+                    gapDao.markRangeBackfilled(
+                        deviceMac = normalizedMac,
+                        startMs = sorted.first().timestampMs,
+                        endMs = sorted.last().timestampMs,
+                        addedCount = insertedCount
+                    )
+                }
+                val pruneCutoffMs = System.currentTimeMillis() - retentionDays.coerceIn(1, 3650).toLong() * 86_400_000L
+                telemetryDao.deleteOlderThan(pruneCutoffMs)
+            }
+        }
+        return insertedCount
+    }
+
     fun getTelemetrySamplesSince(minTsMs: Long, limit: Int = 10000): List<TelemetrySampleEntity> {
         return runCatching { telemetryDao.getSamplesSince(minTsMs, limit) }.getOrDefault(emptyList())
+    }
+
+    fun getSessionGapsSince(minTsMs: Long, limit: Int = 500): List<SessionGapEntity> {
+        return runCatching { gapDao.getGapsSince(minTsMs, limit) }.getOrDefault(emptyList())
+    }
+
+    fun getLatestTelemetryTimestampMs(deviceMac: String = ""): Long? {
+        return runCatching { telemetryDao.getLatestTimestampMs(deviceMac) }.getOrNull()
+    }
+
+    fun recordSessionGap(gap: SessionGapEntity): Long {
+        return runCatching { gapDao.insertOrReplace(gap) }.getOrDefault(-1L)
+    }
+
+    fun recordCommandAudit(entry: CommandAuditEntity): Long {
+        return runCatching {
+            val id = auditDao.insert(entry)
+            auditDao.pruneExcess(1000)
+            id
+        }.getOrDefault(-1L)
+    }
+
+    fun updateCommandAuditReconciled(id: Long, confirmed: Boolean) {
+        if (id <= 0L) return
+        runCatching { auditDao.updateReconciled(id, confirmed) }
+    }
+
+    fun getRecentCommandAudit(limit: Int = 500): List<CommandAuditEntity> {
+        return runCatching { auditDao.getRecent(limit) }.getOrDefault(emptyList())
+    }
+
+    fun recordBleLinkEvent(event: BleLinkEventEntity): Long {
+        return runCatching { linkEventDao.insert(event) }.getOrDefault(-1L)
+    }
+
+    fun getBleLinkEventsSince(minTsMs: Long, limit: Int = 2000): List<BleLinkEventEntity> {
+        return runCatching { linkEventDao.getEventsSince(minTsMs, limit) }.getOrDefault(emptyList())
+    }
+
+    fun upsertChargerNode(node: ChargerNodeEntity) {
+        if (node.deviceMac.isBlank()) return
+        runCatching { chargerNodeDao.upsert(node) }
+    }
+
+    fun getChargerNodes(): List<ChargerNodeEntity> {
+        return runCatching { chargerNodeDao.getAll() }.getOrDefault(emptyList())
+    }
+
+    fun findChargerNode(mac: String): ChargerNodeEntity? {
+        return runCatching { chargerNodeDao.findByMac(mac) }.getOrNull()
+    }
+
+    fun recordScenarioObservation(obs: ScenarioObservationEntity): Long {
+        return runCatching { scenarioObsDao.insert(obs) }.getOrDefault(-1L)
+    }
+
+    fun getScenarioObservationsSince(minTsMs: Long, limit: Int = 10000): List<ScenarioObservationEntity> {
+        return runCatching { scenarioObsDao.getSince(minTsMs, limit) }.getOrDefault(emptyList())
+    }
+
+    fun saveSessionAnnotation(annotation: SessionAnnotationEntity): Long {
+        return runCatching { annotationDao.upsert(annotation) }.getOrDefault(-1L)
+    }
+
+    fun getSessionAnnotationsForSession(sessionId: Long): List<SessionAnnotationEntity> {
+        return runCatching { annotationDao.getForSession(sessionId) }.getOrDefault(emptyList())
+    }
+
+    fun deleteSessionAnnotation(id: Long) {
+        runCatching { annotationDao.deleteById(id) }
+    }
+
+    fun recordIncidentBlackBox(incident: IncidentBlackBoxEntity): Long {
+        return runCatching {
+            val id = blackBoxDao.insert(incident)
+            blackBoxDao.pruneExcess(100)
+            id
+        }.getOrDefault(-1L)
+    }
+
+    fun getIncidentBlackBoxes(limit: Int = 50): List<IncidentBlackBoxEntity> {
+        return runCatching { blackBoxDao.getRecent(limit) }.getOrDefault(emptyList())
+    }
+
+    // --- Stage 5: Device & Cable Inventory + Cable Lab Tests ---
+
+    fun saveDeviceInventory(device: DeviceInventoryEntity): Long =
+        runCatching { deviceInvDao.upsert(device) }.getOrDefault(-1L)
+
+    fun getDeviceInventory(): List<DeviceInventoryEntity> =
+        runCatching { deviceInvDao.getAll() }.getOrDefault(emptyList())
+
+    fun deleteDeviceInventory(id: Long) {
+        runCatching { deviceInvDao.deleteById(id) }
+    }
+
+    fun saveCableInventory(cable: CableInventoryEntity): Long =
+        runCatching { cableInvDao.upsert(cable) }.getOrDefault(-1L)
+
+    fun getCableInventory(): List<CableInventoryEntity> =
+        runCatching { cableInvDao.getAll() }.getOrDefault(emptyList())
+
+    fun deleteCableInventory(id: Long) {
+        runCatching { cableInvDao.deleteById(id) }
+    }
+
+    fun recordCableLabTest(test: CableLabTestEntity): Long {
+        return runCatching {
+            var insertedId = -1L
+            db.runInTransaction {
+                insertedId = cableLabDao.insert(test)
+                if (test.cableId > 0L) {
+                    val existing = cableInvDao.findById(test.cableId)
+                    if (existing != null) {
+                        cableInvDao.upsert(
+                            existing.copy(
+                                lastMeasuredMohm = test.estimatedMohm,
+                                lastUncertaintyMohm = test.uncertaintyMohm,
+                                lastSagMv = test.sagMv,
+                                testCount = existing.testCount + 1
+                            )
+                        )
+                    }
+                }
+            }
+            insertedId
+        }.getOrDefault(-1L)
+    }
+
+    fun getCableLabTests(limit: Int = 50): List<CableLabTestEntity> =
+        runCatching { cableLabDao.getRecent(limit) }.getOrDefault(emptyList())
+
+    fun deleteCableLabTest(id: Long) {
+        runCatching { cableLabDao.deleteById(id) }
     }
 
     fun upsertActiveSession(record: ChargeSessionRecord): Long {
@@ -429,6 +667,22 @@ class CuktechPersistence @JvmOverloads constructor(
 
     fun getAutomationRules(): List<AutomationRuleEntity> =
         runCatching { ruleDao.getAll() }.getOrDefault(emptyList())
+
+    // --- Stage 6: Deadline Charging Queue ---
+
+    fun saveDeadlineTask(task: DeadlineTaskEntity): Long =
+        runCatching { deadlineTaskDao.upsert(task) }.getOrDefault(-1L)
+
+    fun setDeadlineTaskEnabled(id: Long, enabled: Boolean) {
+        runCatching { deadlineTaskDao.setEnabled(id, enabled) }
+    }
+
+    fun deleteDeadlineTask(id: Long) {
+        runCatching { deadlineTaskDao.deleteById(id) }
+    }
+
+    fun getDeadlineTasks(): List<DeadlineTaskEntity> =
+        runCatching { deadlineTaskDao.getAll() }.getOrDefault(emptyList())
 
     // --- CSV Export (SAF stream + MediaStore API 29+) ---
 
@@ -720,6 +974,11 @@ class CuktechPersistence @JvmOverloads constructor(
                 put("actionSceneMode", rl.actionSceneMode)
                 put("cooldownMinutes", rl.cooldownMinutes)
                 put("createdAtMs", rl.createdAtMs)
+                put("priority", rl.priority)
+                put("targetPhoneSocPct", rl.targetPhoneSocPct)
+                put("actionOrientationLock", rl.actionOrientationLock)
+                put("actionIdleScreenOff", rl.actionIdleScreenOff)
+                put("actionScreenTimeout", rl.actionScreenTimeout)
             })
         }
 
@@ -891,7 +1150,12 @@ class CuktechPersistence @JvmOverloads constructor(
                         actionType = obj.optString("actionType", "PORT_OFF"),
                         actionSceneMode = obj.optInt("actionSceneMode", 1),
                         cooldownMinutes = obj.optInt("cooldownMinutes", 30),
-                        createdAtMs = obj.optLong("createdAtMs", System.currentTimeMillis())
+                        createdAtMs = obj.optLong("createdAtMs", System.currentTimeMillis()),
+                        priority = obj.optInt("priority", 10),
+                        targetPhoneSocPct = obj.optInt("targetPhoneSocPct", 85),
+                        actionOrientationLock = obj.optBoolean("actionOrientationLock", false),
+                        actionIdleScreenOff = obj.optBoolean("actionIdleScreenOff", false),
+                        actionScreenTimeout = obj.optInt("actionScreenTimeout", 1)
                     )
                 )
             }

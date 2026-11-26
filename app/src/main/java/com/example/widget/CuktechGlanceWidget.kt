@@ -86,6 +86,15 @@ class CuktechGlanceCompactReceiver : GlanceAppWidgetReceiver() {
     }
 }
 
+class CuktechGlancePortReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = CuktechGlancePortWidget()
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        super.onDeleted(context, appWidgetIds)
+        appWidgetIds.forEach { WidgetConfigStore.removeConfig(context, it) }
+    }
+}
+
 class TogglePortWidgetAction : ActionCallback {
     override suspend fun onAction(
         context: Context,
@@ -165,6 +174,9 @@ data class GlanceWidgetSnapshot(
     val ports: Map<Int, PortTelemetry>,
     val c3aBus: C3ASharedBusState,
     val sparklinePoints: List<Double>,
+    val focusedPortId: Int,
+    val focusedPortSparkline: List<Double>,
+    val focusedPortSessionWh: Double,
     val config: WidgetInstanceConfig
 )
 
@@ -196,6 +208,16 @@ private fun buildSnapshot(context: Context, glanceId: GlanceId): GlanceWidgetSna
         emptyList()
     }
 
+    val focusedPortId = config.emphasizedPorts.firstOrNull()?.coerceIn(1, 4) ?: 1
+    val focusedPortPower = ports[focusedPortId]?.powerW ?: 0.0
+    val focusedPortPoints = if (config.showSparkline && isConnected && focusedPortPower > 0.2) {
+        mgr.powerChartHistory.value.map { it.portWatts[focusedPortId] ?: 0.0 }.takeLast(24)
+    } else {
+        emptyList()
+    }
+    val focusedSessionWh = mgr.activeSessions.value[focusedPortId]?.whAccumulated
+        ?: (ports[focusedPortId]?.cumulativeWh ?: 0.0)
+
     return GlanceWidgetSnapshot(
         authState = authState,
         totalWatts = totalWatts,
@@ -204,6 +226,9 @@ private fun buildSnapshot(context: Context, glanceId: GlanceId): GlanceWidgetSna
         ports = ports,
         c3aBus = c3aBus,
         sparklinePoints = points,
+        focusedPortId = focusedPortId,
+        focusedPortSparkline = focusedPortPoints,
+        focusedPortSessionWh = focusedSessionWh,
         config = config
     )
 }
@@ -389,6 +414,48 @@ class CuktechGlanceCompactWidget : GlanceAppWidget() {
                     prefs.toMutablePreferences()
                 }
                 CuktechGlanceCompactWidget().update(context, glanceId)
+            }
+        }
+    }
+}
+
+class CuktechGlancePortWidget : GlanceAppWidget() {
+
+    override val stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
+
+    override val sizeMode: SizeMode = SizeMode.Responsive(
+        setOf(SIZE_MINI, SIZE_MEDIUM)
+    )
+
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val mgr = BleBridgeService.cuktechManager ?: BleBridgeService.ensureCuktechManagersInitialized(context.applicationContext)
+        val locCtx = context.withAppLocale(mgr.preferencesRepository.preferences.value.appLanguage)
+        val snapshot = buildSnapshot(context, id)
+        val openIntent = buildOpenAppIntent(context, snapshot.config.tapDestination)
+
+        provideContent {
+            GlanceTheme {
+                PortFocusWidgetContent(
+                    locCtx = locCtx,
+                    snapshot = snapshot,
+                    openIntent = openIntent
+                )
+            }
+        }
+    }
+
+    companion object {
+        private val SIZE_MINI = DpSize(110.dp, 110.dp)
+        private val SIZE_MEDIUM = DpSize(180.dp, 140.dp)
+
+        suspend fun updateAll(context: Context) {
+            val mgr = GlanceAppWidgetManager(context)
+            val ids = mgr.getGlanceIds(CuktechGlancePortWidget::class.java)
+            ids.forEach { glanceId ->
+                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                    prefs.toMutablePreferences()
+                }
+                CuktechGlancePortWidget().update(context, glanceId)
             }
         }
     }
@@ -874,6 +941,151 @@ private fun CompactPortCell(
             style = TextStyle(color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold),
             maxLines = 1
         )
+    }
+}
+
+@Composable
+private fun PortFocusWidgetContent(
+    locCtx: Context,
+    snapshot: GlanceWidgetSnapshot,
+    openIntent: Intent
+) {
+    val isConnected = snapshot.authState == CuktechAuthState.AUTHENTICATED
+    val pid = snapshot.focusedPortId
+    val port = snapshot.ports[pid] ?: PortTelemetry(pid, localizedWidgetPortName(locCtx, pid))
+    val portLabel = localizedWidgetPortName(locCtx, pid)
+    val enabled = port.enabled
+    val watts = if (isConnected && enabled) port.powerW else 0.0
+
+    val unitW = locCtx.getString(R.string.unit_w)
+    val unitV = locCtx.getString(R.string.unit_v)
+    val unitA = locCtx.getString(R.string.unit_a)
+    val offText = locCtx.getString(R.string.widget_off)
+
+    val primaryArgb = GlanceTheme.colors.primary.getColor(locCtx).toArgb()
+    val sparklineBmp = remember(snapshot.focusedPortSparkline, watts, primaryArgb, isConnected, snapshot.config.showSparkline) {
+        if (snapshot.config.showSparkline && isConnected && watts > 0.2) {
+            renderExpressiveSparklineBitmap(snapshot.focusedPortSparkline, watts, primaryArgb)
+        } else {
+            null
+        }
+    }
+
+    Column(
+        modifier = GlanceModifier
+            .fillMaxSize()
+            .appWidgetBackground()
+            .background(ColorProvider(R.color.widget_surface_bg))
+            .cornerRadius(24.dp)
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = GlanceModifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = GlanceModifier
+                    .defaultWeight()
+                    .clickable(
+                        if (isConnected) actionStartActivity(openIntent)
+                        else actionRunCallback<ConnectWidgetAction>()
+                    )
+            ) {
+                Text(
+                    text = portLabel,
+                    style = TextStyle(
+                        color = GlanceTheme.colors.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    maxLines = 1
+                )
+                Text(
+                    text = if (isConnected && !enabled) offText else String.format(Locale.US, "%.1f %s", watts, unitW),
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onSurface,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    maxLines = 1
+                )
+            }
+            Box(
+                modifier = GlanceModifier
+                    .cornerRadius(14.dp)
+                    .background(
+                        if (!isConnected) ColorProvider(R.color.widget_card_bg)
+                        else if (enabled) GlanceTheme.colors.primaryContainer
+                        else GlanceTheme.colors.errorContainer
+                    )
+                    .clickable(
+                        actionRunCallback<TogglePortWidgetAction>(
+                            actionParametersOf(PARAM_PORT_ID to pid)
+                        )
+                    )
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = if (!isConnected) locCtx.getString(R.string.action_connect).take(6)
+                    else if (enabled) "ON" else offText,
+                    style = TextStyle(
+                        color = if (!isConnected) GlanceTheme.colors.onSurfaceVariant
+                        else if (enabled) GlanceTheme.colors.onPrimaryContainer
+                        else GlanceTheme.colors.onErrorContainer,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    maxLines = 1
+                )
+            }
+        }
+
+        Spacer(GlanceModifier.height(4.dp))
+
+        if (sparklineBmp != null) {
+            Box(
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .cornerRadius(12.dp)
+                    .background(ColorProvider(R.color.widget_card_bg))
+                    .clickable(actionStartActivity(openIntent))
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+            ) {
+                Image(
+                    provider = ImageProvider(sparklineBmp),
+                    contentDescription = portLabel,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                )
+            }
+            Spacer(GlanceModifier.height(4.dp))
+        }
+
+        Text(
+            text = if (isConnected) {
+                "${String.format(Locale.US, "%.1f%s · %.2f%s", port.voltageV, unitV, port.currentA, unitA)} · ${port.protocolName}"
+            } else {
+                locCtx.getString(R.string.status_disconnected)
+            },
+            style = TextStyle(
+                color = GlanceTheme.colors.onSurfaceVariant,
+                fontSize = 10.sp
+            ),
+            maxLines = 1
+        )
+        if (isConnected && snapshot.config.showSessionWh && snapshot.focusedPortSessionWh > 0.01) {
+            Text(
+                text = locCtx.getString(R.string.widget_session_wh_fmt, snapshot.focusedPortSessionWh),
+                style = TextStyle(
+                    color = GlanceTheme.colors.primary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                ),
+                maxLines = 1
+            )
+        }
     }
 }
 
