@@ -65,6 +65,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.cuktech.db.room.CableInventoryEntity
@@ -78,6 +79,7 @@ import com.example.ui.theme.TelemetryMonoFontFamily
 import com.example.ui.theme.tabularNums
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PhoneBatteryCalibrationCard(
     snapshot: PhoneBatterySnapshot,
@@ -95,15 +97,14 @@ fun PhoneBatteryCalibrationCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.BatteryChargingFull,
@@ -118,14 +119,18 @@ fun PhoneBatteryCalibrationCard(
                 }
                 FilledTonalButton(
                     onClick = onRefresh,
-                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
                         .testTag("phone_battery_refresh_btn")
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.phone_batt_refresh_btn))
+                    Text(
+                        text = stringResource(R.string.phone_batt_refresh_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
@@ -220,15 +225,14 @@ fun DeviceInventoryCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.DevicesOther,
@@ -243,14 +247,18 @@ fun DeviceInventoryCard(
                 }
                 FilledTonalButton(
                     onClick = { showAddDialog = true },
-                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
                         .testTag("add_device_inventory_btn")
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.device_inv_add_btn))
+                    Text(
+                        text = stringResource(R.string.device_inv_add_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
@@ -262,14 +270,14 @@ fun DeviceInventoryCard(
                         .fillMaxWidth()
                         .testTag("device_suggestion_banner")
                 ) {
-                    Row(
+                    FlowRow(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(modifier = Modifier.fillMaxWidth(0.65f)) {
                             Text(
                                 text = stringResource(
                                     R.string.device_suggest_title_fmt,
@@ -294,14 +302,18 @@ fun DeviceInventoryCard(
                         }
                         Button(
                             onClick = { onConfirmSuggestion(suggestion) },
-                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             modifier = Modifier
                                 .heightIn(min = 48.dp)
                                 .testTag("device_suggestion_confirm_btn")
                         ) {
                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.device_suggest_confirm_btn))
+                            Text(
+                                text = stringResource(R.string.device_suggest_confirm_btn),
+                                maxLines = 2,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
                 }
@@ -542,15 +554,14 @@ fun CableInventoryAndLabCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Cable,
@@ -565,14 +576,18 @@ fun CableInventoryAndLabCard(
                 }
                 FilledTonalButton(
                     onClick = { showAddCableDialog = true },
-                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
                         .testTag("add_cable_inventory_btn")
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.cable_lab_add_btn))
+                    Text(
+                        text = stringResource(R.string.cable_lab_add_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
@@ -701,7 +716,7 @@ fun CableInventoryAndLabCard(
                         if (runnerState.isRunning) onCancelGuidedTest()
                         else onStartGuidedTest(selectedPortId, selectedCable)
                     },
-                    contentPadding = PaddingValues(horizontal = 10.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
@@ -714,18 +729,24 @@ fun CableInventoryAndLabCard(
                             stringResource(R.string.cable_lab_cancel_btn, runnerState.collectedCount, runnerState.targetCount)
                         } else {
                             stringResource(R.string.cable_lab_start_btn)
-                        }
+                        },
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
                     )
                 }
                 OutlinedButton(
                     onClick = { onAnalyzeRecent(selectedPortId, selectedCable) },
-                    contentPadding = PaddingValues(horizontal = 10.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
                         .testTag("cable_lab_analyze_recent_btn")
                 ) {
-                    Text(stringResource(R.string.cable_lab_analyze_recent_btn))
+                    Text(
+                        text = stringResource(R.string.cable_lab_analyze_recent_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 

@@ -63,8 +63,17 @@ data class AppPreferences(
     val bleExitAlertEnabled: Boolean = true,
     val bleExitRssiThreshold: Int = -86,
     val activeWorkspaceId: String = "ALL",
-    val customKpisJson: String = "[]"
+    val customKpisJson: String = "[]",
+    val wifiContextEnabled: Boolean = false,
+    val boundWifiKey: String = "",
+    val boundWifiLabel: String = "",
+    val wifiBleOnlyAtHome: Boolean = false,
+    val wifiLeaveLoadAlertEnabled: Boolean = true,
+    val wifiLeaveLoadThresholdWatts: Double = 15.0,
+    val hiddenAnalyticsCardsCsv: String = ""
 ) {
+    fun hiddenAnalyticsCardSet(): Set<String> =
+        hiddenAnalyticsCardsCsv.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     fun isWithinQuietHours(minuteOfDay: Int = currentLocalMinuteOfDay()): Boolean {
         if (!quietHoursEnabled) return false
         return isMinuteInRange(minuteOfDay, quietHoursStartMinute, quietHoursEndMinute)
@@ -119,6 +128,13 @@ data class AppPreferences(
         put("bleExitRssiThreshold", bleExitRssiThreshold)
         put("activeWorkspaceId", activeWorkspaceId)
         put("customKpisJson", customKpisJson)
+        put("wifiContextEnabled", wifiContextEnabled)
+        put("boundWifiKey", boundWifiKey)
+        put("boundWifiLabel", boundWifiLabel)
+        put("wifiBleOnlyAtHome", wifiBleOnlyAtHome)
+        put("wifiLeaveLoadAlertEnabled", wifiLeaveLoadAlertEnabled)
+        put("wifiLeaveLoadThresholdWatts", wifiLeaveLoadThresholdWatts)
+        put("hiddenAnalyticsCardsCsv", hiddenAnalyticsCardsCsv)
     }
 
     companion object {
@@ -233,7 +249,14 @@ class AppPreferencesRepository(context: Context) {
             bleExitAlertEnabled = prefs[KEY_BLE_EXIT_ALERT_ENABLED] ?: true,
             bleExitRssiThreshold = (prefs[KEY_BLE_EXIT_RSSI_THRESHOLD] ?: -86).coerceIn(-96, -65),
             activeWorkspaceId = (prefs[KEY_ACTIVE_WORKSPACE_ID] ?: "ALL").ifBlank { "ALL" },
-            customKpisJson = (prefs[KEY_CUSTOM_KPIS_JSON] ?: "[]").ifBlank { "[]" }
+            customKpisJson = (prefs[KEY_CUSTOM_KPIS_JSON] ?: "[]").ifBlank { "[]" },
+            wifiContextEnabled = prefs[KEY_WIFI_CONTEXT_ENABLED] ?: false,
+            boundWifiKey = prefs[KEY_BOUND_WIFI_KEY] ?: "",
+            boundWifiLabel = prefs[KEY_BOUND_WIFI_LABEL] ?: "",
+            wifiBleOnlyAtHome = prefs[KEY_WIFI_BLE_ONLY_AT_HOME] ?: false,
+            wifiLeaveLoadAlertEnabled = prefs[KEY_WIFI_LEAVE_LOAD_ALERT] ?: true,
+            wifiLeaveLoadThresholdWatts = (prefs[KEY_WIFI_LEAVE_LOAD_W] ?: 15.0).coerceIn(5.0, 100.0),
+            hiddenAnalyticsCardsCsv = prefs[KEY_HIDDEN_ANALYTICS_CARDS] ?: ""
         )
     }
 
@@ -382,6 +405,48 @@ class AppPreferencesRepository(context: Context) {
         _preferences.value = mapFromDataStore(updated)
     }
 
+    suspend fun bindHomeWifi(key: String, label: String) {
+        val updated = dataStore.edit {
+            it[KEY_WIFI_CONTEXT_ENABLED] = true
+            it[KEY_BOUND_WIFI_KEY] = key.trim().take(80)
+            it[KEY_BOUND_WIFI_LABEL] = label.trim().take(64)
+        }
+        _preferences.value = mapFromDataStore(updated)
+    }
+
+    suspend fun clearHomeWifiBinding() {
+        val updated = dataStore.edit {
+            it[KEY_WIFI_CONTEXT_ENABLED] = false
+            it[KEY_BOUND_WIFI_KEY] = ""
+            it[KEY_BOUND_WIFI_LABEL] = ""
+            it[KEY_WIFI_BLE_ONLY_AT_HOME] = false
+        }
+        _preferences.value = mapFromDataStore(updated)
+    }
+
+    suspend fun updateWifiContextPolicy(
+        contextEnabled: Boolean,
+        bleOnlyAtHome: Boolean,
+        leaveAlertEnabled: Boolean,
+        leaveThresholdWatts: Double
+    ) {
+        val updated = dataStore.edit {
+            it[KEY_WIFI_CONTEXT_ENABLED] = contextEnabled
+            it[KEY_WIFI_BLE_ONLY_AT_HOME] = bleOnlyAtHome
+            it[KEY_WIFI_LEAVE_LOAD_ALERT] = leaveAlertEnabled
+            it[KEY_WIFI_LEAVE_LOAD_W] = leaveThresholdWatts.coerceIn(5.0, 100.0)
+        }
+        _preferences.value = mapFromDataStore(updated)
+    }
+
+    suspend fun updateHiddenAnalyticsCards(hiddenIds: Set<String>) {
+        val cleanCsv = hiddenIds.map { it.trim() }.filter { it.isNotEmpty() }.sorted().joinToString(",")
+        val updated = dataStore.edit {
+            it[KEY_HIDDEN_ANALYTICS_CARDS] = cleanCsv
+        }
+        _preferences.value = mapFromDataStore(updated)
+    }
+
     suspend fun applyFromBackupJson(json: JSONObject) {
         if (json.length() == 0) return
         dataStore.edit { edit ->
@@ -494,6 +559,27 @@ class AppPreferencesRepository(context: Context) {
             if (json.has("customKpisJson")) {
                 edit[KEY_CUSTOM_KPIS_JSON] = json.optString("customKpisJson", "[]").ifBlank { "[]" }
             }
+            if (json.has("wifiContextEnabled")) {
+                edit[KEY_WIFI_CONTEXT_ENABLED] = json.optBoolean("wifiContextEnabled", false)
+            }
+            if (json.has("boundWifiKey")) {
+                edit[KEY_BOUND_WIFI_KEY] = json.optString("boundWifiKey", "").take(80)
+            }
+            if (json.has("boundWifiLabel")) {
+                edit[KEY_BOUND_WIFI_LABEL] = json.optString("boundWifiLabel", "").take(64)
+            }
+            if (json.has("wifiBleOnlyAtHome")) {
+                edit[KEY_WIFI_BLE_ONLY_AT_HOME] = json.optBoolean("wifiBleOnlyAtHome", false)
+            }
+            if (json.has("wifiLeaveLoadAlertEnabled")) {
+                edit[KEY_WIFI_LEAVE_LOAD_ALERT] = json.optBoolean("wifiLeaveLoadAlertEnabled", true)
+            }
+            if (json.has("wifiLeaveLoadThresholdWatts")) {
+                edit[KEY_WIFI_LEAVE_LOAD_W] = json.optDouble("wifiLeaveLoadThresholdWatts", 15.0).coerceIn(5.0, 100.0)
+            }
+            if (json.has("hiddenAnalyticsCardsCsv")) {
+                edit[KEY_HIDDEN_ANALYTICS_CARDS] = json.optString("hiddenAnalyticsCardsCsv", "")
+            }
             edit[KEY_MIGRATED_LEGACY] = true
         }
         val refreshed = mapFromDataStore(dataStore.data.first())
@@ -537,5 +623,19 @@ class AppPreferencesRepository(context: Context) {
         private val KEY_BLE_EXIT_RSSI_THRESHOLD = intPreferencesKey("ble_exit_rssi_threshold")
         private val KEY_ACTIVE_WORKSPACE_ID = stringPreferencesKey("active_workspace_id")
         private val KEY_CUSTOM_KPIS_JSON = stringPreferencesKey("custom_kpis_json")
+        private val KEY_WIFI_CONTEXT_ENABLED = booleanPreferencesKey("wifi_context_enabled")
+        private val KEY_BOUND_WIFI_KEY = stringPreferencesKey("bound_wifi_key")
+        private val KEY_BOUND_WIFI_LABEL = stringPreferencesKey("bound_wifi_label")
+        private val KEY_WIFI_BLE_ONLY_AT_HOME = booleanPreferencesKey("wifi_ble_only_at_home")
+        private val KEY_WIFI_LEAVE_LOAD_ALERT = booleanPreferencesKey("wifi_leave_load_alert")
+        private val KEY_WIFI_LEAVE_LOAD_W = doublePreferencesKey("wifi_leave_load_watts")
+        private val KEY_HIDDEN_ANALYTICS_CARDS = stringPreferencesKey("hidden_analytics_cards")
+
+        const val CARD_CHART = "CHART"
+        const val CARD_PERIOD_SUMMARY = "PERIOD_SUMMARY"
+        const val CARD_FLEET = "FLEET"
+        const val CARD_DAILY_BARS = "DAILY_BARS"
+        const val CARD_TIMELINE_24H = "TIMELINE_24H"
+        const val CARD_ENERGY_BREAKDOWN = "ENERGY_BREAKDOWN"
     }
 }

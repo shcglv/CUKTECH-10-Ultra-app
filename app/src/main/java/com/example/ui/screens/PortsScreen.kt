@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -73,6 +74,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -237,7 +239,10 @@ fun PortsScreen(
     ) {
         Spacer(Modifier.height(6.dp))
 
-        // Material 3 Expressive Segmented Port Sub-Tabs (C1 | C2 | C3 | A)
+        val tabPortIds = if (c3aSharedBus.isSharedActive) listOf(1, 2, 3) else listOf(1, 2, 3, 4)
+        val effectiveFocusedPort = if (c3aSharedBus.isSharedActive && focusedPort == 4) 3 else focusedPort.coerceIn(1, 4)
+
+        // Material 3 Expressive Segmented Port Sub-Tabs (C1 | C2 | C3 | A, or C1 | C2 | C3+A when shared)
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainer,
             shape = RoundedCornerShape(18.dp),
@@ -251,26 +256,25 @@ fun PortsScreen(
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                listOf(1, 2, 3, 4).forEach { pid ->
-                    val selected = focusedPort == pid
+                tabPortIds.forEach { pid ->
+                    val isMergedC3A = c3aSharedBus.isSharedActive && pid == 3
+                    val selected = effectiveFocusedPort == pid
                     val accent = semantic.colorForPort(pid)
                     val p = ports[pid]
-                    val pActive = (p?.powerW ?: 0.0) > 0.2 || (c3aSharedBus.isSharedActive && pid in 3..4)
-                    val shortCode = when (pid) {
-                        1 -> "C1"
-                        2 -> "C2"
-                        3 -> "C3"
+                    val pActive = (p?.powerW ?: 0.0) > 0.2 || isMergedC3A
+                    val shortCode = when {
+                        isMergedC3A -> stringResource(R.string.port_c3a_short)
+                        pid == 1 -> "C1"
+                        pid == 2 -> "C2"
+                        pid == 3 -> "C3"
                         else -> "A"
                     }
-                    val tabWatts = if (c3aSharedBus.isSharedActive && pid in 3..4) {
-                        c3aSharedBus.sharedPowerW
-                    } else {
-                        p?.powerW ?: 0.0
-                    }
+                    val tabWatts = if (isMergedC3A) c3aSharedBus.sharedPowerW else (p?.powerW ?: 0.0)
+                    val portTitle = if (isMergedC3A) stringResource(R.string.port_c3a_shared_title) else explicitPortName(pid)
                     val activeCd = if (pActive) {
-                        stringResource(R.string.port_tab_active_cd, explicitPortName(pid))
+                        stringResource(R.string.port_tab_active_cd, portTitle)
                     } else {
-                        explicitPortName(pid)
+                        portTitle
                     }
                     val tabBg by animateColorAsState(
                         targetValue = if (selected) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
@@ -283,7 +287,7 @@ fun PortsScreen(
                         shape = RoundedCornerShape(14.dp),
                         tonalElevation = if (selected) 2.dp else 0.dp,
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(if (isMergedC3A) 1.2f else 1f)
                             .heightIn(min = 48.dp)
                             .clip(RoundedCornerShape(14.dp))
                             .clickable {
@@ -316,7 +320,8 @@ fun PortsScreen(
                                     text = shortCode,
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                                    color = if (selected) accent else MaterialTheme.colorScheme.onSurface
+                                    color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1
                                 )
                             }
                             Text(
@@ -338,7 +343,7 @@ fun PortsScreen(
         }
 
         AnimatedVisibility(
-            visible = c3aSharedBus.isSharedActive && focusedPort in 3..4,
+            visible = c3aSharedBus.isSharedActive && effectiveFocusedPort == 3,
             enter = expandVertically(ExpressiveMotion.spatialSpring()) + fadeIn(),
             exit = shrinkVertically(ExpressiveMotion.spatialSpring()) + fadeOut()
         ) {
@@ -389,9 +394,9 @@ fun PortsScreen(
             Spacer(Modifier.height(10.dp))
 
             AnimatedContent(
-                targetState = focusedPort.coerceIn(1, 4),
+                targetState = Pair(effectiveFocusedPort, c3aSharedBus.isSharedActive),
                 transitionSpec = {
-                    val forward = targetState > initialState
+                    val forward = targetState.first >= initialState.first
                     val slideIn = slideInHorizontally(tween(240, easing = ExpressiveMotion.EmphasizedDecelerate)) { w ->
                         if (forward) (w * 0.12f).toInt() else -(w * 0.12f).toInt()
                     }
@@ -403,34 +408,72 @@ fun PortsScreen(
                         SizeTransform(clip = false)
                 },
                 label = "port_tab_detail_anim"
-            ) { portId ->
-                val port = ports[portId] ?: PortTelemetry(portId, explicitPortName(portId))
-                PortDetailCard(
-                    portId = portId,
-                    port = port,
-                    alias = viewModel.aliasForPort(portId, aliases),
-                    settings = settings,
-                    isConnected = isConnected,
-                    isFocused = true,
-                    isSharedC3ABus = c3aSharedBus.isSharedActive && portId in 3..4,
-                    c3aSharedBus = c3aSharedBus,
-                    countdownSec = countdowns[portId],
-                    usbALowCurrentRemainingSec = if (portId == 4) usbALowRemaining else null,
-                    chargeLimit = chargeLimits[portId],
-                    devicePreset = presets[portId],
-                    etaEstimate = etaEstimates[portId],
-                    cableDiag = cableDiagnostics[portId],
-                    isLoggingEnabled = portLoggingMap[portId] ?: true,
-                    onTogglePortPower = { enabled -> viewModel.setPortEnabled(portId, enabled) },
-                    onOpenTimer = { editingTimerPortId = portId },
-                    onToggleProtocol = { proto, enabled -> viewModel.setPortProtocol(portId, proto, enabled) },
-                    onToggleUsbALowCurrent = { enabled -> viewModel.setUsbALowCurrent(enabled) },
-                    onOpenChargeLimit = { editingLimitPortId = portId },
-                    onOpenDevicePreset = { editingPresetPortId = portId },
-                    onOpenCableDiag = { inspectingCablePortId = portId },
-                    onToggleLogging = { enabled -> viewModel.setPortLoggingEnabled(portId, enabled) },
-                    onEditAlias = { editingAliasPortId = portId }
-                )
+            ) { (portId, sharedActive) ->
+                if (sharedActive && portId == 3) {
+                    val port3 = ports[3] ?: PortTelemetry(3, explicitPortName(3))
+                    val port4 = ports[4] ?: PortTelemetry(4, explicitPortName(4))
+                    CombinedC3APortDetailCard(
+                        port3 = port3,
+                        port4 = port4,
+                        alias3 = viewModel.aliasForPort(3, aliases),
+                        alias4 = viewModel.aliasForPort(4, aliases),
+                        settings = settings,
+                        isConnected = isConnected,
+                        c3aSharedBus = c3aSharedBus,
+                        countdown3Sec = countdowns[3],
+                        countdown4Sec = countdowns[4],
+                        usbALowCurrentRemainingSec = usbALowRemaining,
+                        chargeLimit3 = chargeLimits[3],
+                        chargeLimit4 = chargeLimits[4],
+                        devicePreset3 = presets[3],
+                        devicePreset4 = presets[4],
+                        eta3 = etaEstimates[3],
+                        eta4 = etaEstimates[4],
+                        cableDiag3 = cableDiagnostics[3],
+                        cableDiag4 = cableDiagnostics[4],
+                        isLogging3 = portLoggingMap[3] ?: true,
+                        isLogging4 = portLoggingMap[4] ?: true,
+                        onTogglePortPower = { pid, enabled -> viewModel.setPortEnabled(pid, enabled) },
+                        onOpenTimer = { pid -> editingTimerPortId = pid },
+                        onQuickTimer = { pid, mins -> viewModel.setPortCountdown(pid, mins) },
+                        onToggleProtocol = { pid, proto, enabled -> viewModel.setPortProtocol(pid, proto, enabled) },
+                        onToggleUsbALowCurrent = { enabled -> viewModel.setUsbALowCurrent(enabled) },
+                        onOpenChargeLimit = { pid -> editingLimitPortId = pid },
+                        onOpenDevicePreset = { pid -> editingPresetPortId = pid },
+                        onOpenCableDiag = { pid -> inspectingCablePortId = pid },
+                        onToggleLogging = { pid, enabled -> viewModel.setPortLoggingEnabled(pid, enabled) },
+                        onEditAlias = { pid -> editingAliasPortId = pid }
+                    )
+                } else {
+                    val port = ports[portId] ?: PortTelemetry(portId, explicitPortName(portId))
+                    PortDetailCard(
+                        portId = portId,
+                        port = port,
+                        alias = viewModel.aliasForPort(portId, aliases),
+                        settings = settings,
+                        isConnected = isConnected,
+                        isFocused = true,
+                        isSharedC3ABus = false,
+                        c3aSharedBus = c3aSharedBus,
+                        countdownSec = countdowns[portId],
+                        usbALowCurrentRemainingSec = if (portId == 4) usbALowRemaining else null,
+                        chargeLimit = chargeLimits[portId],
+                        devicePreset = presets[portId],
+                        etaEstimate = etaEstimates[portId],
+                        cableDiag = cableDiagnostics[portId],
+                        isLoggingEnabled = portLoggingMap[portId] ?: true,
+                        onTogglePortPower = { enabled -> viewModel.setPortEnabled(portId, enabled) },
+                        onOpenTimer = { editingTimerPortId = portId },
+                        onQuickTimer = { mins -> viewModel.setPortCountdown(portId, mins) },
+                        onToggleProtocol = { proto, enabled -> viewModel.setPortProtocol(portId, proto, enabled) },
+                        onToggleUsbALowCurrent = { enabled -> viewModel.setUsbALowCurrent(enabled) },
+                        onOpenChargeLimit = { editingLimitPortId = portId },
+                        onOpenDevicePreset = { editingPresetPortId = portId },
+                        onOpenCableDiag = { inspectingCablePortId = portId },
+                        onToggleLogging = { enabled -> viewModel.setPortLoggingEnabled(portId, enabled) },
+                        onEditAlias = { editingAliasPortId = portId }
+                    )
+                }
             }
 
             OutlinedButton(
@@ -443,7 +486,11 @@ fun PortsScreen(
             ) {
                 Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.settings_soft_reset))
+                Text(
+                    text = stringResource(R.string.settings_soft_reset),
+                    textAlign = TextAlign.Center,
+                    maxLines = 2
+                )
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -470,6 +517,7 @@ private fun PortDetailCard(
     isLoggingEnabled: Boolean,
     onTogglePortPower: (Boolean) -> Unit,
     onOpenTimer: () -> Unit,
+    onQuickTimer: (Int) -> Unit,
     onToggleProtocol: (String, Boolean) -> Unit,
     onToggleUsbALowCurrent: (Boolean) -> Unit,
     onOpenChargeLimit: () -> Unit,
@@ -826,6 +874,49 @@ private fun PortDetailCard(
                 }
             }
 
+            // 1-Tap Quick Hardware Off-Timer Presets
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.port_quick_timers_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                val hasActiveTimer = (countdownSec ?: 0L) > 0L || port.countdownCode > 0
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(15, 30, 60, 120).forEach { mins ->
+                        val isPresetSelected = hasActiveTimer && port.countdownCode == mins
+                        FilterChip(
+                            selected = isPresetSelected,
+                            onClick = { onQuickTimer(mins) },
+                            enabled = isConnected,
+                            label = {
+                                Text(
+                                    text = stringResource(R.string.port_quick_timer_m_fmt, mins),
+                                    style = MaterialTheme.typography.labelMedium.tabularNums()
+                                )
+                            },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("port_quick_timer_${portId}_$mins")
+                        )
+                    }
+                    if (hasActiveTimer) {
+                        FilterChip(
+                            selected = false,
+                            onClick = { onQuickTimer(0) },
+                            enabled = isConnected,
+                            label = { Text(stringResource(R.string.port_quick_timer_off)) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("port_quick_timer_${portId}_off")
+                        )
+                    }
+                }
+            }
+
             // Wh Energy Cutoff Limit Row
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
@@ -886,13 +977,401 @@ private fun PortDetailCard(
             ) {
                 Text(
                     text = stringResource(R.string.port_history_logging),
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
                 )
                 Switch(
                     checked = isLoggingEnabled,
                     onCheckedChange = onToggleLogging,
                     modifier = Modifier.testTag("port_logging_switch_$portId")
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CombinedC3APortDetailCard(
+    port3: PortTelemetry,
+    port4: PortTelemetry,
+    alias3: String?,
+    alias4: String?,
+    settings: ChargerSettingsState,
+    isConnected: Boolean,
+    c3aSharedBus: C3ASharedBusState,
+    countdown3Sec: Long?,
+    countdown4Sec: Long?,
+    usbALowCurrentRemainingSec: Long?,
+    chargeLimit3: PortChargeLimit?,
+    chargeLimit4: PortChargeLimit?,
+    devicePreset3: PortDevicePresetEntity?,
+    devicePreset4: PortDevicePresetEntity?,
+    eta3: EtaEstimate?,
+    eta4: EtaEstimate?,
+    cableDiag3: PortCableDiagnostic?,
+    cableDiag4: PortCableDiagnostic?,
+    isLogging3: Boolean,
+    isLogging4: Boolean,
+    onTogglePortPower: (Int, Boolean) -> Unit,
+    onOpenTimer: (Int) -> Unit,
+    onQuickTimer: (Int, Int) -> Unit,
+    onToggleProtocol: (Int, String, Boolean) -> Unit,
+    onToggleUsbALowCurrent: (Boolean) -> Unit,
+    onOpenChargeLimit: (Int) -> Unit,
+    onOpenDevicePreset: (Int) -> Unit,
+    onOpenCableDiag: (Int) -> Unit,
+    onToggleLogging: (Int, Boolean) -> Unit,
+    onEditAlias: (Int) -> Unit
+) {
+    val semantic = LocalSemanticColors.current
+    val accent = semantic.portC3
+    val unitW = stringResource(R.string.unit_w)
+    val unitV = stringResource(R.string.unit_v)
+    val unitA = stringResource(R.string.unit_a)
+    val unitWh = stringResource(R.string.unit_wh)
+    val combinedWh = maxOf(port3.cumulativeWh, port4.cumulativeWh)
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        shape = RoundedCornerShape(22.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("port_card_3")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.port_c3a_shared_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = accent
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.port_c3a_shared_badge),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // Unified Shared 5V Rail Telemetry
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MetricItem(
+                        value = "${String.format(Locale.US, "%.1f", c3aSharedBus.sharedPowerW)} $unitW",
+                        label = stringResource(R.string.port_c3a_short),
+                        highlightColor = accent
+                    )
+                    MetricItem(
+                        value = "${String.format(Locale.US, "%.2f", c3aSharedBus.voltageV)} $unitV",
+                        label = stringResource(R.string.port_metric_voltage)
+                    )
+                    MetricItem(
+                        value = "${String.format(Locale.US, "%.2f", c3aSharedBus.currentA)} $unitA",
+                        label = stringResource(R.string.port_metric_current)
+                    )
+                    MetricItem(
+                        value = "${String.format(Locale.US, "%.2f", combinedWh)} $unitWh",
+                        label = stringResource(R.string.port_metric_energy)
+                    )
+                }
+            }
+
+            Text(
+                text = stringResource(R.string.port_c3a_individual_controls_title),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            listOf(3 to port3, 4 to port4).forEach { (pid, port) ->
+                val alias = if (pid == 3) alias3 else alias4
+                val countdownSec = if (pid == 3) countdown3Sec else countdown4Sec
+                val chargeLimit = if (pid == 3) chargeLimit3 else chargeLimit4
+                val devicePreset = if (pid == 3) devicePreset3 else devicePreset4
+                val etaEstimate = if (pid == 3) eta3 else eta4
+                val cableDiag = if (pid == 3) cableDiag3 else cableDiag4
+                val isLogging = if (pid == 3) isLogging3 else isLogging4
+                val portAccent = semantic.colorForPort(pid)
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("port_card_sub_$pid")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = explicitPortName(pid),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = portAccent,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (!alias.isNullOrBlank()) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                text = alias,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { onEditAlias(pid) },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .testTag("edit_port_alias_$pid")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = stringResource(R.string.port_edit_alias),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "${String.format(Locale.US, "%.1f", port.powerW)} $unitW · ${String.format(Locale.US, "%.2f", port.voltageV)} $unitV · ${String.format(Locale.US, "%.2f", port.currentA)} $unitA",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily).tabularNums(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = port.enabled,
+                                onCheckedChange = { onTogglePortPower(pid, it) },
+                                enabled = isConnected,
+                                modifier = Modifier.testTag("port_power_switch_$pid")
+                            )
+                        }
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (pid == 3) {
+                                ProtocolChip(pid, "UFCS", settings.c3Ufcs, isConnected) { onToggleProtocol(pid, "ufcs", it) }
+                                ProtocolChip(pid, "SCP", settings.c3Scp, isConnected) { onToggleProtocol(pid, "scp", it) }
+                            } else {
+                                ProtocolChip(pid, "UFCS", settings.aUfcs, isConnected) { onToggleProtocol(pid, "ufcs", it) }
+                                ProtocolChip(pid, "SCP", settings.aScp, isConnected) { onToggleProtocol(pid, "scp", it) }
+                            }
+                        }
+
+                        if (pid == 4) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 8.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.port_usba_low_current),
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                    Text(
+                                        text = usbALowCurrentRemainingSec?.let { formatDurationHms(it) }
+                                            ?: stringResource(R.string.port_usba_low_current_desc),
+                                        style = MaterialTheme.typography.bodySmall.tabularNums(),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = settings.usbALowCurrent,
+                                    onCheckedChange = onToggleUsbALowCurrent,
+                                    enabled = isConnected,
+                                    modifier = Modifier.testTag("usba_low_current_switch")
+                                )
+                            }
+                        }
+
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { onOpenCableDiag(pid) },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("port_cable_diag_button_$pid")
+                            ) {
+                                Icon(Icons.Default.Cable, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = if (cableDiag?.isActive == true) {
+                                        stringResource(R.string.cable_sag_mv_fmt, cableDiag.voltageSagMv)
+                                    } else {
+                                        stringResource(R.string.cable_diag_label)
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            FilledTonalButton(
+                                onClick = { onOpenDevicePreset(pid) },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("port_preset_button_$pid")
+                            ) {
+                                Icon(Icons.Default.BatteryChargingFull, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = devicePreset?.deviceLabel ?: stringResource(R.string.port_eta_assign_btn),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            FilledTonalButton(
+                                onClick = { onOpenTimer(pid) },
+                                enabled = isConnected,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("port_timer_button_$pid")
+                            ) {
+                                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = if (countdownSec != null && countdownSec > 0L) {
+                                        formatDurationHms(countdownSec)
+                                    } else {
+                                        stringResource(R.string.port_set_timer)
+                                    },
+                                    maxLines = 1
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { onOpenChargeLimit(pid) },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("port_wh_limit_button_$pid")
+                            ) {
+                                Text(
+                                    text = if (chargeLimit != null && chargeLimit.enabled) {
+                                        stringResource(R.string.port_wh_limit_progress_fmt, chargeLimit.currentUsedWh(port.cumulativeWh), chargeLimit.whTarget, "")
+                                    } else {
+                                        stringResource(R.string.port_wh_limit)
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // 1-Tap Quick Hardware Off-Timer Presets for sub-port
+                        val hasActiveSubTimer = (countdownSec ?: 0L) > 0L || port.countdownCode > 0
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            listOf(15, 30, 60, 120).forEach { mins ->
+                                FilterChip(
+                                    selected = hasActiveSubTimer && port.countdownCode == mins,
+                                    onClick = { onQuickTimer(pid, mins) },
+                                    enabled = isConnected,
+                                    label = {
+                                        Text(
+                                            text = stringResource(R.string.port_quick_timer_m_fmt, mins),
+                                            style = MaterialTheme.typography.labelMedium.tabularNums()
+                                        )
+                                    },
+                                    modifier = Modifier
+                                        .heightIn(min = 48.dp)
+                                        .testTag("port_quick_timer_${pid}_$mins")
+                                )
+                            }
+                            if (hasActiveSubTimer) {
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { onQuickTimer(pid, 0) },
+                                    enabled = isConnected,
+                                    label = { Text(stringResource(R.string.port_quick_timer_off)) },
+                                    modifier = Modifier
+                                        .heightIn(min = 48.dp)
+                                        .testTag("port_quick_timer_${pid}_off")
+                                )
+                            }
+                        }
+
+                        if (etaEstimate != null) {
+                            WavyLoadProgressBar(
+                                progress = etaEstimate.progressFraction,
+                                color = portAccent,
+                                active = port.powerW > 0.2
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.port_history_logging),
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 8.dp)
+                            )
+                            Switch(
+                                checked = isLogging,
+                                onCheckedChange = { onToggleLogging(pid, it) },
+                                modifier = Modifier.testTag("port_logging_switch_$pid")
+                            )
+                        }
+                    }
+                }
             }
         }
     }

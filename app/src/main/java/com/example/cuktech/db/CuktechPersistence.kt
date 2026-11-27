@@ -840,6 +840,66 @@ class CuktechPersistence @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Imports previously exported CUKTECH session & telemetry CSV files into Room,
+     * deduplicating sessions by `(portId, round(startTimeSec))` and samples by 1.5s timestamps.
+     */
+    fun importSessionsFromCsv(csvText: String, fallbackMac: String = ""): CsvImportResult {
+        val bundle = CsvHistoryImporter.parseCsv(csvText, fallbackMac)
+        if (bundle.sessions.isEmpty() && bundle.samples.isEmpty()) {
+            return CsvImportResult(invalidRows = bundle.invalidRows)
+        }
+        var importedSessionsCount = 0
+        var skippedDuplicateCount = 0
+        var importedSamplesCount = 0
+
+        db.runInTransaction {
+            if (bundle.sessions.isNotEmpty()) {
+                val existingKeys = sessionDao.getRecentCompleted(5000)
+                    .mapTo(HashSet()) { CsvHistoryImporter.sessionDedupeKey(it.portId, it.startTimeSec) }
+                val toInsert = mutableListOf<ChargeSessionEntity>()
+                for (sess in bundle.sessions) {
+                    val key = CsvHistoryImporter.sessionDedupeKey(sess.portId, sess.startTimeSec)
+                    if (existingKeys.add(key)) {
+                        toInsert += ChargeSessionEntity.fromRecord(sess)
+                    } else {
+                        skippedDuplicateCount++
+                    }
+                }
+                if (toInsert.isNotEmpty()) {
+                    sessionDao.insertAll(toInsert)
+                    importedSessionsCount = toInsert.size
+                }
+            }
+
+            if (bundle.samples.isNotEmpty()) {
+                val sortedSamples = bundle.samples.sortedBy { it.timestampMs }
+                val minTs = sortedSamples.first().timestampMs - 2000L
+                val maxTs = sortedSamples.last().timestampMs + 2000L
+                val existingByPort = telemetryDao.getSamplesInRange(minTs, maxTs).groupBy { it.portId }
+                val toInsertSamples = mutableListOf<TelemetrySampleEntity>()
+                for (sample in sortedSamples) {
+                    val samePort = existingByPort[sample.portId].orEmpty()
+                    val isDup = samePort.any { kotlin.math.abs(it.timestampMs - sample.timestampMs) <= 1500L }
+                    if (!isDup) {
+                        toInsertSamples += sample
+                    }
+                }
+                if (toInsertSamples.isNotEmpty()) {
+                    telemetryDao.insertAll(toInsertSamples)
+                    importedSamplesCount = toInsertSamples.size
+                }
+            }
+        }
+
+        return CsvImportResult(
+            importedSessions = importedSessionsCount,
+            skippedDuplicateSessions = skippedDuplicateCount,
+            importedSamples = importedSamplesCount,
+            invalidRows = bundle.invalidRows
+        )
+    }
+
     // --- Backup Payload Export & Restore ---
 
     fun buildBackupPayload(

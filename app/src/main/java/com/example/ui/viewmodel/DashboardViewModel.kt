@@ -30,7 +30,9 @@ import com.example.cuktech.bridge.BridgeDiscoveryHelper
 import com.example.cuktech.bridge.BridgeStatusResult
 import com.example.cuktech.bridge.BridgeSyncClient
 import com.example.cuktech.bridge.DiscoveredBridgeEndpoint
+import com.example.cuktech.bridge.WifiContextSnapshot
 import com.example.cuktech.cloud.XiaomiCloudClient
+import com.example.cuktech.db.CsvImportResult
 import com.example.cuktech.db.CuktechPersistence
 import com.example.cuktech.db.room.AutomationRuleEntity
 import com.example.cuktech.db.room.BleLinkEventEntity
@@ -104,6 +106,7 @@ import com.example.cuktech.security.ShareableConfigImportSelection
 import com.example.cuktech.security.WebDavBackupClient
 import com.example.cuktech.security.WebDavConfig
 import com.example.cuktech.security.WebDavSyncStatus
+import com.example.cuktech.telemetry.AwayDeltaSummary
 import com.example.cuktech.telemetry.ConnectionWizardStep
 import com.example.cuktech.telemetry.RssiPoint
 import com.example.cuktech.telemetry.TelemetryIntegritySnapshot
@@ -290,6 +293,8 @@ class DashboardViewModel @JvmOverloads constructor(
     val nfcLastStatus: StateFlow<String?> = _nfcLastStatus.asStateFlow()
 
     val integritySnapshot: StateFlow<TelemetryIntegritySnapshot> = cuktechManager.integritySnapshot
+    val wifiContext: StateFlow<WifiContextSnapshot> = cuktechManager.wifiContext
+    val awaySummary: StateFlow<AwayDeltaSummary?> = cuktechManager.awaySummary
     val bridgeSyncing: StateFlow<Boolean> = cuktechManager.bridgeSyncing
     val bridgeLastError: StateFlow<String?> = cuktechManager.bridgeLastError
 
@@ -2291,6 +2296,90 @@ class DashboardViewModel @JvmOverloads constructor(
             commandAudit = commandAuditLog.value,
             recentLogLines = logs.value.map { it.message }
         )
+    }
+
+    // --- Practical Feature Suite: Away Summary, Wi-Fi Context, Card Customization, CSV History Import ---
+
+    fun dismissAwaySummary() {
+        cuktechManager.dismissAwaySummary()
+    }
+
+    fun refreshWifiContext() {
+        cuktechManager.refreshWifiContext()
+    }
+
+    fun bindCurrentWifi(): Boolean {
+        val snap = cuktechManager.wifiContextMonitor.refreshNow()
+        if (!snap.isOnWifi || snap.currentKey.isBlank()) return false
+        val label = snap.displayLabel.ifBlank { "Wi-Fi" }
+        viewModelScope.launch {
+            preferencesRepository.bindHomeWifi(snap.currentKey, label)
+            cuktechManager.wifiContextMonitor.updateBindingPolicy(true, snap.currentKey)
+        }
+        return true
+    }
+
+    fun clearWifiBinding() {
+        viewModelScope.launch {
+            preferencesRepository.clearHomeWifiBinding()
+            cuktechManager.wifiContextMonitor.updateBindingPolicy(false, "")
+        }
+    }
+
+    fun updateWifiContextPolicy(
+        contextEnabled: Boolean,
+        bleOnlyAtHome: Boolean,
+        leaveAlertEnabled: Boolean,
+        leaveThresholdWatts: Double
+    ) {
+        viewModelScope.launch {
+            preferencesRepository.updateWifiContextPolicy(
+                contextEnabled = contextEnabled,
+                bleOnlyAtHome = bleOnlyAtHome,
+                leaveAlertEnabled = leaveAlertEnabled,
+                leaveThresholdWatts = leaveThresholdWatts
+            )
+        }
+    }
+
+    fun toggleAnalyticsCardHidden(cardId: String) {
+        val cleanId = cardId.trim()
+        if (cleanId.isEmpty()) return
+        val current = preferences.value.hiddenAnalyticsCardSet().toMutableSet()
+        if (!current.add(cleanId)) {
+            current.remove(cleanId)
+        }
+        viewModelScope.launch {
+            preferencesRepository.updateHiddenAnalyticsCards(current)
+        }
+    }
+
+    fun resetHiddenAnalyticsCards() {
+        viewModelScope.launch {
+            preferencesRepository.updateHiddenAnalyticsCards(emptySet())
+        }
+    }
+
+    fun importHistoryFromCsvUri(uri: Uri, onDone: (Result<CsvImportResult>) -> Unit) {
+        viewModelScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                runCatching {
+                    val csvText = getApplication<Application>().contentResolver
+                        .openInputStream(uri)
+                        ?.bufferedReader(Charsets.UTF_8)
+                        ?.use { it.readText() }
+                        ?: error("Could not read CSV file")
+                    val activeMac = deviceInfo.value.macAddress
+                        .takeIf { it.isNotBlank() && it != "--" }
+                        ?: activeCred.value?.mac.orEmpty()
+                    val result = persistence.importSessionsFromCsv(csvText, activeMac)
+                    cuktechManager.reloadSessionsFromDb()
+                    cuktechManager.refreshIntegritySnapshot()
+                    result
+                }
+            }
+            onDone(res)
+        }
     }
 
     override fun onCleared() {

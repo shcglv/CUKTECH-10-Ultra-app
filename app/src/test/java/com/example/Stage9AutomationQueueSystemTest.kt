@@ -327,6 +327,11 @@ class Stage9AutomationQueueSystemTest {
         }
         composeTestRule.waitForIdle()
 
+        composeTestRule.onNodeWithTag("widget_pin_port_button").performScrollTo().assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("settings_tab_advanced").performClick()
+        composeTestRule.waitForIdle()
+
         composeTestRule.onNodeWithTag("automation_safety_card").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("automation_simulate_btn").performScrollTo().performClick()
         composeTestRule.waitUntil(timeoutMillis = 5_000L) {
@@ -344,6 +349,5 @@ class Stage9AutomationQueueSystemTest {
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithTag("nfc_quick_actions_card").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithTag("widget_pin_port_button").performScrollTo().assertIsDisplayed()
     }
 }

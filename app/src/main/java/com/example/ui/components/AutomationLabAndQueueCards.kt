@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -59,6 +60,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
@@ -206,6 +208,7 @@ fun AutomationSafetyAndSimulatorCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DeadlineQueueAndReadinessCard(
     items: List<DeadlineReadinessItem>,
@@ -228,15 +231,14 @@ fun DeadlineQueueAndReadinessCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Schedule,
@@ -251,13 +253,18 @@ fun DeadlineQueueAndReadinessCard(
                 }
                 FilledTonalButton(
                     onClick = { showAddSheet = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
                         .testTag("add_deadline_btn")
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.deadline_add_btn), maxLines = 1)
+                    Text(
+                        text = stringResource(R.string.deadline_add_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
@@ -606,6 +613,7 @@ fun NfcAndQuickActionsCard(
                         Toast.makeText(context, selectedUri, Toast.LENGTH_SHORT).show()
                     },
                     shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
@@ -613,17 +621,26 @@ fun NfcAndQuickActionsCard(
                 ) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.nfc_copy_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.nfc_copy_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
                 FilledTonalButton(
                     onClick = { onExecuteUri(selectedUri) },
                     shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
                         .testTag("nfc_test_action_btn")
                 ) {
-                    Text(stringResource(R.string.nfc_test_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.nfc_test_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 

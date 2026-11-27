@@ -372,11 +372,11 @@ class Stage3UiAndLocalizationTest {
         assertTrue(ChartMetric.CURRENT_A in selected)
         assertTrue(ChartMetric.CUMULATIVE_WH in selected)
 
-        composeTestRule.onNodeWithTag("chart_multi_metric_legend").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("chart_port_filter_1").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("chart_port_filter_2").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("chart_port_filter_3").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("chart_port_filter_4").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("chart_multi_metric_legend").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("chart_port_filter_1").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("chart_port_filter_2").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("chart_port_filter_3").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("chart_port_filter_4").performScrollTo().assertIsDisplayed()
     }
 
     @Test

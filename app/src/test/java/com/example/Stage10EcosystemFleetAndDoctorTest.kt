@@ -391,6 +391,8 @@ class Stage10EcosystemFleetAndDoctorTest {
             }
         }
         composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("settings_tab_advanced").performClick()
+        composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithTag("settings_webdav_open_btn").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("settings_config_share_open_btn").performScrollTo().assertIsDisplayed()

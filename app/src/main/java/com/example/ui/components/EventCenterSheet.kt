@@ -215,6 +215,11 @@ fun EventCenterSheet(
                                 MaterialTheme.colorScheme.tertiaryContainer,
                                 MaterialTheme.colorScheme.onTertiaryContainer
                             )
+                            ChargerEventType.WIFI_LEAVE_LOAD -> Triple(
+                                Icons.Default.Warning,
+                                MaterialTheme.colorScheme.errorContainer,
+                                MaterialTheme.colorScheme.onErrorContainer
+                            )
                         }
 
                         Card(

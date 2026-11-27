@@ -124,15 +124,17 @@ object PortTelemetryDecoder {
     fun resolveC3ASharedBus(ports: Map<Int, PortTelemetry>): C3ASharedBusState {
         val p3 = ports[3]
         val p4 = ports[4]
-        if (p3 == null || p4 == null ||
-            !p3.enabled || !p4.enabled ||
-            p3.powerW < 0.2 || p4.powerW < 0.2 ||
-            p3.voltageV !in 3.5..6.4 || p4.voltageV !in 3.5..6.4
-        ) {
+        if (p3 == null || p4 == null || !p3.enabled || !p4.enabled) {
+            return C3ASharedBusState(isSharedActive = false)
+        }
+        val p3On5V = p3.voltageV in 3.5..6.4 && (p3.powerW >= 0.2 || p3.status >= 1 || p3.currentA >= 0.05)
+        val p4On5V = p4.voltageV in 3.5..6.4 && (p4.powerW >= 0.2 || p4.status >= 1 || p4.currentA >= 0.05)
+        val anyRealLoad = p3.powerW >= 0.2 || p4.powerW >= 0.2 || p3.status == 2 || p4.status == 2
+        if (!p3On5V || !p4On5V || !anyRealLoad) {
             return C3ASharedBusState(isSharedActive = false)
         }
 
-        val sharedPowerW = if (abs(p3.powerW - p4.powerW) <= 0.8) {
+        val sharedPowerW = if (p3.powerW >= 0.2 && p4.powerW >= 0.2 && abs(p3.powerW - p4.powerW) <= 0.8) {
             round2(maxOf(p3.powerW, p4.powerW))
         } else {
             round2((p3.powerW + p4.powerW).coerceAtMost(18.0))

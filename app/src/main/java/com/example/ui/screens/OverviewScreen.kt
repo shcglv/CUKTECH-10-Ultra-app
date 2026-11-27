@@ -78,6 +78,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,6 +91,8 @@ import com.example.cuktech.power.EtaEstimate
 import com.example.cuktech.power.PortCableDiagnostic
 import com.example.cuktech.protocol.C3ASharedBusState
 import com.example.cuktech.protocol.PortTelemetry
+import com.example.cuktech.telemetry.AwayDeltaSummary
+import com.example.cuktech.telemetry.AwayPortDeltaType
 import com.example.ui.components.AliasEditDialog
 import com.example.ui.components.ExpressiveSparkline
 import com.example.ui.components.MultiChargerAndIntegrityStrip
@@ -156,6 +159,7 @@ fun OverviewScreen(
     val bridgeSyncing by viewModel.bridgeSyncing.collectAsStateWithLifecycle()
     val evaluatedKpis by viewModel.evaluatedKpis.collectAsStateWithLifecycle()
     val fleetSummary by viewModel.fleetSummary.collectAsStateWithLifecycle()
+    val awaySummary by viewModel.awaySummary.collectAsStateWithLifecycle()
 
     var showScenarioDialog by remember { mutableStateOf(false) }
     var editingChargerAlias by remember { mutableStateOf(false) }
@@ -401,6 +405,19 @@ fun OverviewScreen(
                         )
                     }
                 }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = awaySummary != null,
+            enter = expandVertically(ExpressiveMotion.spatialSpring()) + fadeIn(),
+            exit = shrinkVertically(ExpressiveMotion.spatialSpring()) + fadeOut()
+        ) {
+            awaySummary?.let { summary ->
+                AwaySummaryCard(
+                    summary = summary,
+                    onDismiss = { viewModel.dismissAwaySummary() }
+                )
             }
         }
 
@@ -666,10 +683,10 @@ fun OverviewScreen(
                 }
 
                 // Bottom row: Utilization badge (left) flush & level with Delivered Energy badge (right)
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val pct = ((totalWatts / 120.0) * 100.0).toInt().coerceIn(0, 100)
                     Surface(
@@ -696,7 +713,7 @@ fun OverviewScreen(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
                             maxLines = 1,
-                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                         )
                     }
@@ -717,7 +734,7 @@ fun OverviewScreen(
                                 ).tabularNums(),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
-                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                             )
                         }
@@ -735,7 +752,7 @@ fun OverviewScreen(
                                     ).tabularNums(),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
-                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                                 )
                             }
@@ -1199,10 +1216,11 @@ private fun OverviewPortMiniCard(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -1218,7 +1236,9 @@ private fun OverviewPortMiniCard(
                         text = portLabel,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = if (active) accentColor else MaterialTheme.colorScheme.onSurface
+                        color = if (active) accentColor else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 Surface(
@@ -1257,7 +1277,7 @@ private fun OverviewPortMiniCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
                 Text(
@@ -1266,8 +1286,11 @@ private fun OverviewPortMiniCard(
                         fontFamily = TelemetryMonoFontFamily,
                         fontWeight = FontWeight.Bold
                     ).tabularNums(),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
+                Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.End) {
                     if (active && activePeakWatts != null && activePeakWatts > port.powerW + 0.5) {
                         Text(
@@ -1276,6 +1299,7 @@ private fun OverviewPortMiniCard(
                                 fontFamily = TelemetryMonoFontFamily
                             ).tabularNums(),
                             color = accentColor,
+                            maxLines = 1,
                             modifier = Modifier.testTag("overview_port_peak_$portId")
                         )
                     }
@@ -1284,7 +1308,8 @@ private fun OverviewPortMiniCard(
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontFamily = TelemetryMonoFontFamily
                         ).tabularNums(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
                     )
                 }
             }
@@ -1334,6 +1359,7 @@ private fun OverviewPortMiniCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun OverviewSharedC3ACard(
     c3aBus: C3ASharedBusState,
@@ -1367,10 +1393,10 @@ private fun OverviewSharedC3ACard(
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1414,10 +1440,10 @@ private fun OverviewSharedC3ACard(
                 )
             }
 
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = "${String.format(Locale.getDefault(), "%.1f", c3aBus.sharedPowerW)} $unitW",
@@ -1441,6 +1467,111 @@ private fun OverviewSharedC3ACard(
                     text = stringResource(R.string.port_delay_timer_fmt, formatDurationHms(countdownSec)),
                     style = MaterialTheme.typography.labelSmall.tabularNums(),
                     color = accentColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AwaySummaryCard(
+    summary: AwayDeltaSummary,
+    onDismiss: () -> Unit
+) {
+    val totalMins = (summary.awayDurationSec / 60L).coerceAtLeast(1L).toInt()
+    val durationText = if (totalMins >= 60) {
+        stringResource(R.string.away_summary_duration_hm_fmt, totalMins / 60, totalMins % 60)
+    } else {
+        stringResource(R.string.away_summary_duration_min_fmt, totalMins)
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("overview_away_summary_card")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Restore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            text = stringResource(R.string.away_summary_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            text = durationText,
+                            style = MaterialTheme.typography.labelSmall.tabularNums(),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("away_summary_dismiss_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.cd_close),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+
+            if (summary.deltas.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.away_summary_no_changes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            } else {
+                summary.deltas.forEach { d ->
+                    val line = when (d.deltaType) {
+                        AwayPortDeltaType.STOPPED ->
+                            stringResource(R.string.away_summary_stopped_fmt, d.portLabel, d.beforeWatts)
+                        AwayPortDeltaType.STARTED ->
+                            stringResource(R.string.away_summary_started_fmt, d.portLabel, d.afterWatts)
+                        AwayPortDeltaType.STILL_ACTIVE ->
+                            stringResource(R.string.away_summary_active_fmt, d.portLabel, d.beforeWatts, d.afterWatts)
+                    }
+                    Text(
+                        text = "• $line",
+                        style = MaterialTheme.typography.bodySmall.tabularNums(),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+
+            if (summary.bridgeSamplesSynced > 0) {
+                Text(
+                    text = stringResource(R.string.away_summary_bridge_synced_fmt, summary.bridgeSamplesSynced),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
         }

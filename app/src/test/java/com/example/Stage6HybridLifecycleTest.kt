@@ -490,6 +490,8 @@ class Stage6HybridLifecycleTest {
         composeTestRule.waitUntil(timeoutMillis = 5_000L) { viewModel.preferencesLoaded.value }
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("settings_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("settings_tab_advanced").performClick()
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("bridge_sync_switch").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("bridge_url_input").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("ble_exit_alert_switch").performScrollTo().assertIsDisplayed()

@@ -63,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -720,19 +721,29 @@ fun ExportCsvDialog(
             ) {
                 OutlinedButton(
                     onClick = { onExportDownloads(timeframe, scope) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
                 ) {
-                    Text(stringResource(R.string.dialog_export_downloads))
+                    Text(
+                        text = stringResource(R.string.dialog_export_downloads),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
                 Button(
                     onClick = { onExportSaf(timeframe, scope) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
                 ) {
-                    Text(stringResource(R.string.dialog_export_saf))
+                    Text(
+                        text = stringResource(R.string.dialog_export_saf),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }

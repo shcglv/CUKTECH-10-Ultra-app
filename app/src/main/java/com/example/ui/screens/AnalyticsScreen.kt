@@ -4,11 +4,14 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +44,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
@@ -60,6 +65,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -91,6 +97,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -102,6 +109,7 @@ import com.example.cuktech.db.room.TelemetrySampleEntity
 import com.example.cuktech.energy.ChargeSessionRecord
 import com.example.cuktech.power.SessionDeepAnalysis
 import com.example.cuktech.power.SessionPhaseType
+import com.example.cuktech.prefs.AppPreferencesRepository
 import com.example.ui.components.CableInventoryAndLabCard
 import com.example.ui.components.ChargerPassportAndResearchCard
 import com.example.ui.components.ChargingPeriodSummaryCard
@@ -129,6 +137,7 @@ import com.example.ui.components.TwoSessionComparisonCard
 import com.example.ui.components.buildMonotoneCubicPath
 import com.example.ui.components.explicitPortName
 import com.example.ui.components.formatDurationHms
+import com.example.ui.theme.ExpressiveMotion
 import com.example.ui.theme.LocalSemanticColors
 import com.example.ui.theme.TelemetryMonoFontFamily
 import com.example.ui.theme.tabularNums
@@ -152,6 +161,7 @@ private enum class AnalyticsSubTab {
     INVENTORY_LAB
 }
 
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AnalyticsScreen(
     viewModel: DashboardViewModel,
@@ -211,6 +221,11 @@ fun AnalyticsScreen(
     var showClearDialog by remember { mutableStateOf(false) }
     var showSummaryTable by remember { mutableStateOf(false) }
     var showCustomRangeDialog by remember { mutableStateOf(false) }
+    var showCustomizeCardsSheet by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = activeSubTab != AnalyticsSubTab.SUMMARY) {
+        activeSubTab = AnalyticsSubTab.SUMMARY
+    }
 
     var pendingSafTimeframe by remember { mutableStateOf(CuktechPersistence.ExportTimeframe.ALL_TIME) }
     var pendingSafScope by remember { mutableStateOf(CuktechPersistence.ExportScope.ALL) }
@@ -225,6 +240,29 @@ fun AnalyticsScreen(
                     context.getString(if (ok) R.string.toast_csv_ok else R.string.toast_csv_fail),
                     Toast.LENGTH_SHORT
                 ).show()
+            }
+        }
+    }
+
+    val safImportCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importHistoryFromCsvUri(uri) { res ->
+                val msg = res.fold(
+                    onSuccess = {
+                        context.getString(
+                            R.string.toast_csv_import_ok_fmt,
+                            it.importedSessions,
+                            it.importedSamples,
+                            it.skippedDuplicateSessions
+                        )
+                    },
+                    onFailure = {
+                        context.getString(R.string.toast_csv_import_fail_fmt, it.message ?: "")
+                    }
+                )
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -277,6 +315,19 @@ fun AnalyticsScreen(
                 viewModel.setCustomChartRange(now - hoursBack * 3_600_000L, now)
             },
             onDismiss = { showCustomRangeDialog = false }
+        )
+    }
+
+    val hiddenCards = remember(prefs.hiddenAnalyticsCardsCsv) {
+        prefs.hiddenAnalyticsCardSet()
+    }
+
+    if (showCustomizeCardsSheet) {
+        AnalyticsCustomizeCardsSheet(
+            hiddenCards = hiddenCards,
+            onToggleCard = { cardId -> viewModel.toggleAnalyticsCardHidden(cardId) },
+            onResetAll = { viewModel.resetHiddenAnalyticsCards() },
+            onDismiss = { showCustomizeCardsSheet = false }
         )
     }
 
@@ -341,10 +392,9 @@ fun AnalyticsScreen(
             .fillMaxSize()
             .padding(horizontal = 16.dp)
             .testTag("analytics_screen"),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(top = 6.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { Spacer(Modifier.height(6.dp)) }
-
         if (showLoggingPausedNotice) {
             item {
                 Surface(
@@ -368,50 +418,81 @@ fun AnalyticsScreen(
             }
         }
 
-        // Sub-Tab Switcher: Summary | Ports Lifecycle | Power & Protocols | Scenes & PDO | Session Lab
+        // Compact 2x3 Segmented Tab Grid (all 6 sections immediately visible, fits Russian labels cleanly)
         item {
-            Row(
+            val tabItems = remember {
+                listOf(
+                    listOf(
+                        Triple(AnalyticsSubTab.SUMMARY, R.string.analytics_tab_summary, "analytics_tab_summary"),
+                        Triple(AnalyticsSubTab.LIFECYCLE, R.string.analytics_tab_lifecycle, "analytics_tab_lifecycle"),
+                        Triple(AnalyticsSubTab.POWER_PROTOCOLS, R.string.analytics_tab_power_protocols, "analytics_tab_power_protocols")
+                    ),
+                    listOf(
+                        Triple(AnalyticsSubTab.SCENES_PDO, R.string.analytics_tab_scenes_pdo, "analytics_tab_scenes_pdo"),
+                        Triple(AnalyticsSubTab.SESSIONS_LAB, R.string.analytics_tab_session_lab, "analytics_tab_session_lab"),
+                        Triple(AnalyticsSubTab.INVENTORY_LAB, R.string.analytics_tab_inventory_lab, "analytics_tab_inventory_lab")
+                    )
+                )
+            }
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .testTag("analytics_tabs_container")
             ) {
-                FilterChip(
-                    selected = activeSubTab == AnalyticsSubTab.SUMMARY,
-                    onClick = { activeSubTab = AnalyticsSubTab.SUMMARY },
-                    label = { Text(stringResource(R.string.analytics_tab_summary)) },
-                    modifier = Modifier.testTag("analytics_tab_summary")
-                )
-                FilterChip(
-                    selected = activeSubTab == AnalyticsSubTab.LIFECYCLE,
-                    onClick = { activeSubTab = AnalyticsSubTab.LIFECYCLE },
-                    label = { Text(stringResource(R.string.analytics_tab_lifecycle)) },
-                    modifier = Modifier.testTag("analytics_tab_lifecycle")
-                )
-                FilterChip(
-                    selected = activeSubTab == AnalyticsSubTab.POWER_PROTOCOLS,
-                    onClick = { activeSubTab = AnalyticsSubTab.POWER_PROTOCOLS },
-                    label = { Text(stringResource(R.string.analytics_tab_power_protocols)) },
-                    modifier = Modifier.testTag("analytics_tab_power_protocols")
-                )
-                FilterChip(
-                    selected = activeSubTab == AnalyticsSubTab.SCENES_PDO,
-                    onClick = { activeSubTab = AnalyticsSubTab.SCENES_PDO },
-                    label = { Text(stringResource(R.string.analytics_tab_scenes_pdo)) },
-                    modifier = Modifier.testTag("analytics_tab_scenes_pdo")
-                )
-                FilterChip(
-                    selected = activeSubTab == AnalyticsSubTab.SESSIONS_LAB,
-                    onClick = { activeSubTab = AnalyticsSubTab.SESSIONS_LAB },
-                    label = { Text(stringResource(R.string.analytics_tab_session_lab)) },
-                    modifier = Modifier.testTag("analytics_tab_session_lab")
-                )
-                FilterChip(
-                    selected = activeSubTab == AnalyticsSubTab.INVENTORY_LAB,
-                    onClick = { activeSubTab = AnalyticsSubTab.INVENTORY_LAB },
-                    label = { Text(stringResource(R.string.analytics_tab_inventory_lab)) },
-                    modifier = Modifier.testTag("analytics_tab_inventory_lab")
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    tabItems.forEach { rowTabs ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            rowTabs.forEach { (tab, labelRes, tag) ->
+                                val isSelected = activeSubTab == tab
+                                val bgColor by animateColorAsState(
+                                    targetValue = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                                    animationSpec = ExpressiveMotion.spatialSpring(),
+                                    label = "analytics_tab_bg_${tab.name}"
+                                )
+                                Surface(
+                                    color = bgColor,
+                                    shape = RoundedCornerShape(13.dp),
+                                    tonalElevation = if (isSelected) 2.dp else 0.dp,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .clip(RoundedCornerShape(13.dp))
+                                        .clickable { activeSubTab = tab }
+                                        .testTag(tag)
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = stringResource(labelRes),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            },
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -532,81 +613,136 @@ fun AnalyticsScreen(
             }
         } else {
         // Next-Gen Interactive Bezier / Stacked Telemetry Chart Card
-        item {
-            ExpressiveTelemetryChartCard(
-                interval = chartInterval,
-                metric = chartMetric,
-                selectedMetrics = selectedMetrics,
-                samples = chartSamples,
-                onSelectInterval = { iv ->
-                    if (iv == ChartInterval.CUSTOM) {
-                        showCustomRangeDialog = true
-                    } else {
-                        viewModel.selectChartInterval(iv)
-                    }
-                },
-                onSelectMetric = { viewModel.selectChartMetric(it) },
-                onToggleMetric = { viewModel.toggleChartMetric(it) }
-            )
+        if (AppPreferencesRepository.CARD_CHART !in hiddenCards) {
+            item {
+                ExpressiveTelemetryChartCard(
+                    interval = chartInterval,
+                    metric = chartMetric,
+                    selectedMetrics = selectedMetrics,
+                    samples = chartSamples,
+                    onSelectInterval = { iv ->
+                        if (iv == ChartInterval.CUSTOM) {
+                            showCustomRangeDialog = true
+                        } else {
+                            viewModel.selectChartInterval(iv)
+                        }
+                    },
+                    onSelectMetric = { viewModel.selectChartMetric(it) },
+                    onToggleMetric = { viewModel.toggleChartMetric(it) }
+                )
+            }
         }
 
-        // Action Bar: Summary Table, Export CSV, Clear History
+        // Action Bar: Summary Table, Export CSV, Clear History + Import CSV & Customize Cards
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilledTonalButton(
-                    onClick = { showSummaryTable = true },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .testTag("analytics_summary_table_button"),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.analytics_view_table), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    FilledTonalButton(
+                        onClick = { showSummaryTable = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("analytics_summary_table_button"),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.analytics_view_table),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = { showExportDialog = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("analytics_export_csv_button"),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.analytics_export_csv),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { showClearDialog = true },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("analytics_clear_history_button"),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            contentDescription = stringResource(R.string.analytics_clear_history),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
-                FilledTonalButton(
-                    onClick = { showExportDialog = true },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .testTag("analytics_export_csv_button"),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.analytics_export_csv), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                OutlinedButton(
-                    onClick = { showClearDialog = true },
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .testTag("analytics_clear_history_button"),
-                    contentPadding = PaddingValues(horizontal = 12.dp)
-                ) {
-                    Icon(
-                        Icons.Default.DeleteOutline,
-                        contentDescription = stringResource(R.string.analytics_clear_history),
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                    OutlinedButton(
+                        onClick = {
+                            safImportCsvLauncher.launch(
+                                arrayOf("text/csv", "text/comma-separated-values", "text/plain", "*/*")
+                            )
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("analytics_import_csv_button"),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.analytics_import_csv),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { showCustomizeCardsSheet = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("analytics_customize_cards_btn"),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.analytics_customize_cards),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }
 
         // Weekly / Monthly Expressive Summary Card
-        item {
-            ChargingPeriodSummaryCard(
-                summary = periodSummary,
-                onSelectPeriod = { mode, offset -> viewModel.selectSummaryPeriod(mode, offset) }
-            )
+        if (AppPreferencesRepository.CARD_PERIOD_SUMMARY !in hiddenCards) {
+            item {
+                ChargingPeriodSummaryCard(
+                    summary = periodSummary,
+                    onSelectPeriod = { mode, offset -> viewModel.selectSummaryPeriod(mode, offset) }
+                )
+            }
         }
 
         // Multi-Charger Fleet Summary & Side-by-Side Benchmark
-        if (fleetSummary.nodes.isNotEmpty()) {
+        if (AppPreferencesRepository.CARD_FLEET !in hiddenCards && fleetSummary.nodes.isNotEmpty()) {
             item {
                 MultiChargerFleetCard(
                     fleet = fleetSummary,
@@ -616,26 +752,32 @@ fun AnalyticsScreen(
         }
 
         // Last 10 Days Energy Bar Chart
-        item {
-            DailyEnergyBarChartCard(buckets = dailyWhBuckets)
+        if (AppPreferencesRepository.CARD_DAILY_BARS !in hiddenCards) {
+            item {
+                DailyEnergyBarChartCard(buckets = dailyWhBuckets)
+            }
         }
 
         // 24h 4-Port Activity Timeline Swimlanes
-        item {
-            PortActivityTimelineCard(
-                activeSessions = activeSessions,
-                completedSessions = completedSessions,
-                chartSamples = chartSamples
-            )
+        if (AppPreferencesRepository.CARD_TIMELINE_24H !in hiddenCards) {
+            item {
+                PortActivityTimelineCard(
+                    activeSessions = activeSessions,
+                    completedSessions = completedSessions,
+                    chartSamples = chartSamples
+                )
+            }
         }
 
         // Pixel Battery-Style Port Energy Distribution Card
-        item {
-            PixelEnergyBreakdownCard(
-                ports = ports,
-                activeSessions = activeSessions,
-                completedSessions = completedSessions
-            )
+        if (AppPreferencesRepository.CARD_ENERGY_BREAKDOWN !in hiddenCards) {
+            item {
+                PixelEnergyBreakdownCard(
+                    ports = ports,
+                    activeSessions = activeSessions,
+                    completedSessions = completedSessions
+                )
+            }
         }
 
         // Archived Daily Energy Aggregates (> retentionDays)
@@ -781,6 +923,7 @@ fun AnalyticsScreen(
 
 
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SessionHistoryCard(
     session: ChargeSessionRecord,
@@ -842,7 +985,7 @@ private fun SessionHistoryCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -864,8 +1007,9 @@ private fun SessionHistoryCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (session.gapDurationSec > 0L || !session.endReason.isNullOrBlank() || session.isPaused) {
-                        Row(
+                        FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.padding(top = 4.dp)
                         ) {
                             if (session.isPaused) {
@@ -886,14 +1030,18 @@ private fun SessionHistoryCard(
 
                 FilledTonalButton(
                     onClick = onReplayClick,
-                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
                         .testTag("replay_session_button_${session.id}")
                 ) {
                     Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.analytics_replay))
+                    Text(
+                        text = stringResource(R.string.analytics_replay),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
@@ -1509,6 +1657,108 @@ private fun CustomChartRangeDialog(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.action_cancel))
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AnalyticsCustomizeCardsSheet(
+    hiddenCards: Set<String>,
+    onToggleCard: (String) -> Unit,
+    onResetAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val options = remember {
+        listOf(
+            AppPreferencesRepository.CARD_CHART to R.string.analytics_card_chart,
+            AppPreferencesRepository.CARD_PERIOD_SUMMARY to R.string.analytics_card_period_summary,
+            AppPreferencesRepository.CARD_FLEET to R.string.analytics_card_fleet,
+            AppPreferencesRepository.CARD_DAILY_BARS to R.string.analytics_card_daily_bars,
+            AppPreferencesRepository.CARD_TIMELINE_24H to R.string.analytics_card_timeline_24h,
+            AppPreferencesRepository.CARD_ENERGY_BREAKDOWN to R.string.analytics_card_energy_breakdown
+        )
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+        modifier = Modifier.testTag("analytics_customize_sheet")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.analytics_customize_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                TextButton(
+                    onClick = onResetAll,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("analytics_customize_reset")
+                ) {
+                    Text(stringResource(R.string.analytics_customize_reset))
+                }
+            }
+            Text(
+                text = stringResource(R.string.analytics_customize_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            options.forEach { (cardId, labelRes) ->
+                val isVisible = cardId !in hiddenCards
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(labelRes),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp)
+                        )
+                        Switch(
+                            checked = isVisible,
+                            onCheckedChange = { onToggleCard(cardId) },
+                            modifier = Modifier.testTag("analytics_card_toggle_$cardId")
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(stringResource(R.string.cd_close))
                 }
             }
         }

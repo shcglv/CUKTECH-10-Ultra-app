@@ -136,6 +136,7 @@
     <string name="port_c3a_short">C3+A</string>
     <string name="port_c3a_shared_badge">Shared 5V / 15W Bus</string>
     <string name="port_c3a_shared_banner">USB-C3 and USB-A are powered together on the shared 5V rail (15W max). Power is unified without double-counting.</string>
+    <string name="port_c3a_individual_controls_title">Individual Port Controls &amp; Protocols</string>
     <string name="port_tab_active_cd">%1$s active</string>
     <string name="port_spec_c1">120W Max · PD / PPS / UFCS / Mi 120W</string>
     <string name="port_spec_c2">120W Max · PD / PPS / UFCS / Mi 120W</string>
@@ -230,6 +231,8 @@
     <string name="clear_opt_all_desc">Completely wipe all saved charging sessions, aggregates, and telemetry points</string>
 
     <!-- Settings Hub & Subsections -->
+    <string name="settings_tab_basic">Basic</string>
+    <string name="settings_tab_advanced">Advanced</string>
     <string name="settings_section_hardware">Charger Display &amp; Hardware Controls</string>
     <string name="settings_screen_timeout">LCD Screen Timeout</string>
     <string name="settings_idle_screen_off">Idle Screen-Off</string>
@@ -1255,4 +1258,62 @@
     <string name="config_share_inc_kpis">Custom KPIs</string>
     <string name="config_share_import_btn">Import Selected Categories</string>
     <string name="toast_config_imported_fmt">Imported %1$d config item(s).</string>
+
+    <!-- Practical Feature Suite -->
+    <string name="notif_wifi_leave_title">Left Home Wi-Fi with Active Load</string>
+    <string name="notif_wifi_leave_body_fmt">Charging %1$.1f W (%2$s). Bound Wi-Fi: %3$s.</string>
+    <string name="wifi_active_load_generic">active port</string>
+    <string name="event_wifi_leave_title">Left Bound Wi-Fi Under Load</string>
+    <string name="event_wifi_leave_detail_fmt">%1$.1f W active when leaving %2$s</string>
+    <string name="wifi_context_title">Home / Office Wi-Fi Context</string>
+    <string name="wifi_context_desc">Bind your charger\'s Wi-Fi network without location permission. Pauses BLE scanning away from home and alerts if you leave a live load plugged in.</string>
+    <string name="wifi_context_status_bound">At Home Wi-Fi</string>
+    <string name="wifi_context_status_other">Other Wi-Fi</string>
+    <string name="wifi_context_status_none">No Wi-Fi</string>
+    <string name="wifi_context_status_off">Disabled</string>
+    <string name="wifi_context_current_fmt">Current: %1$s</string>
+    <string name="wifi_context_bound_fmt">Bound: %1$s</string>
+    <string name="wifi_context_not_bound">Not bound yet</string>
+    <string name="wifi_bind_current_btn">Bind Current Wi-Fi</string>
+    <string name="wifi_clear_binding_btn">Unbind</string>
+    <string name="wifi_ble_only_home_switch">Auto-reconnect BLE only on bound Wi-Fi</string>
+    <string name="wifi_leave_alert_switch">Alert when leaving Wi-Fi under load</string>
+    <string name="wifi_leave_threshold_label">Leave alert threshold</string>
+    <string name="toast_wifi_bound">Home Wi-Fi bound</string>
+    <string name="toast_wifi_not_connected">Connect to Wi-Fi first to bind</string>
+
+    <string name="bridge_script_btn">Bridge Script</string>
+    <string name="bridge_companion_title">Companion Pi / PC Bridge</string>
+    <string name="bridge_companion_desc">Run this Python 3 script on a Raspberry Pi or always-on PC near your charger to buffer telemetry offline, publish mDNS discovery, and relay LAN commands.</string>
+    <string name="bridge_companion_install_hint">pip install aiohttp bleak zeroconf\npython3 cuktech_bridge.py</string>
+    <string name="bridge_script_copy_btn">Copy Script</string>
+    <string name="bridge_script_save_btn">Save .py</string>
+    <string name="toast_bridge_script_copied">Bridge Python script copied</string>
+    <string name="toast_bridge_script_saved">Bridge script saved</string>
+
+    <string name="analytics_import_csv">Import CSV</string>
+    <string name="analytics_customize_cards">Cards</string>
+    <string name="analytics_customize_title">Customize Summary Cards</string>
+    <string name="analytics_customize_desc">Show or hide summary cards to keep Analytics focused on the metrics you use.</string>
+    <string name="analytics_customize_reset">Show All</string>
+    <string name="analytics_card_chart">Live Power Chart</string>
+    <string name="analytics_card_period_summary">Period Summary</string>
+    <string name="analytics_card_fleet">Multi-Charger Fleet</string>
+    <string name="analytics_card_daily_bars">10-Day Energy Bars</string>
+    <string name="analytics_card_timeline_24h">24h Port Timeline</string>
+    <string name="analytics_card_energy_breakdown">Port Energy Share</string>
+    <string name="toast_csv_import_ok_fmt">Imported %1$d session(s), %2$d sample(s) (skipped %3$d duplicates)</string>
+    <string name="toast_csv_import_fail_fmt">CSV import failed: %1$s</string>
+
+    <string name="port_quick_timers_label">Quick off-timer</string>
+    <string name="port_quick_timer_m_fmt">%1$dm</string>
+    <string name="port_quick_timer_off">Off</string>
+    <string name="away_summary_title">While You Were Away</string>
+    <string name="away_summary_duration_min_fmt">Disconnected for %1$d min</string>
+    <string name="away_summary_duration_hm_fmt">Disconnected for %1$dh %2$dm</string>
+    <string name="away_summary_stopped_fmt">%1$s finished (%2$.1f W → 0 W)</string>
+    <string name="away_summary_started_fmt">%1$s started (%2$.1f W)</string>
+    <string name="away_summary_active_fmt">%1$s still active (%2$.1f W → %3$.1f W)</string>
+    <string name="away_summary_no_changes">No port load changes during reconnect.</string>
+    <string name="away_summary_bridge_synced_fmt">Bridge filled %1$d gap sample(s)</string>
 </resources>

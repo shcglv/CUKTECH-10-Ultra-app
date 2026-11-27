@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
@@ -325,6 +326,7 @@ private fun FleetMetricTile(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MqttAndWebhookSettingsCard(
     config: IntegrationConfig,
@@ -545,7 +547,11 @@ fun MqttAndWebhookSettingsCard(
             Text(lastError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             FilledTonalButton(
                 onClick = {
                     onSaveConfig(
@@ -566,32 +572,44 @@ fun MqttAndWebhookSettingsCard(
                     haTokenDraft = ""
                     mqttPassDraft = ""
                 },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier
-                    .weight(1f)
                     .heightIn(min = 48.dp)
                     .testTag("integrations_save_btn")
             ) {
-                Text(stringResource(R.string.action_save), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = stringResource(R.string.action_save),
+                    maxLines = 2,
+                    textAlign = TextAlign.Center
+                )
             }
             OutlinedButton(
                 onClick = onReconnectMqtt,
                 enabled = mqttEnabledDraft,
-                contentPadding = PaddingValues(horizontal = 10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier
                     .heightIn(min = 48.dp)
                     .testTag("mqtt_reconnect_btn")
             ) {
-                Text(stringResource(R.string.settings_mqtt_reconnect_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = stringResource(R.string.settings_mqtt_reconnect_btn),
+                    maxLines = 2,
+                    textAlign = TextAlign.Center
+                )
             }
             OutlinedButton(
                 onClick = onPublishHaDiscovery,
                 enabled = mqttEnabledDraft && haDiscoveryDraft,
-                contentPadding = PaddingValues(horizontal = 10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier
                     .heightIn(min = 48.dp)
                     .testTag("mqtt_publish_discovery_btn")
             ) {
-                Text(stringResource(R.string.settings_mqtt_publish_discovery_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = stringResource(R.string.settings_mqtt_publish_discovery_btn),
+                    maxLines = 2,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -782,6 +800,7 @@ fun WebDavBackupSheet(
                         onUploadBackup(urlDraft, userDraft, passDraft.ifBlank { null }, filenameDraft, chars, includeSecrets)
                     },
                     enabled = !status.busy && urlDraft.isNotBlank() && backupPassphrase.isNotEmpty(),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
@@ -792,7 +811,11 @@ fun WebDavBackupSheet(
                     } else {
                         Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.webdav_upload_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = stringResource(R.string.webdav_upload_btn),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
                 OutlinedButton(
@@ -801,6 +824,7 @@ fun WebDavBackupSheet(
                         onRestoreBackup(urlDraft, userDraft, passDraft.ifBlank { null }, filenameDraft, chars, replaceExisting)
                     },
                     enabled = !status.busy && urlDraft.isNotBlank() && backupPassphrase.isNotEmpty(),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
@@ -808,7 +832,11 @@ fun WebDavBackupSheet(
                 ) {
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.webdav_restore_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.webdav_restore_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }

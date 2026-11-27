@@ -1,6 +1,7 @@
 package com.example.cuktech.telemetry
 
 import com.example.cuktech.db.room.SessionGapEntity
+import com.example.cuktech.protocol.PortTelemetry
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -59,6 +60,64 @@ data class BleExitRiskResult(
     val rssiDbm: Int,
     val riskLevel: DisconnectRiskLevel
 )
+
+enum class AwayPortDeltaType {
+    STOPPED,
+    STARTED,
+    STILL_ACTIVE
+}
+
+data class AwayPortDelta(
+    val portId: Int,
+    val portLabel: String,
+    val beforeWatts: Double,
+    val afterWatts: Double,
+    val deltaType: AwayPortDeltaType
+)
+
+data class AwayDeltaSummary(
+    val awayDurationSec: Long,
+    val deltas: List<AwayPortDelta>,
+    val bridgeSamplesSynced: Int = 0,
+    val reconnectedAtMs: Long = System.currentTimeMillis()
+)
+
+fun computeAwayDeltaSummary(
+    preDisconnectPorts: Map<Int, PortTelemetry>,
+    postReconnectPorts: Map<Int, PortTelemetry>,
+    awayDurationSec: Long,
+    bridgeSamplesSynced: Int = 0,
+    reconnectedAtMs: Long = System.currentTimeMillis()
+): AwayDeltaSummary? {
+    if (awayDurationSec < 60L) return null
+    val deltas = (1..4).mapNotNull { pid ->
+        val before = preDisconnectPorts[pid]
+        val after = postReconnectPorts[pid]
+        val beforeW = (before?.powerW ?: 0.0).coerceAtLeast(0.0)
+        val afterW = (after?.powerW ?: 0.0).coerceAtLeast(0.0)
+        val wasActive = beforeW >= 1.0
+        val isActive = afterW >= 1.0
+        val label = after?.portLabel ?: before?.portLabel ?: when (pid) {
+            1 -> "USB-C1"
+            2 -> "USB-C2"
+            3 -> "USB-C3"
+            else -> "USB-A"
+        }
+        when {
+            wasActive && !isActive -> AwayPortDelta(pid, label, beforeW, afterW, AwayPortDeltaType.STOPPED)
+            !wasActive && isActive -> AwayPortDelta(pid, label, beforeW, afterW, AwayPortDeltaType.STARTED)
+            wasActive && isActive -> AwayPortDelta(pid, label, beforeW, afterW, AwayPortDeltaType.STILL_ACTIVE)
+            else -> null
+        }
+    }
+    if (deltas.isEmpty() && bridgeSamplesSynced <= 0) return null
+    return AwayDeltaSummary(
+        awayDurationSec = awayDurationSec,
+        deltas = deltas,
+        bridgeSamplesSynced = bridgeSamplesSynced,
+        reconnectedAtMs = reconnectedAtMs
+    )
+}
 
 /**
  * Pure thread-safe telemetry continuity, cadence jitter, BLE RSSI proximity radar,

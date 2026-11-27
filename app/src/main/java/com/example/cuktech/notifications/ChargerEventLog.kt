@@ -16,7 +16,8 @@ enum class ChargerEventType {
     LOW_POWER_DROP_ALERT,
     BLE_PROXIMITY_EXIT,
     BRIDGE_SYNC_MERGED,
-    TELEMETRY_STALE
+    TELEMETRY_STALE,
+    WIFI_LEAVE_LOAD
 }
 
 data class ChargerEvent(

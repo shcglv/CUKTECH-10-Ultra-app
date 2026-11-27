@@ -381,28 +381,37 @@ class Stage5RegressionAndSecurityTest {
         }
 
         composeTestRule.onNodeWithTag("settings_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("settings_tab_basic").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("settings_tab_advanced").assertIsDisplayed()
         composeTestRule.onNodeWithTag("open_diagnostics_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("check_updates_button").performScrollTo().assertIsDisplayed()
+
+        // Switch to Advanced tab for Backup and Security/TCP controls
+        composeTestRule.onNodeWithTag("settings_tab_advanced").performClick()
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("saf_backup_export_button").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("saf_backup_restore_button").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithTag("check_updates_button").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("opt_in_tcp_switch").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("toggle_tcp_server_button").assertDoesNotExist()
         composeTestRule.onNodeWithTag("opt_in_tcp_switch").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("toggle_tcp_server_button").performScrollTo().assertIsDisplayed()
 
-        // Switch locale live to Russian and verify MD3E controls & cards render cleanly
+        // Switch locale live to Russian and verify MD3E controls & cards render cleanly across both tabs
         lang.value = "ru"
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithTag("nav_settings").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("saf_backup_export_button").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("rotate_token_button").performScrollTo().assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("settings_tab_basic").performClick()
+        composeTestRule.waitForIdle()
         assertTrue(composeTestRule.onAllNodesWithText("Настройки").fetchSemanticsNodes().size >= 2)
         composeTestRule.onNodeWithTag("dynamic_color_switch").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("replay_onboarding_button").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithTag("saf_backup_export_button").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("github_updates_card").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("check_updates_button").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithTag("rotate_token_button").performScrollTo().assertIsDisplayed()
     }
 
     @Test

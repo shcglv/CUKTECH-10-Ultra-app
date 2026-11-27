@@ -17,6 +17,9 @@ import com.example.cuktech.automation.KillswitchSnapshot
 import com.example.cuktech.automation.LocalAutomationEngine
 import com.example.cuktech.automation.UndoAvailability
 import com.example.cuktech.bridge.BridgeSyncClient
+import com.example.cuktech.bridge.WifiContextMonitor
+import com.example.cuktech.bridge.WifiContextSnapshot
+import com.example.cuktech.bridge.WifiContextStatus
 import com.example.cuktech.cloud.XiaomiCloudClient
 import com.example.cuktech.db.CuktechPersistence
 import com.example.cuktech.db.PowerChartPoint
@@ -54,8 +57,10 @@ import com.example.cuktech.security.CuktechDeviceCredentials
 import com.example.R
 import com.example.cuktech.security.LogSanitizer
 import com.example.cuktech.security.SecureCredentialStore
+import com.example.cuktech.telemetry.AwayDeltaSummary
 import com.example.cuktech.telemetry.TelemetryIntegrityEngine
 import com.example.cuktech.telemetry.TelemetryIntegritySnapshot
+import com.example.cuktech.telemetry.computeAwayDeltaSummary
 import com.example.ui.i18n.resolveLocale
 import com.example.ui.i18n.withAppLocale
 import kotlinx.coroutines.CancellationException
@@ -225,6 +230,22 @@ class CuktechBleManager @JvmOverloads constructor(
         _authState.value = state
     }
 
+    @androidx.annotation.VisibleForTesting
+    internal fun setPortsForTest(ports: Map<Int, PortTelemetry>) {
+        _ports.value = ports
+        _totalPowerWatts.value = PortTelemetryDecoder.computeEffectiveTotalWatts(ports)
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun setWifiContextForTest(snapshot: WifiContextSnapshot) {
+        wifiContextMonitor.setSnapshotForTest(snapshot)
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun setAwaySummaryForTest(summary: AwayDeltaSummary?) {
+        _awaySummary.value = summary
+    }
+
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
@@ -287,6 +308,31 @@ class CuktechBleManager @JvmOverloads constructor(
     val cableDiagnostics: StateFlow<Map<Int, PortCableDiagnostic>> = cableDiagnosticEngine.diagnostics
     val localAutomationEngine = LocalAutomationEngine()
     val integrityEngine = TelemetryIntegrityEngine()
+    val wifiContextMonitor = WifiContextMonitor(context)
+    val wifiContext: StateFlow<WifiContextSnapshot> = wifiContextMonitor.snapshot
+    private val _awaySummary = MutableStateFlow<AwayDeltaSummary?>(null)
+    val awaySummary: StateFlow<AwayDeltaSummary?> = _awaySummary.asStateFlow()
+    @Volatile
+    private var preDisconnectPortsSnapshot: Map<Int, PortTelemetry> = emptyMap()
+    @Volatile
+    private var preDisconnectSnapshotWallMs: Long = 0L
+    @Volatile
+    private var pendingAwayDeltaCheck: Boolean = false
+    @Volatile
+    private var pendingAwayDurationSec: Long = 0L
+    @Volatile
+    private var pendingAwayBridgeSamples: Int = 0
+    @Volatile
+    private var lastActiveLoadWatts: Double = 0.0
+    @Volatile
+    private var lastActiveLoadPortsSummary: String = ""
+    @Volatile
+    private var lastActiveLoadWallMs: Long = 0L
+    @Volatile
+    private var lastObservedWifiStatus: WifiContextStatus = WifiContextStatus.UNKNOWN
+    @Volatile
+    private var lastWifiLeaveAlertMs: Long = 0L
+
     private val _integritySnapshot = MutableStateFlow(TelemetryIntegritySnapshot())
     val integritySnapshot: StateFlow<TelemetryIntegritySnapshot> = _integritySnapshot.asStateFlow()
     private val _bridgeSyncing = MutableStateFlow(false)
@@ -519,6 +565,76 @@ class CuktechBleManager @JvmOverloads constructor(
                 }
             }
         }
+
+        wifiContextMonitor.startMonitoring()
+        scope.launch {
+            preferencesRepository.preferences.collect { prefsSnapshotNow ->
+                wifiContextMonitor.updateBindingPolicy(
+                    enabled = prefsSnapshotNow.wifiContextEnabled,
+                    boundNetworkKey = prefsSnapshotNow.boundWifiKey
+                )
+                if (!WifiContextMonitor.shouldPauseBleReconnect(prefsSnapshotNow, wifiContext.value) &&
+                    _isAutoReconnectConfigured.value && !userManuallyDisconnected &&
+                    _authState.value == CuktechAuthState.DISCONNECTED
+                ) {
+                    kickAutoReconnectIfNeeded()
+                }
+            }
+        }
+        scope.launch {
+            wifiContextMonitor.snapshot.collect { snap ->
+                val prevStatus = lastObservedWifiStatus
+                val nextStatus = snap.status
+                if (prevStatus != nextStatus) {
+                    val curPrefs = preferencesRepository.preferences.value
+                    val nowMs = System.currentTimeMillis()
+                    if (WifiContextMonitor.shouldTriggerLeaveHomeLoadAlert(
+                            prevStatus = prevStatus,
+                            nextStatus = nextStatus,
+                            lastKnownLoadW = lastActiveLoadWatts,
+                            lastKnownLoadAgeMs = nowMs - lastActiveLoadWallMs,
+                            prefs = curPrefs
+                        ) && (nowMs - lastWifiLeaveAlertMs) >= 120_000L
+                    ) {
+                        lastWifiLeaveAlertMs = nowMs
+                        val locCtx = context.withAppLocale(curPrefs.appLanguage)
+                        val boundName = curPrefs.boundWifiLabel.ifBlank { "Wi-Fi" }
+                        val portsPart = lastActiveLoadPortsSummary.ifBlank {
+                            locCtx.getString(R.string.wifi_active_load_generic)
+                        }
+                        eventLog.addEvent(
+                            type = ChargerEventType.WIFI_LEAVE_LOAD,
+                            title = locCtx.getString(R.string.event_wifi_leave_title),
+                            detail = locCtx.getString(R.string.event_wifi_leave_detail_fmt, lastActiveLoadWatts, boundName),
+                            portId = 0,
+                            timestampMs = nowMs
+                        )
+                        ChargingNotificationManager.postWifiLeaveLoadAlert(
+                            context = locCtx,
+                            totalWatts = lastActiveLoadWatts,
+                            boundLabel = boundName,
+                            activePortsSummary = portsPart,
+                            inQuietHours = curPrefs.isWithinQuietHours()
+                        )
+                    }
+                    if (nextStatus == WifiContextStatus.BOUND_HOME_WIFI && prevStatus != WifiContextStatus.UNKNOWN) {
+                        kickAutoReconnectIfNeeded()
+                        if (curPrefs.bridgeSyncEnabled && BridgeSyncClient.isValidBridgeUrl(curPrefs.bridgeEndpointUrl)) {
+                            scope.launch(Dispatchers.IO) { syncFromBridgeNow(silent = true) }
+                        }
+                    }
+                    lastObservedWifiStatus = nextStatus
+                }
+            }
+        }
+    }
+
+    fun dismissAwaySummary() {
+        _awaySummary.value = null
+    }
+
+    fun refreshWifiContext() {
+        wifiContextMonitor.refreshNow()
     }
 
     fun isPortLoggingEnabled(portId: Int): Boolean {
@@ -948,6 +1064,11 @@ class CuktechBleManager @JvmOverloads constructor(
             BleBridgeService.getInstance()?.getBluetoothGatt() != null ||
             BleBridgeService.bleConnectionState.value != BleBridgeService.Companion.BleConnectionState.DISCONNECTED
 
+        if (_authState.value == CuktechAuthState.AUTHENTICATED) {
+            preDisconnectPortsSnapshot = _ports.value.toMap()
+            preDisconnectSnapshotWallMs = System.currentTimeMillis()
+        }
+
         if (isManual) {
             userManuallyDisconnected = true
             autoReconnectEnabled = false
@@ -1001,6 +1122,10 @@ class CuktechBleManager @JvmOverloads constructor(
             val wasConnectedOrConnecting = _authState.value != CuktechAuthState.DISCONNECTED ||
                 BleBridgeService.bleConnectionState.value != BleBridgeService.Companion.BleConnectionState.DISCONNECTED
             val wasAuthenticated = _authState.value == CuktechAuthState.AUTHENTICATED
+            if (wasAuthenticated) {
+                preDisconnectPortsSnapshot = _ports.value.toMap()
+                preDisconnectSnapshotWallMs = nowEpochMs
+            }
             lastDisconnectMs = SystemClock.elapsedRealtime()
             if (wasConnectedOrConnecting) {
                 triggerDisconnectCooldown(2000L)
@@ -1102,6 +1227,7 @@ class CuktechBleManager @JvmOverloads constructor(
             ?: credentialStore.activeDevice.value?.mac
             ?: credentialStore.devices.value.firstOrNull { it.hasValidToken }?.mac
         if (!_isAutoReconnectConfigured.value || userManuallyDisconnected || targetMac.isNullOrBlank()) return
+        if (WifiContextMonitor.shouldPauseBleReconnect(preferencesRepository.preferences.value, wifiContext.value)) return
         if (_authState.value != CuktechAuthState.DISCONNECTED || _isDisconnectCooldown.value) return
         BleBridgeService.addLogMessage(
             BleBridgeService.Companion.LogLevel.LEVEL2,
@@ -1118,6 +1244,11 @@ class CuktechBleManager @JvmOverloads constructor(
             while (isActive && _isAutoReconnectConfigured.value && !userManuallyDisconnected && _authState.value != CuktechAuthState.AUTHENTICATED) {
                 if (_authState.value != CuktechAuthState.DISCONNECTED) {
                     delay(3000L)
+                    continue
+                }
+                if (WifiContextMonitor.shouldPauseBleReconnect(preferencesRepository.preferences.value, wifiContext.value)) {
+                    _statusMessage.value = "BLE reconnect paused (away from bound Wi-Fi)"
+                    delay(5000L)
                     continue
                 }
                 val btAdapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
@@ -1241,6 +1372,16 @@ class CuktechBleManager @JvmOverloads constructor(
                 consecutiveFailures = 0
 
                 val authNowMs = System.currentTimeMillis()
+                val disconnectTs = preDisconnectSnapshotWallMs
+                val awaySec = if (disconnectTs in 1L until authNowMs) (authNowMs - disconnectTs) / 1000L else 0L
+                if (awaySec >= 60L) {
+                    pendingAwayDeltaCheck = true
+                    pendingAwayDurationSec = awaySec
+                    pendingAwayBridgeSamples = 0
+                } else {
+                    pendingAwayDeltaCheck = false
+                    preDisconnectSnapshotWallMs = 0L
+                }
                 integrityEngine.onBleReconnect(authNowMs)
                 val normMac = gattMac.uppercase().trim()
                 val gapStart = lastUnplannedDisconnectEpochMs
@@ -1302,6 +1443,20 @@ class CuktechBleManager @JvmOverloads constructor(
 
                 startBackgroundLoops()
                 queryInitialChargerState()
+                if (pendingAwayDeltaCheck) {
+                    pendingAwayDeltaCheck = false
+                    val computedAway = computeAwayDeltaSummary(
+                        preDisconnectPorts = preDisconnectPortsSnapshot,
+                        postReconnectPorts = _ports.value,
+                        awayDurationSec = pendingAwayDurationSec,
+                        bridgeSamplesSynced = pendingAwayBridgeSamples,
+                        reconnectedAtMs = System.currentTimeMillis()
+                    )
+                    if (computedAway != null) {
+                        _awaySummary.value = computedAway
+                    }
+                    preDisconnectSnapshotWallMs = 0L
+                }
                 BleBridgeService.refreshClientsList()
                 BleBridgeService.notifyAlertFlash(
                     "⚡ CUKTECH 10 Ultra Connected",
@@ -2095,6 +2250,8 @@ class CuktechBleManager @JvmOverloads constructor(
                     existing.voltageV != decoded.voltageV ||
                     existing.currentA != decoded.currentA ||
                     existing.powerW != decoded.powerW ||
+                    existing.status != decoded.status ||
+                    existing.rawProtocolCode != decoded.rawProtocolCode ||
                     existing.protocolName != decoded.protocolName ||
                     existing.enabled != decoded.enabled
                 val hasActiveSession = _activeSessions.value.containsKey(piid)
@@ -2309,6 +2466,15 @@ class CuktechBleManager @JvmOverloads constructor(
         val oldTotalW = _totalPowerWatts.value
         _totalPowerWatts.value = roundedTotalW
         _isSmartCharging.value = smartLoadTracker.update(roundedTotalW, nowSec)
+        if (roundedTotalW >= 1.0) {
+            lastActiveLoadWatts = roundedTotalW
+            lastActiveLoadWallMs = nowMs
+            lastActiveLoadPortsSummary = (1..4).mapNotNull { pid ->
+                curPorts[pid]?.takeIf { it.powerW >= 1.0 }?.let {
+                    "${it.portLabel} ${String.format(java.util.Locale.US, "%.0fW", it.powerW)}"
+                }
+            }.joinToString(", ")
+        }
 
         if (abs(oldTotalW - roundedTotalW) >= 0.5 || System.currentTimeMillis() - lastHistoryWriteMs >= 5000L) {
             val c3aLog = PortTelemetryDecoder.resolveC3ASharedBus(curPorts)
@@ -2717,6 +2883,10 @@ class CuktechBleManager @JvmOverloads constructor(
                 val added = persistence.mergeBridgeBackfillSamples(mac, rawSamples, prefs.retentionDays)
                 integrityEngine.onBridgeSyncCompleted(added, nowMs)
                 if (added > 0) {
+                    pendingAwayBridgeSamples += added
+                    _awaySummary.value?.let { curAway ->
+                        _awaySummary.value = curAway.copy(bridgeSamplesSynced = curAway.bridgeSamplesSynced + added)
+                    }
                     persistence.recordBleLinkEvent(
                         BleLinkEventEntity(
                             timestampMs = nowMs,

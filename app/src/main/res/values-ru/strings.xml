@@ -136,6 +136,7 @@
     <string name="port_c3a_short">C3+A</string>
     <string name="port_c3a_shared_badge">Общая шина 5 В / 15 Вт</string>
     <string name="port_c3a_shared_banner">USB-C3 и USB-A сейчас работают на общей шине 5 В (макс. 15 Вт). Мощность отображается едино без дублирования.</string>
+    <string name="port_c3a_individual_controls_title">Управление портами C3 и USB-A</string>
     <string name="port_tab_active_cd">%1$s активен</string>
     <string name="port_spec_c1">Макс. 120 Вт · PD / PPS / UFCS / Mi 120 Вт</string>
     <string name="port_spec_c2">Макс. 120 Вт · PD / PPS / UFCS / Mi 120 Вт</string>
@@ -198,11 +199,11 @@
     <string name="analytics_active_sessions">Активные сессии</string>
     <string name="analytics_completed_sessions">Завершённые сессии</string>
     <string name="analytics_daily_aggregates">Архив по дням (&gt;%1$d дн.)</string>
-    <string name="analytics_view_table">Сводная таблица</string>
+    <string name="analytics_view_table">Таблица</string>
     <string name="analytics_export_csv">Экспорт CSV</string>
     <string name="analytics_clear_history">Очистить историю</string>
     <string name="analytics_no_sessions">Сессии зарядки пока не записаны.</string>
-    <string name="analytics_replay">Воспроизвести</string>
+    <string name="analytics_replay">Повтор</string>
     <string name="replay_title">Воспроизведение сессии</string>
     <string name="replay_no_samples">В архиве нет детальных точек телеметрии для этой сессии.</string>
     <string name="replay_play">Пуск</string>
@@ -230,6 +231,8 @@
     <string name="clear_opt_all_desc">Полностью стереть все сессии, суточные архивы и точки телеметрии</string>
 
     <!-- Settings Hub & Subsections -->
+    <string name="settings_tab_basic">Основные</string>
+    <string name="settings_tab_advanced">Расширенные</string>
     <string name="settings_section_hardware">Экран зарядного устройства и питание</string>
     <string name="settings_screen_timeout">Таймаут экрана устройства</string>
     <string name="settings_idle_screen_off">Гасить экран при простое</string>
@@ -237,9 +240,9 @@
     <string name="settings_hw_language">Язык дисплея зарядного</string>
     <string name="settings_orientation_lock">Блокировка ориентации</string>
     <string name="settings_orientation_lock_desc">Фиксирует текущую ориентацию ЖК-экрана зарядного устройства</string>
-    <string name="settings_rotate_180">Повернуть экран на 180°</string>
+    <string name="settings_rotate_180">Поворот 180°</string>
     <string name="settings_lcd_page">Активная страница экрана зарядного</string>
-    <string name="settings_soft_reset">Мягкий сброс портов (перезапуск PD)</string>
+    <string name="settings_soft_reset">Сброс портов (PD)</string>
     <string name="settings_section_appearance">Внешний вид, язык и старт</string>
     <string name="settings_theme_mode">Тема оформления</string>
     <string name="settings_theme_system">Системная</string>
@@ -821,7 +824,7 @@
     <string name="event_bridge_sync_title">Докачка со стационарного моста</string>
     <string name="event_bridge_sync_detail_fmt">Синхронизировано %1$d точек телеметрии за время отсутствия</string>
 
-    <string name="overview_multi_charger_strip_fmt">%1$s · узлов: %2$d</string>
+    <string name="overview_multi_charger_strip_fmt">%1$s · %2$d БП</string>
     <string name="overview_confidence_high">Точные данные</string>
     <string name="overview_confidence_medium">Есть разрывы</string>
     <string name="overview_confidence_low">Офлайн / Разрыв</string>
@@ -1255,4 +1258,62 @@
     <string name="config_share_inc_kpis">Пользовательские KPI</string>
     <string name="config_share_import_btn">Импортировать выбранное</string>
     <string name="toast_config_imported_fmt">Импортировано элементов: %1$d.</string>
+
+    <!-- Практические функции -->
+    <string name="notif_wifi_leave_title">Выход из домашнего Wi-Fi с нагрузкой</string>
+    <string name="notif_wifi_leave_body_fmt">Идёт зарядка %1$.1f Вт (%2$s). Сеть: %3$s.</string>
+    <string name="wifi_active_load_generic">активный порт</string>
+    <string name="event_wifi_leave_title">Выход из домашней сети под нагрузкой</string>
+    <string name="event_wifi_leave_detail_fmt">%1$.1f Вт при выходе из сети %2$s</string>
+    <string name="wifi_context_title">Контекст Wi-Fi (Дом / Офис)</string>
+    <string name="wifi_context_desc">Привязка домашней сети без геоданных: отключает фоновый поиск BLE вне дома и напомнит об активной зарядке при уходе.</string>
+    <string name="wifi_context_status_bound">В домашней сети</string>
+    <string name="wifi_context_status_other">Другой Wi-Fi</string>
+    <string name="wifi_context_status_none">Нет Wi-Fi</string>
+    <string name="wifi_context_status_off">Выключено</string>
+    <string name="wifi_context_current_fmt">Текущая: %1$s</string>
+    <string name="wifi_context_bound_fmt">Привязана: %1$s</string>
+    <string name="wifi_context_not_bound">Не привязана</string>
+    <string name="wifi_bind_current_btn">Привязать сеть</string>
+    <string name="wifi_clear_binding_btn">Сбросить</string>
+    <string name="wifi_ble_only_home_switch">Авто-BLE только в домашнем Wi-Fi</string>
+    <string name="wifi_leave_alert_switch">Напомнить о нагрузке при выходе</string>
+    <string name="wifi_leave_threshold_label">Порог нагрузки для оповещения</string>
+    <string name="toast_wifi_bound">Домашняя сеть привязана</string>
+    <string name="toast_wifi_not_connected">Сначала подключитесь к Wi-Fi</string>
+
+    <string name="bridge_script_btn">Скрипт моста</string>
+    <string name="bridge_companion_title">Скрипт моста (Pi / ПК)</string>
+    <string name="bridge_companion_desc">Запустите этот скрипт на Raspberry Pi или домашнем ПК рядом с БП для буферизации телеметрии 24/7, mDNS и удалённых команд.</string>
+    <string name="bridge_companion_install_hint">pip install aiohttp bleak zeroconf\npython3 cuktech_bridge.py</string>
+    <string name="bridge_script_copy_btn">Копировать</string>
+    <string name="bridge_script_save_btn">Сохранить .py</string>
+    <string name="toast_bridge_script_copied">Скрипт моста скопирован</string>
+    <string name="toast_bridge_script_saved">Скрипт моста сохранён</string>
+
+    <string name="analytics_import_csv">Импорт CSV</string>
+    <string name="analytics_customize_cards">Карточки</string>
+    <string name="analytics_customize_title">Карточки сводки</string>
+    <string name="analytics_customize_desc">Скрывайте или возвращайте карточки сводки для более чистого экрана аналитики.</string>
+    <string name="analytics_customize_reset">Показать все</string>
+    <string name="analytics_card_chart">Живой график мощности</string>
+    <string name="analytics_card_period_summary">Сводка за период</string>
+    <string name="analytics_card_fleet">Флот зарядников</string>
+    <string name="analytics_card_daily_bars">Энергия за 10 дней</string>
+    <string name="analytics_card_timeline_24h">Таймлайн портов 24ч</string>
+    <string name="analytics_card_energy_breakdown">Доля портов по Вт·ч</string>
+    <string name="toast_csv_import_ok_fmt">Импорт: %1$d сессий, %2$d точек (пропущено дублей: %3$d)</string>
+    <string name="toast_csv_import_fail_fmt">Ошибка импорта CSV: %1$s</string>
+
+    <string name="port_quick_timers_label">Быстрый таймер откл.</string>
+    <string name="port_quick_timer_m_fmt">%1$dм</string>
+    <string name="port_quick_timer_off">Сброс</string>
+    <string name="away_summary_title">Пока вас не было</string>
+    <string name="away_summary_duration_min_fmt">Связь отсутствовала %1$d мин</string>
+    <string name="away_summary_duration_hm_fmt">Связь отсутствовала %1$dч %2$dм</string>
+    <string name="away_summary_stopped_fmt">%1$s завершён (%2$.1f Вт → 0 Вт)</string>
+    <string name="away_summary_started_fmt">%1$s начал заряд (%2$.1f Вт)</string>
+    <string name="away_summary_active_fmt">%1$s активен (%2$.1f → %3$.1f Вт)</string>
+    <string name="away_summary_no_changes">Нагрузка на портах не изменилась.</string>
+    <string name="away_summary_bridge_synced_fmt">Мост дозагрузил %1$d точек телеметрии</string>
 </resources>

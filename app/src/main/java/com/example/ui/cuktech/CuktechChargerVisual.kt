@@ -39,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -140,81 +139,93 @@ fun CuktechChargerVisual(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.Top
         ) {
-            // Left: Material 3 Expressive AC Squircle Bolt & Flowing S-Curve Wave Conduit (symmetric weight)
+            // Left: Material 3 Expressive AC Squircle Bolt & Per-Port Flowing S-Curve Conduits (hidden when idle)
             BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
                     .height(238.dp)
             ) {
-                val trackIdleColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
                 val badgeCenterX = (maxWidth - 46.dp).coerceIn(22.dp, 46.dp)
-                val badgeCenterY = 148.dp
+                val badgeCenterY = topPadding + (rowHeight * 4 + rowSpacing * 3) / 2
+                val activeLeftPortIds = (1..4).filter { pid ->
+                    (portsMap[pid]?.powerW ?: 0.0) > 0.2 || (c3aBus.isSharedActive && pid in 3..4)
+                }
 
                 Canvas(modifier = Modifier.fillMaxSize()) {
+                    if (activeLeftPortIds.isEmpty() || activeBlend <= 0.02f) {
+                        return@Canvas
+                    }
+
                     val startX = badgeCenterX.toPx()
-                    val startY = (badgeCenterY - 22.dp).toPx()
+                    val startY = badgeCenterY.toPx()
                     val endX = size.width
-                    val endY = (topPadding + rowHeight / 2).toPx()
 
-                    // Smooth S-curve cubic Bezier feeding into upper-left side of CUKTECH chassis
-                    val c1x = startX
-                    val c1y = startY - (startY - endY) * 0.58f
-                    val c2x = startX + (endX - startX) * 0.34f
-                    val c2y = endY
-
-                    fun bezierAt(t: Float): Offset {
-                        val u = 1f - t
-                        val tt = t * t
-                        val uu = u * u
-                        val uuu = uu * u
-                        val ttt = tt * t
-                        val x = uuu * startX + 3f * uu * t * c1x + 3f * u * tt * c2x + ttt * endX
-                        val y = uuu * startY + 3f * uu * t * c1y + 3f * u * tt * c2y + ttt * endY
-                        return Offset(x, y)
-                    }
-
-                    val conduitPath = Path().apply {
-                        moveTo(startX, startY)
-                        cubicTo(c1x, c1y, c2x, c2y, endX, endY)
-                    }
-
-                    drawPath(
-                        path = conduitPath,
-                        color = if (hasActiveCharging) accent.copy(alpha = 0.22f) else trackIdleColor,
-                        style = Stroke(
-                            width = 2.6.dp.toPx(),
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
-                        )
-                    )
-
-                    if (activeBlend > 0.02f) {
-                        // Subtle M3E sinusoidal ripple overlay traveling along the S-curve
-                        val steps = 32
-                        val waveAmp = (1.6.dp.toPx() + 1.4.dp.toPx() * loadRatio) * activeBlend
-                        val wavePath = Path()
-                        for (i in 0..steps) {
-                            val t = i.toFloat() / steps
-                            val pt = bezierAt(t)
-                            val taper = sin(t * PI).toFloat()
-                            val ripple = sin((t * 3.5f - flowPhase * 2f) * 2f * PI).toFloat() * waveAmp * taper
-                            val wx = pt.x + ripple * 0.6f
-                            val wy = pt.y + ripple * 0.8f
-                            if (i == 0) wavePath.moveTo(wx, wy) else wavePath.lineTo(wx, wy)
+                    activeLeftPortIds.forEach { pid ->
+                        val portColor = if (c3aBus.isSharedActive && pid in 3..4) {
+                            semantic.portC3
+                        } else {
+                            semantic.colorForPort(pid)
                         }
+                        val endY = (topPadding + (rowHeight + rowSpacing) * (pid - 1) + rowHeight / 2).toPx()
+
+                        // Symmetric S-curve cubic Bezier routing from central bolt squircle to each active port row
+                        val c1x = startX + (endX - startX) * 0.45f
+                        val c1y = startY
+                        val c2x = startX + (endX - startX) * 0.45f
+                        val c2y = endY
+
+                        fun bezierAt(t: Float): Offset {
+                            val u = 1f - t
+                            val tt = t * t
+                            val uu = u * u
+                            val uuu = uu * u
+                            val ttt = tt * t
+                            val x = uuu * startX + 3f * uu * t * c1x + 3f * u * tt * c2x + ttt * endX
+                            val y = uuu * startY + 3f * uu * t * c1y + 3f * u * tt * c2y + ttt * endY
+                            return Offset(x, y)
+                        }
+
+                        val conduitPath = Path().apply {
+                            moveTo(startX, startY)
+                            cubicTo(c1x, c1y, c2x, c2y, endX, endY)
+                        }
+
                         drawPath(
-                            path = wavePath,
-                            color = accent.copy(alpha = (0.36f + 0.24f * loadRatio) * activeBlend),
+                            path = conduitPath,
+                            color = portColor.copy(alpha = 0.24f * activeBlend),
                             style = Stroke(
-                                width = 2.2.dp.toPx(),
+                                width = 2.4.dp.toPx(),
                                 cap = StrokeCap.Round,
                                 join = StrokeJoin.Round
                             )
                         )
 
-                        // Dual traveling M3E energy beads for continuous fluid motion
+                        // Subtle M3E sinusoidal ripple overlay traveling along each active port's conduit
+                        val steps = 28
+                        val waveAmp = (1.3.dp.toPx() + 1.1.dp.toPx() * loadRatio) * activeBlend
+                        val wavePath = Path()
+                        for (i in 0..steps) {
+                            val t = i.toFloat() / steps
+                            val pt = bezierAt(t)
+                            val taper = sin(t * PI).toFloat()
+                            val ripple = sin((t * 3.5f - (flowPhase + pid * 0.17f) * 2f) * 2f * PI).toFloat() * waveAmp * taper
+                            val wx = pt.x + ripple * 0.5f
+                            val wy = pt.y + ripple * 0.8f
+                            if (i == 0) wavePath.moveTo(wx, wy) else wavePath.lineTo(wx, wy)
+                        }
+                        drawPath(
+                            path = wavePath,
+                            color = portColor.copy(alpha = (0.38f + 0.24f * loadRatio) * activeBlend),
+                            style = Stroke(
+                                width = 2.0.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
+
+                        // Dual traveling energy beads per active port
                         for (beadIdx in 0..1) {
-                            val phase = (flowPhase + beadIdx * 0.5f) % 1f
+                            val phase = (flowPhase + beadIdx * 0.5f + (pid - 1) * 0.14f) % 1f
                             val head = bezierAt(phase)
                             val tailT = (phase - 0.16f).coerceAtLeast(0f)
                             if (phase > 0.04f) {
@@ -228,24 +239,24 @@ fun CuktechChargerVisual(
                                     path = trail,
                                     brush = Brush.linearGradient(
                                         colors = listOf(
-                                            accent.copy(alpha = 0.04f * activeBlend),
-                                            accent.copy(alpha = (0.75f + 0.25f * loadRatio) * activeBlend)
+                                            portColor.copy(alpha = 0.04f * activeBlend),
+                                            portColor.copy(alpha = (0.78f + 0.22f * loadRatio) * activeBlend)
                                         ),
                                         start = tail,
                                         end = head
                                     ),
-                                    style = Stroke(width = 3.4.dp.toPx(), cap = StrokeCap.Round)
+                                    style = Stroke(width = 3.0.dp.toPx(), cap = StrokeCap.Round)
                                 )
                             }
                             val edgeFade = sin(phase * PI).toFloat().coerceIn(0.15f, 1f) * activeBlend
                             drawCircle(
-                                color = accent.copy(alpha = 0.34f * pulseAlpha * edgeFade),
-                                radius = (5.5.dp.toPx() + 1.5.dp.toPx() * loadRatio),
+                                color = portColor.copy(alpha = 0.34f * pulseAlpha * edgeFade),
+                                radius = (4.8.dp.toPx() + 1.2.dp.toPx() * loadRatio),
                                 center = head
                             )
                             drawCircle(
-                                color = accent.copy(alpha = edgeFade),
-                                radius = 2.8.dp.toPx(),
+                                color = portColor.copy(alpha = edgeFade),
+                                radius = 2.4.dp.toPx(),
                                 center = head
                             )
                         }
@@ -587,18 +598,30 @@ fun CuktechChargerVisual(
                             val botY = size.height * 0.78f
                             val midY = size.height * 0.5f
                             val mergeX = size.width * 0.45f
-                            val strokeW = 2.dp.toPx()
+                            val strokeW = 2.5.dp.toPx()
 
-                            // Y-junction uniting C3 and A lines into a single bus beam
-                            drawLine(sharedColor.copy(alpha = 0.45f), Offset(0f, topY), Offset(mergeX, midY), strokeW, StrokeCap.Round)
-                            drawLine(sharedColor.copy(alpha = 0.45f), Offset(0f, botY), Offset(mergeX, midY), strokeW, StrokeCap.Round)
-                            drawLine(sharedColor.copy(alpha = 0.45f), Offset(mergeX, midY), Offset(size.width, midY), strokeW, StrokeCap.Round)
+                            // Sharp unrounded Y-junction uniting C3 and A lines into a single bus strip
+                            drawLine(sharedColor.copy(alpha = 0.45f), Offset(0f, topY), Offset(mergeX, midY), strokeW, StrokeCap.Butt)
+                            drawLine(sharedColor.copy(alpha = 0.45f), Offset(0f, botY), Offset(mergeX, midY), strokeW, StrokeCap.Butt)
+                            drawRect(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        sharedColor.copy(alpha = 0.45f),
+                                        sharedColor.copy(alpha = 0.14f)
+                                    ),
+                                    startX = mergeX,
+                                    endX = size.width
+                                ),
+                                topLeft = Offset(mergeX, midY - strokeW / 2f),
+                                size = Size(size.width - mergeX, strokeW)
+                            )
 
-                            val pulseX = mergeX + (size.width - mergeX) * flowPhase
-                            drawCircle(
-                                color = sharedColor.copy(alpha = 0.85f * pulseAlpha),
-                                radius = 3.dp.toPx(),
-                                center = Offset(pulseX, midY)
+                            val stripW = (size.width - mergeX) * 0.45f
+                            val pulseLeft = mergeX + ((size.width - mergeX - stripW).coerceAtLeast(0f)) * flowPhase
+                            drawRect(
+                                color = sharedColor.copy(alpha = 0.9f * pulseAlpha),
+                                topLeft = Offset(pulseLeft, midY - strokeW),
+                                size = Size(stripW.coerceAtMost(size.width - pulseLeft), strokeW * 2f)
                             )
                         }
                         Spacer(modifier = Modifier.width(4.dp))
@@ -685,29 +708,31 @@ private fun PortRightBeamRow(
                     .width(28.dp)
                     .height(14.dp)
             ) {
-                val midY = size.height / 2f
-                drawRoundRect(
+                val stripTop = size.height * 0.24f
+                val stripHeight = size.height * 0.52f
+                drawRect(
                     brush = Brush.horizontalGradient(
                         listOf(
-                            portColor.copy(alpha = 0.26f * pulseAlpha),
-                            portColor.copy(alpha = 0.06f),
+                            portColor.copy(alpha = 0.30f * pulseAlpha),
+                            portColor.copy(alpha = 0.08f),
                             Color.Transparent
                         )
                     ),
-                    topLeft = Offset(0f, size.height * 0.2f),
-                    size = Size(size.width, size.height * 0.6f),
-                    cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                    topLeft = Offset(0f, stripTop),
+                    size = Size(size.width, stripHeight)
                 )
-                val particleX = size.width * ((flowPhase + (portId - 1) * 0.22f) % 1f)
-                drawCircle(
+                val pulseWidth = 7.dp.toPx().coerceAtMost(size.width)
+                val travel = (size.width - pulseWidth).coerceAtLeast(0f)
+                val pulseLeft = travel * ((flowPhase + (portId - 1) * 0.22f) % 1f)
+                drawRect(
                     color = portColor.copy(alpha = 0.45f * pulseAlpha),
-                    radius = 4.dp.toPx(),
-                    center = Offset(particleX, midY)
+                    topLeft = Offset(pulseLeft, stripTop - 1.dp.toPx()),
+                    size = Size(pulseWidth, stripHeight + 2.dp.toPx())
                 )
-                drawCircle(
+                drawRect(
                     color = portColor,
-                    radius = 2.dp.toPx(),
-                    center = Offset(particleX, midY)
+                    topLeft = Offset(pulseLeft + 1.5.dp.toPx(), stripTop + 0.5.dp.toPx()),
+                    size = Size((pulseWidth - 3.dp.toPx()).coerceAtLeast(2.dp.toPx()), (stripHeight - 1.dp.toPx()).coerceAtLeast(2.dp.toPx()))
                 )
             }
 

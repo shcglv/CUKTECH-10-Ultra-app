@@ -6,6 +6,8 @@ import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,6 +54,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
 import com.example.R
@@ -307,6 +310,7 @@ fun EncryptedBackupRestoreDialog(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GitHubUpdateDialog(
     releaseInfo: ReleaseUpdateInfo?,
@@ -550,13 +554,20 @@ fun GitHubUpdateDialog(
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.settings_check_updates_now))
+                        Text(
+                            text = stringResource(R.string.settings_check_updates_now),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
         },
         dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 TextButton(
                     onClick = {
                         val url = releaseInfo?.htmlUrl ?: GitHubApkUpdater.RELEASES_PAGE_URL

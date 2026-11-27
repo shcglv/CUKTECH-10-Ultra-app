@@ -10,15 +10,18 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +55,7 @@ import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DisplaySettings
@@ -68,6 +72,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Widgets
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -93,11 +98,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -106,6 +113,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -114,12 +122,15 @@ import com.example.BuildConfig
 import com.example.R
 import com.example.cuktech.automation.LocalAutomationEngine
 import com.example.cuktech.ble.CuktechAuthState
+import com.example.cuktech.bridge.BridgeScriptGenerator
+import com.example.cuktech.bridge.WifiContextStatus
 import com.example.cuktech.db.room.AutomationRuleEntity
 import com.example.cuktech.notifications.ChargingNotificationManager
 import com.example.cuktech.prefs.StartDestination
 import com.example.cuktech.protocol.CuktechProtocol
 import com.example.ui.components.AutomationRuleEditorSheet
 import com.example.ui.components.AutomationSafetyAndSimulatorCard
+import com.example.ui.components.BridgeCompanionSetupSheet
 import com.example.ui.components.ConfigShareAndImportSheet
 import com.example.ui.components.DeadlineQueueAndReadinessCard
 import com.example.ui.components.EncryptedBackupExportDialog
@@ -146,6 +157,8 @@ import java.text.SimpleDateFormat
 import java.util.Arrays
 import java.util.Date
 import java.util.Locale
+
+private enum class SettingsTab { BASIC, ADVANCED }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -198,6 +211,7 @@ fun SettingsHubScreen(
     val bridgeRemoteCmdStatus by viewModel.bridgeRemoteCmdStatus.collectAsStateWithLifecycle()
     val webDavConfig by viewModel.webDavConfig.collectAsStateWithLifecycle()
     val webDavStatus by viewModel.webDavStatus.collectAsStateWithLifecycle()
+    val wifiContext by viewModel.wifiContext.collectAsStateWithLifecycle()
 
     val isConnected = authState == CuktechAuthState.AUTHENTICATED
 
@@ -214,6 +228,7 @@ fun SettingsHubScreen(
     var editingRule by remember { mutableStateOf<AutomationRuleEntity?>(null) }
     var showXiaomiDevicesSpoiler by remember { mutableStateOf(false) }
     var showPortManualSheet by remember { mutableStateOf(false) }
+    var showBridgeScriptSheet by remember { mutableStateOf(false) }
 
     var pendingExportPass by remember { mutableStateOf<CharArray?>(null) }
     var pendingExportSecrets by remember { mutableStateOf(false) }
@@ -259,6 +274,30 @@ fun SettingsHubScreen(
                     context,
                     context.getString(R.string.restore_failed_fmt, err.message ?: ""),
                     Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    val companionBridgeScript = remember(activeCred?.mac) {
+        BridgeScriptGenerator.generateCompanionScript(
+            chargerMac = activeCred?.mac.orEmpty()
+        )
+    }
+
+    val safSaveBridgeScriptLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/x-python")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(companionBridgeScript.toByteArray(Charsets.UTF_8))
+                }
+            }.onSuccess {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.toast_bridge_script_saved),
+                    Toast.LENGTH_SHORT
                 ).show()
             }
         }
@@ -312,6 +351,25 @@ fun SettingsHubScreen(
     if (showPortManualSheet) {
         PortManualBottomSheet(
             onDismiss = { showPortManualSheet = false }
+        )
+    }
+
+    if (showBridgeScriptSheet) {
+        BridgeCompanionSetupSheet(
+            scriptText = companionBridgeScript,
+            onCopyScript = {
+                val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                cb?.setPrimaryClip(ClipData.newPlainText("CuktechBridgePy", companionBridgeScript))
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.toast_bridge_script_copied),
+                    Toast.LENGTH_SHORT
+                ).show()
+            },
+            onSaveScriptFile = {
+                safSaveBridgeScriptLauncher.launch("cuktech_bridge.py")
+            },
+            onDismiss = { showBridgeScriptSheet = false }
         )
     }
 
@@ -437,23 +495,95 @@ fun SettingsHubScreen(
         Toast.makeText(context, context.getString(R.string.toast_copied_fmt, label), Toast.LENGTH_SHORT).show()
     }
 
+    var selectedTab by rememberSaveable { mutableStateOf(SettingsTab.BASIC) }
+    val basicScrollState = rememberScrollState()
+    val advancedScrollState = rememberScrollState()
+
+    BackHandler(enabled = selectedTab == SettingsTab.ADVANCED) {
+        selectedTab = SettingsTab.BASIC
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .testTag("settings_screen"),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 16.dp)
     ) {
-        // 1. Diagnostics Quick Entry at top for Gateway visibility
-        Card(
-            onClick = onOpenDiagnostics,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(20.dp),
+        Spacer(Modifier.height(6.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shape = RoundedCornerShape(18.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("open_diagnostics_button")
+                .testTag("settings_tabs_row")
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(
+                    SettingsTab.BASIC to Pair(R.string.settings_tab_basic, "settings_tab_basic"),
+                    SettingsTab.ADVANCED to Pair(R.string.settings_tab_advanced, "settings_tab_advanced")
+                ).forEach { (tab, labelAndTag) ->
+                    val (labelRes, tag) = labelAndTag
+                    val isSelected = selectedTab == tab
+                    val tabBg by animateColorAsState(
+                        targetValue = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                        animationSpec = ExpressiveMotion.spatialSpring(),
+                        label = "settings_tab_bg_${tab.name}"
+                    )
+                    Surface(
+                        color = tabBg,
+                        shape = RoundedCornerShape(14.dp),
+                        tonalElevation = if (isSelected) 2.dp else 0.dp,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { selectedTab = tab }
+                            .testTag(tag)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = stringResource(labelRes),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(if (selectedTab == SettingsTab.BASIC) basicScrollState else advancedScrollState)
+                .padding(bottom = 12.dp)
+                .testTag("settings_screen"),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            if (selectedTab == SettingsTab.BASIC) {
+                // 1. Diagnostics Quick Entry at top for Gateway visibility
+                Card(
+                    onClick = onOpenDiagnostics,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_diagnostics_button")
+                ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -535,7 +665,13 @@ fun SettingsHubScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(stringResource(R.string.settings_amoled_black), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = stringResource(R.string.settings_amoled_black),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                )
                 Switch(
                     checked = isAmoled,
                     onCheckedChange = { viewModel.updateTheme(prefs.themeMode, it) },
@@ -586,6 +722,7 @@ fun SettingsHubScreen(
             OutlinedButton(
                 onClick = { viewModel.replayOnboarding() },
                 shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
@@ -599,14 +736,15 @@ fun SettingsHubScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = stringResource(R.string.settings_replay_onboarding),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = 2,
+                    textAlign = TextAlign.Center
                 )
             }
 
             OutlinedButton(
                 onClick = { showPortManualSheet = true },
                 shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
@@ -620,8 +758,8 @@ fun SettingsHubScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = stringResource(R.string.settings_port_manual_btn),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = 2,
+                    textAlign = TextAlign.Center
                 )
             }
             Text(
@@ -701,24 +839,34 @@ fun SettingsHubScreen(
                 FilledTonalButton(
                     onClick = { viewModel.rotateScreen180() },
                     enabled = isConnected,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
                 ) {
                     Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.settings_rotate_180), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.settings_rotate_180),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
                 OutlinedButton(
                     onClick = { showSoftResetDialog = true },
                     enabled = isConnected,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
                 ) {
                     Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.settings_soft_reset), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.settings_soft_reset),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
@@ -747,166 +895,6 @@ fun SettingsHubScreen(
             }
         }
 
-        // 4. Data Retention, Stitch Grace & Electricity Tariff
-        SettingsSectionCard(
-            title = stringResource(R.string.settings_section_retention),
-            icon = Icons.Default.Refresh
-        ) {
-            val unitDays = stringResource(R.string.unit_d)
-            val unitSec = stringResource(R.string.unit_s)
-            Text(stringResource(R.string.settings_retention_days), style = MaterialTheme.typography.labelLarge)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                listOf(7, 14, 30, 60, 90, 180).forEach { days ->
-                    FilterChip(
-                        selected = prefs.retentionDays == days,
-                        onClick = { viewModel.updateRetentionDays(days) },
-                        label = { Text("$days $unitDays", style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                    )
-                }
-            }
-
-            Text(stringResource(R.string.settings_stitch_grace), style = MaterialTheme.typography.labelLarge)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                listOf(0, 30, 60, 120, 300).forEach { sec ->
-                    FilterChip(
-                        selected = prefs.sessionStitchGraceSec == sec,
-                        onClick = { viewModel.updateStitchGraceSec(sec) },
-                        label = { Text("$sec $unitSec", style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = tariffRateText,
-                    onValueChange = { tariffRateText = it },
-                    label = {
-                        Text(
-                            if (prefs.touEnabled) {
-                                stringResource(R.string.settings_tariff_day_rate)
-                            } else {
-                                stringResource(R.string.settings_tariff_rate)
-                            }
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.weight(1.4f)
-                )
-                OutlinedTextField(
-                    value = tariffCurrencyText,
-                    onValueChange = { tariffCurrencyText = it.take(5) },
-                    label = { Text(stringResource(R.string.settings_tariff_currency)) },
-                    singleLine = true,
-                    modifier = Modifier.weight(0.8f)
-                )
-                FilledTonalButton(
-                    onClick = {
-                        val dayParsed = tariffRateText.replace(",", ".").toDoubleOrNull() ?: 0.0
-                        val nightParsed = tariffNightRateText.replace(",", ".").toDoubleOrNull() ?: dayParsed
-                        viewModel.updateTouTariff(
-                            touEnabled = prefs.touEnabled,
-                            dayRatePerKwh = dayParsed,
-                            nightRatePerKwh = nightParsed,
-                            currencyCode = tariffCurrencyText,
-                            dayStartMinute = prefs.tariffDayStartMinute,
-                            nightStartMinute = prefs.tariffNightStartMinute
-                        )
-                        Toast.makeText(context, context.getString(R.string.toast_tariff_saved), Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.heightIn(min = 48.dp)
-                ) {
-                    Text(stringResource(R.string.action_save))
-                }
-            }
-
-            SettingsSwitchRow(
-                title = stringResource(R.string.settings_tou_enable),
-                checked = prefs.touEnabled,
-                onCheckedChange = { enabled ->
-                    val dayParsed = tariffRateText.replace(",", ".").toDoubleOrNull() ?: prefs.tariffRatePerKwh
-                    val nightParsed = tariffNightRateText.replace(",", ".").toDoubleOrNull() ?: prefs.tariffNightRatePerKwh
-                    viewModel.updateTouTariff(
-                        touEnabled = enabled,
-                        dayRatePerKwh = dayParsed,
-                        nightRatePerKwh = nightParsed,
-                        currencyCode = tariffCurrencyText,
-                        dayStartMinute = prefs.tariffDayStartMinute,
-                        nightStartMinute = prefs.tariffNightStartMinute
-                    )
-                },
-                tag = "tou_tariff_switch"
-            )
-
-            if (prefs.touEnabled) {
-                OutlinedTextField(
-                    value = tariffNightRateText,
-                    onValueChange = { tariffNightRateText = it },
-                    label = { Text(stringResource(R.string.settings_tariff_night_rate)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(stringResource(R.string.settings_tariff_day_start), style = MaterialTheme.typography.labelMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(6 * 60, 7 * 60, 8 * 60).forEach { m ->
-                        FilterChip(
-                            selected = prefs.tariffDayStartMinute == m,
-                            onClick = {
-                                viewModel.updateTouTariff(
-                                    touEnabled = true,
-                                    dayRatePerKwh = prefs.tariffRatePerKwh,
-                                    nightRatePerKwh = prefs.tariffNightRatePerKwh,
-                                    currencyCode = prefs.currencyCode,
-                                    dayStartMinute = m,
-                                    nightStartMinute = prefs.tariffNightStartMinute
-                                )
-                            },
-                            label = { Text(formatMinuteOfDay(m), style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                        )
-                    }
-                }
-                Text(stringResource(R.string.settings_tariff_night_start), style = MaterialTheme.typography.labelMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(22 * 60, 23 * 60, 0).forEach { m ->
-                        FilterChip(
-                            selected = prefs.tariffNightStartMinute == m,
-                            onClick = {
-                                viewModel.updateTouTariff(
-                                    touEnabled = true,
-                                    dayRatePerKwh = prefs.tariffRatePerKwh,
-                                    nightRatePerKwh = prefs.tariffNightRatePerKwh,
-                                    currencyCode = prefs.currencyCode,
-                                    dayStartMinute = prefs.tariffDayStartMinute,
-                                    nightStartMinute = m
-                                )
-                            },
-                            label = { Text(formatMinuteOfDay(m), style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = stringResource(R.string.settings_tariff_snapshot_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
 
         // 4b. Notifications, Charging Completion & Android 16 Live Updates
         SettingsSectionCard(
@@ -986,11 +974,16 @@ fun SettingsHubScreen(
                                     context.startActivity(ChargingNotificationManager.buildPromotedNotificationsSettingsIntent(context))
                                 }
                             },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                             modifier = Modifier
                                 .heightIn(min = 48.dp)
                                 .testTag("promoted_notif_settings_button")
                         ) {
-                            Text(stringResource(R.string.settings_promoted_allow_btn))
+                            Text(
+                                text = stringResource(R.string.settings_promoted_allow_btn),
+                                maxLines = 2,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
                 }
@@ -1157,65 +1150,977 @@ fun SettingsHubScreen(
             }
         }
 
-        // 4c. Encrypted SAF Backup & Restore (.cukbackup)
+
+        // 4e. Home Screen Widgets Gallery & Shape Customizer
         SettingsSectionCard(
-            title = stringResource(R.string.settings_section_backup),
-            icon = Icons.Default.Lock
+            title = stringResource(R.string.settings_widget_gallery_title),
+            icon = Icons.Default.Widgets
         ) {
+            Column(
+                modifier = Modifier.testTag("settings_widget_gallery_card"),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_widget_gallery_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                fun pinWidget(receiverClass: Class<*>) {
+                    val mgr = AppWidgetManager.getInstance(context)
+                    if (mgr != null && mgr.isRequestPinAppWidgetSupported) {
+                        val ok = mgr.requestPinAppWidget(ComponentName(context, receiverClass), null, null)
+                        Toast.makeText(
+                            context,
+                            context.getString(if (ok) R.string.widget_pin_requested else R.string.widget_pin_unsupported),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.widget_pin_unsupported),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                // Control Panel (4x2) Preview + Pin
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.widget_preview_control_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "USB-C1 · USB-C2 · USB-C3 · USB-A",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = { pinWidget(CuktechGlanceControlReceiver::class.java) },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("widget_pin_control_button")
+                        ) {
+                            Text(
+                                text = stringResource(R.string.widget_pin_btn),
+                                maxLines = 2,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                // Compact Grid (2x2) Preview + Pin
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.widget_preview_compact_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "USB-C1..A · 2×2",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = { pinWidget(CuktechGlanceCompactReceiver::class.java) },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("widget_pin_compact_button")
+                        ) {
+                            Text(
+                                text = stringResource(R.string.widget_pin_btn),
+                                maxLines = 2,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                // Single Port Focus + Mini Chart (2x2) Preview + Pin
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.widget_preview_port_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "V / A / W / Wh · 2×2",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = { pinWidget(CuktechGlancePortReceiver::class.java) },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("widget_pin_port_button")
+                        ) {
+                            Text(
+                                text = stringResource(R.string.widget_pin_btn),
+                                maxLines = 2,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Xiaomi Account, Multi-Device & Updates
+        SettingsSectionCard(
+            title = stringResource(R.string.settings_section_cloud),
+            icon = Icons.Default.AccountCircle
+        ) {
+            if (!keystoreHealthy && keystoreError != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = keystoreError!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onOpenXiaomiLogin,
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Login,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.action_xiaomi_login),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                if (accountSession != null) {
+                    FilledTonalButton(
+                        onClick = {
+                            viewModel.syncXiaomiDevices { msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.settings_sync_devices),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            if (savedDevices.isNotEmpty()) {
+                val spoilerArrowRotation by animateFloatAsState(
+                    targetValue = if (showXiaomiDevicesSpoiler) 180f else 0f,
+                    animationSpec = ExpressiveMotion.spatialSpring(),
+                    label = "xiaomi_spoiler_chevron"
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { showXiaomiDevicesSpoiler = !showXiaomiDevicesSpoiler }
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                                .testTag("xiaomi_devices_spoiler"),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.xiaomi_devices_spoiler_fmt, savedDevices.size),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                activeCred?.let { cur ->
+                                    Text(
+                                        text = "${cur.name} · ${cur.mac}",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontFamily = TelemetryMonoFontFamily
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ExpandMore,
+                                contentDescription = null,
+                                modifier = Modifier.rotate(spoilerArrowRotation)
+                            )
+                        }
+                        AnimatedVisibility(
+                            visible = showXiaomiDevicesSpoiler,
+                            enter = expandVertically(ExpressiveMotion.spatialSpring()) + fadeIn(),
+                            exit = shrinkVertically(ExpressiveMotion.spatialSpring()) + fadeOut()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                                savedDevices.forEach { dev ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable { viewModel.cuktechManager.credentialStore.selectActiveDevice(dev.mac) }
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = activeCred?.mac.equals(dev.mac, ignoreCase = true),
+                                            onClick = { viewModel.cuktechManager.credentialStore.selectActiveDevice(dev.mac) }
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(dev.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                "${dev.mac} · [${dev.region.uppercase(Locale.ROOT)}]",
+                                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onOpenSearchPair,
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.BluetoothSearching,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.action_scan_pair),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                OutlinedButton(
+                    onClick = { showMiHomeDialog = true },
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.settings_mi_home_switch),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            if (accountSession != null || savedDevices.isNotEmpty()) {
+                TextButton(
+                    onClick = { showSignOutConfirm = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.settings_sign_out_creds),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            Surface(
+                color = if (updateAvailable) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainer
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        showUpdateDialog = true
+                        if (releaseUpdateInfo == null && !isCheckingUpdates) {
+                            isCheckingUpdates = true
+                            viewModel.checkForUpdates { isCheckingUpdates = false }
+                        }
+                    }
+                    .testTag("github_updates_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (updateAvailable) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                            } else {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            },
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = null,
+                                    tint = if (updateAvailable) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    },
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (updateAvailable) {
+                                    stringResource(R.string.settings_update_available)
+                                } else {
+                                    stringResource(R.string.settings_check_updates)
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (updateAvailable) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                            Text(
+                                text = stringResource(R.string.settings_current_version_fmt, BuildConfig.VERSION_NAME),
+                                style = MaterialTheme.typography.bodySmall.tabularNums(),
+                                color = if (updateAvailable) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            showUpdateDialog = true
+                            isCheckingUpdates = true
+                            viewModel.checkForUpdates { res ->
+                                isCheckingUpdates = false
+                                res.onFailure { err ->
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.toast_update_check_failed_fmt, err.message ?: ""),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("check_updates_button")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_check_updates_now),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+            } else {
+        // 5B. Hybrid BLE Continuity, Stationary Bridge & Walk-Away Radar Alerts (ADVANCED)
+        SettingsSectionCard(
+            title = stringResource(R.string.settings_section_continuity),
+            icon = Icons.Default.Sync,
+            modifier = Modifier.testTag("settings_continuity_card")
+        ) {
+            var draftBridgeUrl by remember(prefs.bridgeEndpointUrl) { mutableStateOf(prefs.bridgeEndpointUrl) }
+            var draftBridgeToken by remember { mutableStateOf("") }
+            var showBridgeToken by remember { mutableStateOf(false) }
+
             Text(
-                text = stringResource(R.string.settings_backup_desc),
+                text = stringResource(R.string.settings_bridge_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { showBackupExportDialog = true },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .testTag("saf_backup_export_button")
-                ) {
-                    Text(stringResource(R.string.settings_backup_export_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                OutlinedButton(
-                    onClick = { showBackupRestoreDialog = true },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .testTag("saf_backup_restore_button")
-                ) {
-                    Text(stringResource(R.string.settings_backup_restore_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
+
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_bridge_enable),
+                checked = prefs.bridgeSyncEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.updateBridgeConfig(enabled, draftBridgeUrl, draftBridgeToken.takeIf { it.isNotBlank() })
+                },
+                tag = "bridge_sync_switch"
+            )
+
+            OutlinedTextField(
+                value = draftBridgeUrl,
+                onValueChange = { draftBridgeUrl = it },
+                label = { Text(stringResource(R.string.settings_bridge_url_label)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("bridge_url_input")
+            )
+
+            OutlinedTextField(
+                value = draftBridgeToken,
+                onValueChange = { draftBridgeToken = it },
+                label = { Text(stringResource(R.string.settings_bridge_token_label)) },
+                singleLine = true,
+                visualTransformation = if (showBridgeToken) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(
+                        onClick = { showBridgeToken = !showBridgeToken },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (showBridgeToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = null
+                        )
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("bridge_token_input")
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilledTonalButton(
-                    onClick = { showWebDavSheet = true },
+                    onClick = {
+                        viewModel.updateBridgeConfig(
+                            enabled = prefs.bridgeSyncEnabled,
+                            url = draftBridgeUrl,
+                            token = draftBridgeToken.takeIf { it.isNotBlank() }
+                        )
+                    },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
-                        .testTag("settings_webdav_open_btn")
+                        .testTag("bridge_save_btn")
                 ) {
-                    Text(stringResource(R.string.settings_webdav_open_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.action_save),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
                 OutlinedButton(
-                    onClick = { showConfigShareSheet = true },
+                    onClick = {
+                        viewModel.testBridgeConnection(draftBridgeUrl, draftBridgeToken.takeIf { it.isNotBlank() })
+                    },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
-                        .testTag("settings_config_share_open_btn")
+                        .testTag("bridge_test_btn")
                 ) {
-                    Text(stringResource(R.string.settings_config_share_open_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.settings_bridge_test_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                Button(
+                    onClick = {
+                        viewModel.syncFromBridgeNow { res ->
+                            val msg = res.fold(
+                                onSuccess = { context.getString(R.string.toast_bridge_sync_ok_fmt, it) },
+                                onFailure = { context.getString(R.string.toast_bridge_sync_fail_fmt, it.message ?: "") }
+                            )
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !bridgeSyncing && prefs.bridgeSyncEnabled,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("bridge_sync_now_btn")
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_bridge_sync_now_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            bridgeStatusResult?.let { st ->
+                Text(
+                    text = if (st.online) {
+                        stringResource(R.string.settings_bridge_status_online_fmt, st.version.ifBlank { "v1" }, st.bufferedSamples)
+                    } else {
+                        stringResource(R.string.settings_bridge_status_offline_fmt, st.errorMessage ?: "--")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (st.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+            }
+
+            // LAN mDNS / NSD Discovery & Companion Bridge Script Generator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = { viewModel.discoverLanBridges() },
+                    enabled = !isDiscoveringBridges,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("bridge_discover_btn")
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (isDiscoveringBridges) {
+                            stringResource(R.string.bridge_discovering)
+                        } else {
+                            stringResource(R.string.bridge_discover_btn)
+                        },
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                FilledTonalButton(
+                    onClick = { showBridgeScriptSheet = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("bridge_script_btn")
+                ) {
+                    Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.bridge_script_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            if (discoveredBridges.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    discoveredBridges.forEach { ep ->
+                        AssistChip(
+                            onClick = {
+                                draftBridgeUrl = ep.baseUrl
+                                viewModel.testBridgeConnection(ep.baseUrl, draftBridgeToken.takeIf { it.isNotBlank() })
+                            },
+                            label = { Text("${ep.serviceName} (${ep.host}:${ep.port})") },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("discovered_bridge_chip_${ep.port}")
+                        )
+                    }
+                }
+            }
+
+            if (prefs.bridgeSyncEnabled && prefs.bridgeEndpointUrl.isNotBlank()) {
+                Text(
+                    text = stringResource(R.string.bridge_remote_ctrl_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = { viewModel.sendRemoteBridgePortToggle(1, true) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("bridge_remote_c1_on_btn")
+                    ) {
+                        Text(stringResource(R.string.bridge_remote_c1_on))
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.sendRemoteBridgePortToggle(1, false) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("bridge_remote_c1_off_btn")
+                    ) {
+                        Text(stringResource(R.string.bridge_remote_c1_off))
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.sendRemoteBridgeScene(2) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("bridge_remote_quiet_btn")
+                    ) {
+                        Text(stringResource(R.string.bridge_remote_scene_quiet))
+                    }
+                }
+                bridgeRemoteCmdStatus?.let { msg ->
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = TelemetryMonoFontFamily),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_ble_exit_enable),
+                checked = prefs.bleExitAlertEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.updateBleExitAlertPolicy(enabled, prefs.bleExitRssiThreshold)
+                },
+                tag = "ble_exit_alert_switch"
+            )
+
+            Text(
+                text = stringResource(R.string.settings_ble_exit_threshold_fmt, prefs.bleExitRssiThreshold),
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily).tabularNums()
+            )
+            var rssiSlider by remember(prefs.bleExitRssiThreshold) { mutableFloatStateOf(prefs.bleExitRssiThreshold.toFloat()) }
+            Slider(
+                value = rssiSlider,
+                onValueChange = { rssiSlider = it },
+                onValueChangeFinished = {
+                    viewModel.updateBleExitAlertPolicy(prefs.bleExitAlertEnabled, rssiSlider.toInt())
+                },
+                valueRange = -95f..-70f,
+                modifier = Modifier.testTag("ble_exit_rssi_slider")
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+            // Home / Office Wi-Fi Context Binding (Zero Location Permission)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_wifi_context_section"),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val statusLabel = when {
+                    !prefs.wifiContextEnabled || prefs.boundWifiKey.isBlank() ->
+                        stringResource(R.string.wifi_context_status_off)
+                    wifiContext.status == WifiContextStatus.BOUND_HOME_WIFI ->
+                        stringResource(R.string.wifi_context_status_bound)
+                    wifiContext.status == WifiContextStatus.OTHER_WIFI ->
+                        stringResource(R.string.wifi_context_status_other)
+                    else -> stringResource(R.string.wifi_context_status_none)
+                }
+                val statusContainerColor = when {
+                    !prefs.wifiContextEnabled || prefs.boundWifiKey.isBlank() ->
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    wifiContext.status == WifiContextStatus.BOUND_HOME_WIFI ->
+                        MaterialTheme.colorScheme.primaryContainer
+                    else -> MaterialTheme.colorScheme.tertiaryContainer
+                }
+                val statusTextColor = when {
+                    !prefs.wifiContextEnabled || prefs.boundWifiKey.isBlank() ->
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    wifiContext.status == WifiContextStatus.BOUND_HOME_WIFI ->
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onTertiaryContainer
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Wifi,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.wifi_context_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Surface(
+                        color = statusContainerColor,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.testTag("wifi_context_status_badge")
+                    ) {
+                        Text(
+                            text = statusLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = statusTextColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = stringResource(R.string.wifi_context_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Text(
+                    text = stringResource(
+                        R.string.wifi_context_current_fmt,
+                        wifiContext.displayLabel.ifBlank { stringResource(R.string.wifi_context_status_none) }
+                    ),
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily)
+                )
+                Text(
+                    text = if (prefs.boundWifiKey.isNotBlank()) {
+                        stringResource(R.string.wifi_context_bound_fmt, prefs.boundWifiLabel.ifBlank { "Wi-Fi" })
+                    } else {
+                        stringResource(R.string.wifi_context_not_bound)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (prefs.boundWifiKey.isNotBlank()) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = {
+                            val ok = viewModel.bindCurrentWifi()
+                            Toast.makeText(
+                                context,
+                                context.getString(if (ok) R.string.toast_wifi_bound else R.string.toast_wifi_not_connected),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("wifi_bind_current_btn")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.wifi_bind_current_btn),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.clearWifiBinding() },
+                        enabled = prefs.boundWifiKey.isNotBlank(),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("wifi_clear_binding_btn")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.wifi_clear_binding_btn),
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                SettingsSwitchRow(
+                    title = stringResource(R.string.wifi_ble_only_home_switch),
+                    checked = prefs.wifiBleOnlyAtHome,
+                    onCheckedChange = { checked ->
+                        viewModel.updateWifiContextPolicy(
+                            contextEnabled = prefs.wifiContextEnabled || prefs.boundWifiKey.isNotBlank(),
+                            bleOnlyAtHome = checked,
+                            leaveAlertEnabled = prefs.wifiLeaveLoadAlertEnabled,
+                            leaveThresholdWatts = prefs.wifiLeaveLoadThresholdWatts
+                        )
+                    },
+                    tag = "wifi_ble_only_home_switch"
+                )
+
+                SettingsSwitchRow(
+                    title = stringResource(R.string.wifi_leave_alert_switch),
+                    checked = prefs.wifiLeaveLoadAlertEnabled,
+                    onCheckedChange = { checked ->
+                        viewModel.updateWifiContextPolicy(
+                            contextEnabled = prefs.wifiContextEnabled || prefs.boundWifiKey.isNotBlank(),
+                            bleOnlyAtHome = prefs.wifiBleOnlyAtHome,
+                            leaveAlertEnabled = checked,
+                            leaveThresholdWatts = prefs.wifiLeaveLoadThresholdWatts
+                        )
+                    },
+                    tag = "wifi_leave_alert_switch"
+                )
+
+                Text(
+                    text = stringResource(R.string.wifi_leave_threshold_label),
+                    style = MaterialTheme.typography.labelMedium
+                )
+                val unitW = stringResource(R.string.unit_w)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(10, 15, 30).forEach { w ->
+                        FilterChip(
+                            selected = prefs.wifiLeaveLoadThresholdWatts.toInt() == w,
+                            onClick = {
+                                viewModel.updateWifiContextPolicy(
+                                    contextEnabled = prefs.wifiContextEnabled,
+                                    bleOnlyAtHome = prefs.wifiBleOnlyAtHome,
+                                    leaveAlertEnabled = prefs.wifiLeaveLoadAlertEnabled,
+                                    leaveThresholdWatts = w.toDouble()
+                                )
+                            },
+                            label = { Text("$w $unitW", style = MaterialTheme.typography.labelMedium.tabularNums()) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("wifi_leave_threshold_$w")
+                        )
+                    }
                 }
             }
         }
 
-        // 4d. Local Automation Rules Engine
+        // Local Automation Rules Engine (ADVANCED)
         SettingsSectionCard(
             title = stringResource(R.string.settings_section_automation),
             icon = Icons.Default.Bolt
@@ -1417,7 +2322,11 @@ fun SettingsHubScreen(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.automation_add_rule))
+                    Text(
+                        text = stringResource(R.string.automation_add_rule),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
@@ -1440,725 +2349,174 @@ fun SettingsHubScreen(
             onExecuteUri = { viewModel.executeNfcActionUri(it) }
         )
 
-        // 4e. Home Screen Widgets Gallery & Shape Customizer
+        // Retention, Session Stitching & Day/Night ToU Tariff (ADVANCED)
         SettingsSectionCard(
-            title = stringResource(R.string.settings_widget_gallery_title),
-            icon = Icons.Default.Widgets
+            title = stringResource(R.string.settings_section_retention),
+            icon = Icons.Default.Refresh
         ) {
-            Column(
-                modifier = Modifier.testTag("settings_widget_gallery_card"),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_widget_gallery_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                fun pinWidget(receiverClass: Class<*>) {
-                    val mgr = AppWidgetManager.getInstance(context)
-                    if (mgr != null && mgr.isRequestPinAppWidgetSupported) {
-                        val ok = mgr.requestPinAppWidget(ComponentName(context, receiverClass), null, null)
-                        Toast.makeText(
-                            context,
-                            context.getString(if (ok) R.string.widget_pin_requested else R.string.widget_pin_unsupported),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    } else {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.widget_pin_unsupported),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
-
-                // Control Panel (4x2) Preview + Pin
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.widget_preview_control_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "USB-C1 · USB-C2 · USB-C3 · USB-A",
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        FilledTonalButton(
-                            onClick = { pinWidget(CuktechGlanceControlReceiver::class.java) },
-                            modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("widget_pin_control_button")
-                        ) {
-                            Text(stringResource(R.string.widget_pin_btn))
-                        }
-                    }
-                }
-
-                // Compact Grid (2x2) Preview + Pin
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.widget_preview_compact_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "USB-C1..A · 2×2",
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        FilledTonalButton(
-                            onClick = { pinWidget(CuktechGlanceCompactReceiver::class.java) },
-                            modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("widget_pin_compact_button")
-                        ) {
-                            Text(stringResource(R.string.widget_pin_btn))
-                        }
-                    }
-                }
-
-                // Single Port Focus + Mini Chart (2x2) Preview + Pin
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.widget_preview_port_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "V / A / W / Wh · 2×2",
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        FilledTonalButton(
-                            onClick = { pinWidget(CuktechGlancePortReceiver::class.java) },
-                            modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("widget_pin_port_button")
-                        ) {
-                            Text(stringResource(R.string.widget_pin_btn))
-                        }
-                    }
-                }
-            }
-        }
-
-        // 5. Xiaomi Account, Multi-Device & Updates
-        SettingsSectionCard(
-            title = stringResource(R.string.settings_section_cloud),
-            icon = Icons.Default.AccountCircle
-        ) {
-            if (!keystoreHealthy && keystoreError != null) {
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = keystoreError!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onOpenXiaomiLogin,
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Login,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.action_xiaomi_login),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (accountSession != null) {
-                    FilledTonalButton(
-                        onClick = {
-                            viewModel.syncXiaomiDevices { msg ->
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Sync,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.settings_sync_devices),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
-            if (savedDevices.isNotEmpty()) {
-                val spoilerArrowRotation by animateFloatAsState(
-                    targetValue = if (showXiaomiDevicesSpoiler) 180f else 0f,
-                    animationSpec = ExpressiveMotion.spatialSpring(),
-                    label = "xiaomi_spoiler_chevron"
-                )
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { showXiaomiDevicesSpoiler = !showXiaomiDevicesSpoiler }
-                                .padding(horizontal = 14.dp, vertical = 10.dp)
-                                .testTag("xiaomi_devices_spoiler"),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.xiaomi_devices_spoiler_fmt, savedDevices.size),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                activeCred?.let { cur ->
-                                    Text(
-                                        text = "${cur.name} · ${cur.mac}",
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            fontFamily = TelemetryMonoFontFamily
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            Icon(
-                                imageVector = Icons.Default.ExpandMore,
-                                contentDescription = null,
-                                modifier = Modifier.rotate(spoilerArrowRotation)
-                            )
-                        }
-                        AnimatedVisibility(
-                            visible = showXiaomiDevicesSpoiler,
-                            enter = expandVertically(ExpressiveMotion.spatialSpring()) + fadeIn(),
-                            exit = shrinkVertically(ExpressiveMotion.spatialSpring()) + fadeOut()
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                    modifier = Modifier.padding(bottom = 4.dp)
-                                )
-                                savedDevices.forEach { dev ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .clickable { viewModel.cuktechManager.credentialStore.selectActiveDevice(dev.mac) }
-                                            .padding(vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        RadioButton(
-                                            selected = activeCred?.mac.equals(dev.mac, ignoreCase = true),
-                                            onClick = { viewModel.cuktechManager.credentialStore.selectActiveDevice(dev.mac) }
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(dev.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                            Text(
-                                                "${dev.mac} · [${dev.region.uppercase(Locale.ROOT)}]",
-                                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily),
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onOpenSearchPair,
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.BluetoothSearching,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.action_scan_pair),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                OutlinedButton(
-                    onClick = { showMiHomeDialog = true },
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.settings_mi_home_switch),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            if (accountSession != null || savedDevices.isNotEmpty()) {
-                TextButton(
-                    onClick = { showSignOutConfirm = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.settings_sign_out_creds),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            Surface(
-                color = if (updateAvailable) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainer
-                },
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        showUpdateDialog = true
-                        if (releaseUpdateInfo == null && !isCheckingUpdates) {
-                            isCheckingUpdates = true
-                            viewModel.checkForUpdates { isCheckingUpdates = false }
-                        }
-                    }
-                    .testTag("github_updates_card")
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (updateAvailable) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                            } else {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            },
-                            modifier = Modifier.size(42.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.CloudDownload,
-                                    contentDescription = null,
-                                    tint = if (updateAvailable) {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    },
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = if (updateAvailable) {
-                                    stringResource(R.string.settings_update_available)
-                                } else {
-                                    stringResource(R.string.settings_check_updates)
-                                },
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (updateAvailable) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                }
-                            )
-                            Text(
-                                text = stringResource(R.string.settings_current_version_fmt, BuildConfig.VERSION_NAME),
-                                style = MaterialTheme.typography.bodySmall.tabularNums(),
-                                color = if (updateAvailable) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-                    }
-                    FilledTonalButton(
-                        onClick = {
-                            showUpdateDialog = true
-                            isCheckingUpdates = true
-                            viewModel.checkForUpdates { res ->
-                                isCheckingUpdates = false
-                                res.onFailure { err ->
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.toast_update_check_failed_fmt, err.message ?: ""),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .testTag("check_updates_button")
-                    ) {
-                        Text(stringResource(R.string.settings_check_updates_now))
-                    }
-                }
-            }
-        }
-
-        // 5B. Hybrid BLE Continuity, Stationary Bridge & Walk-Away Radar Alerts
-        SettingsSectionCard(
-            title = stringResource(R.string.settings_section_continuity),
-            icon = Icons.Default.Sync,
-            modifier = Modifier.testTag("settings_continuity_card")
-        ) {
-            var draftBridgeUrl by remember(prefs.bridgeEndpointUrl) { mutableStateOf(prefs.bridgeEndpointUrl) }
-            var draftBridgeToken by remember { mutableStateOf("") }
-            var showBridgeToken by remember { mutableStateOf(false) }
-
-            Text(
-                text = stringResource(R.string.settings_bridge_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            SettingsSwitchRow(
-                title = stringResource(R.string.settings_bridge_enable),
-                checked = prefs.bridgeSyncEnabled,
-                onCheckedChange = { enabled ->
-                    viewModel.updateBridgeConfig(enabled, draftBridgeUrl, draftBridgeToken.takeIf { it.isNotBlank() })
-                },
-                tag = "bridge_sync_switch"
-            )
-
-            OutlinedTextField(
-                value = draftBridgeUrl,
-                onValueChange = { draftBridgeUrl = it },
-                label = { Text(stringResource(R.string.settings_bridge_url_label)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("bridge_url_input")
-            )
-
-            OutlinedTextField(
-                value = draftBridgeToken,
-                onValueChange = { draftBridgeToken = it },
-                label = { Text(stringResource(R.string.settings_bridge_token_label)) },
-                singleLine = true,
-                visualTransformation = if (showBridgeToken) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(
-                        onClick = { showBridgeToken = !showBridgeToken },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (showBridgeToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = null
-                        )
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("bridge_token_input")
-            )
-
+            val unitDays = stringResource(R.string.unit_d)
+            val unitSec = stringResource(R.string.unit_s)
+            Text(stringResource(R.string.settings_retention_days), style = MaterialTheme.typography.labelLarge)
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                FilledTonalButton(
-                    onClick = {
-                        viewModel.updateBridgeConfig(
-                            enabled = prefs.bridgeSyncEnabled,
-                            url = draftBridgeUrl,
-                            token = draftBridgeToken.takeIf { it.isNotBlank() }
-                        )
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .testTag("bridge_save_btn")
-                ) {
-                    Text(stringResource(R.string.action_save), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                OutlinedButton(
-                    onClick = {
-                        viewModel.testBridgeConnection(draftBridgeUrl, draftBridgeToken.takeIf { it.isNotBlank() })
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .testTag("bridge_test_btn")
-                ) {
-                    Text(stringResource(R.string.settings_bridge_test_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Button(
-                    onClick = {
-                        viewModel.syncFromBridgeNow { res ->
-                            val msg = res.fold(
-                                onSuccess = { context.getString(R.string.toast_bridge_sync_ok_fmt, it) },
-                                onFailure = { context.getString(R.string.toast_bridge_sync_fail_fmt, it.message ?: "") }
-                            )
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    enabled = !bridgeSyncing && prefs.bridgeSyncEnabled,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .testTag("bridge_sync_now_btn")
-                ) {
-                    Text(stringResource(R.string.settings_bridge_sync_now_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                listOf(7, 14, 30, 60, 90, 180).forEach { days ->
+                    FilterChip(
+                        selected = prefs.retentionDays == days,
+                        onClick = { viewModel.updateRetentionDays(days) },
+                        label = { Text("$days $unitDays", style = MaterialTheme.typography.labelMedium.tabularNums()) }
+                    )
                 }
             }
 
-            bridgeStatusResult?.let { st ->
-                Text(
-                    text = if (st.online) {
-                        stringResource(R.string.settings_bridge_status_online_fmt, st.version.ifBlank { "v1" }, st.bufferedSamples)
-                    } else {
-                        stringResource(R.string.settings_bridge_status_offline_fmt, st.errorMessage ?: "--")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (st.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
+            Text(stringResource(R.string.settings_stitch_grace), style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(0, 30, 60, 120, 300).forEach { sec ->
+                    FilterChip(
+                        selected = prefs.sessionStitchGraceSec == sec,
+                        onClick = { viewModel.updateStitchGraceSec(sec) },
+                        label = { Text("$sec $unitSec", style = MaterialTheme.typography.labelMedium.tabularNums()) }
+                    )
+                }
             }
 
-            // LAN mDNS / NSD Discovery & Remote Bridge Commands
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(
-                    onClick = { viewModel.discoverLanBridges() },
-                    enabled = !isDiscoveringBridges,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .testTag("bridge_discover_btn")
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = if (isDiscoveringBridges) {
-                            stringResource(R.string.bridge_discovering)
-                        } else {
-                            stringResource(R.string.bridge_discover_btn)
-                        }
+                OutlinedTextField(
+                    value = tariffRateText,
+                    onValueChange = { tariffRateText = it },
+                    label = {
+                        Text(
+                            text = if (prefs.touEnabled) {
+                                stringResource(R.string.settings_tariff_day_rate)
+                            } else {
+                                stringResource(R.string.settings_tariff_rate)
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.weight(1.45f)
+                )
+                OutlinedTextField(
+                    value = tariffCurrencyText,
+                    onValueChange = { tariffCurrencyText = it.take(5) },
+                    label = {
+                        Text(
+                            text = stringResource(R.string.settings_tariff_currency),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.weight(0.85f)
+                )
+            }
+            FilledTonalButton(
+                onClick = {
+                    val dayParsed = tariffRateText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                    val nightParsed = tariffNightRateText.replace(",", ".").toDoubleOrNull() ?: dayParsed
+                    viewModel.updateTouTariff(
+                        touEnabled = prefs.touEnabled,
+                        dayRatePerKwh = dayParsed,
+                        nightRatePerKwh = nightParsed,
+                        currencyCode = tariffCurrencyText,
+                        dayStartMinute = prefs.tariffDayStartMinute,
+                        nightStartMinute = prefs.tariffNightStartMinute
                     )
-                }
+                    Toast.makeText(context, context.getString(R.string.toast_tariff_saved), Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+            ) {
+                Text(stringResource(R.string.action_save))
             }
 
-            if (discoveredBridges.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    discoveredBridges.forEach { ep ->
-                        AssistChip(
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_tou_enable),
+                checked = prefs.touEnabled,
+                onCheckedChange = { enabled ->
+                    val dayParsed = tariffRateText.replace(",", ".").toDoubleOrNull() ?: prefs.tariffRatePerKwh
+                    val nightParsed = tariffNightRateText.replace(",", ".").toDoubleOrNull() ?: prefs.tariffNightRatePerKwh
+                    viewModel.updateTouTariff(
+                        touEnabled = enabled,
+                        dayRatePerKwh = dayParsed,
+                        nightRatePerKwh = nightParsed,
+                        currencyCode = tariffCurrencyText,
+                        dayStartMinute = prefs.tariffDayStartMinute,
+                        nightStartMinute = prefs.tariffNightStartMinute
+                    )
+                },
+                tag = "tou_tariff_switch"
+            )
+
+            if (prefs.touEnabled) {
+                OutlinedTextField(
+                    value = tariffNightRateText,
+                    onValueChange = { tariffNightRateText = it },
+                    label = { Text(stringResource(R.string.settings_tariff_night_rate)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(stringResource(R.string.settings_tariff_day_start), style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(6 * 60, 7 * 60, 8 * 60).forEach { m ->
+                        FilterChip(
+                            selected = prefs.tariffDayStartMinute == m,
                             onClick = {
-                                draftBridgeUrl = ep.baseUrl
-                                viewModel.testBridgeConnection(ep.baseUrl, draftBridgeToken.takeIf { it.isNotBlank() })
+                                viewModel.updateTouTariff(
+                                    touEnabled = true,
+                                    dayRatePerKwh = prefs.tariffRatePerKwh,
+                                    nightRatePerKwh = prefs.tariffNightRatePerKwh,
+                                    currencyCode = prefs.currencyCode,
+                                    dayStartMinute = m,
+                                    nightStartMinute = prefs.tariffNightStartMinute
+                                )
                             },
-                            label = { Text("${ep.serviceName} (${ep.host}:${ep.port})") },
-                            modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("discovered_bridge_chip_${ep.port}")
+                            label = { Text(formatMinuteOfDay(m), style = MaterialTheme.typography.labelMedium.tabularNums()) }
+                        )
+                    }
+                }
+                Text(stringResource(R.string.settings_tariff_night_start), style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(22 * 60, 23 * 60, 0).forEach { m ->
+                        FilterChip(
+                            selected = prefs.tariffNightStartMinute == m,
+                            onClick = {
+                                viewModel.updateTouTariff(
+                                    touEnabled = true,
+                                    dayRatePerKwh = prefs.tariffRatePerKwh,
+                                    nightRatePerKwh = prefs.tariffNightRatePerKwh,
+                                    currencyCode = prefs.currencyCode,
+                                    dayStartMinute = prefs.tariffDayStartMinute,
+                                    nightStartMinute = m
+                                )
+                            },
+                            label = { Text(formatMinuteOfDay(m), style = MaterialTheme.typography.labelMedium.tabularNums()) }
                         )
                     }
                 }
             }
 
-            if (prefs.bridgeSyncEnabled && prefs.bridgeEndpointUrl.isNotBlank()) {
-                Text(
-                    text = stringResource(R.string.bridge_remote_ctrl_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilledTonalButton(
-                        onClick = { viewModel.sendRemoteBridgePortToggle(1, true) },
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag("bridge_remote_c1_on_btn")
-                    ) {
-                        Text(stringResource(R.string.bridge_remote_c1_on))
-                    }
-                    OutlinedButton(
-                        onClick = { viewModel.sendRemoteBridgePortToggle(1, false) },
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag("bridge_remote_c1_off_btn")
-                    ) {
-                        Text(stringResource(R.string.bridge_remote_c1_off))
-                    }
-                    OutlinedButton(
-                        onClick = { viewModel.sendRemoteBridgeScene(2) },
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag("bridge_remote_quiet_btn")
-                    ) {
-                        Text(stringResource(R.string.bridge_remote_scene_quiet))
-                    }
-                }
-                bridgeRemoteCmdStatus?.let { msg ->
-                    Text(
-                        text = msg,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = TelemetryMonoFontFamily),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-            SettingsSwitchRow(
-                title = stringResource(R.string.settings_ble_exit_enable),
-                checked = prefs.bleExitAlertEnabled,
-                onCheckedChange = { enabled ->
-                    viewModel.updateBleExitAlertPolicy(enabled, prefs.bleExitRssiThreshold)
-                },
-                tag = "ble_exit_alert_switch"
-            )
-
             Text(
-                text = stringResource(R.string.settings_ble_exit_threshold_fmt, prefs.bleExitRssiThreshold),
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = TelemetryMonoFontFamily).tabularNums()
-            )
-            var rssiSlider by remember(prefs.bleExitRssiThreshold) { mutableFloatStateOf(prefs.bleExitRssiThreshold.toFloat()) }
-            Slider(
-                value = rssiSlider,
-                onValueChange = { rssiSlider = it },
-                onValueChangeFinished = {
-                    viewModel.updateBleExitAlertPolicy(prefs.bleExitAlertEnabled, rssiSlider.toInt())
-                },
-                valueRange = -95f..-70f,
-                modifier = Modifier.testTag("ble_exit_rssi_slider")
+                text = stringResource(R.string.settings_tariff_snapshot_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
@@ -2208,9 +2566,14 @@ fun SettingsHubScreen(
                 if (!isBatteryWhitelisted) {
                     FilledTonalButton(
                         onClick = { viewModel.bleDiagnostics.requestIgnoreBatteryOptimizations() },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
-                        Text(stringResource(R.string.action_apply))
+                        Text(
+                            text = stringResource(R.string.action_apply),
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
@@ -2227,6 +2590,84 @@ fun SettingsHubScreen(
                 modifier = Modifier.heightIn(min = 48.dp)
             ) {
                 Text(stringResource(R.string.settings_dontkillmyapp))
+            }
+        }
+
+        // Encrypted SAF Backup, WebDAV Cloud & Config Share (ADVANCED)
+        SettingsSectionCard(
+            title = stringResource(R.string.settings_section_backup),
+            icon = Icons.Default.Lock
+        ) {
+            Text(
+                text = stringResource(R.string.settings_backup_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { showBackupExportDialog = true },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("saf_backup_export_button")
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_backup_export_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                OutlinedButton(
+                    onClick = { showBackupRestoreDialog = true },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("saf_backup_restore_button")
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_backup_restore_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = { showWebDavSheet = true },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("settings_webdav_open_btn")
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_webdav_open_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                OutlinedButton(
+                    onClick = { showConfigShareSheet = true },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("settings_config_share_open_btn")
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_config_share_open_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
 
@@ -2280,7 +2721,7 @@ fun SettingsHubScreen(
                                     viewModel.currentSecretToken()
                                 )
                             },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 48.dp)
@@ -2290,9 +2731,8 @@ fun SettingsHubScreen(
                             Spacer(Modifier.width(4.dp))
                             Text(
                                 text = stringResource(R.string.action_copy),
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
+                                maxLines = 2,
+                                textAlign = TextAlign.Center
                             )
                         }
                         OutlinedButton(
@@ -2300,7 +2740,7 @@ fun SettingsHubScreen(
                                 viewModel.rotateAutomationToken()
                                 Toast.makeText(context, context.getString(R.string.toast_token_rotated), Toast.LENGTH_SHORT).show()
                             },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 48.dp)
@@ -2308,9 +2748,8 @@ fun SettingsHubScreen(
                         ) {
                             Text(
                                 text = stringResource(R.string.settings_token_rotate),
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
+                                maxLines = 2,
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
@@ -2440,6 +2879,7 @@ fun SettingsHubScreen(
                 }
             )
         }
+            }
 
         Text(
             text = stringResource(R.string.settings_about_author_fmt, BuildConfig.APPLICATION_ID),
@@ -2452,6 +2892,7 @@ fun SettingsHubScreen(
         )
 
         Spacer(Modifier.height(16.dp))
+        }
     }
 }
 
