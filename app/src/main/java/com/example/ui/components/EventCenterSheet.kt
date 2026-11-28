@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,7 +63,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EventCenterSheet(
     events: List<ChargerEvent>,
@@ -87,10 +89,9 @@ fun EventCenterSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = stringResource(R.string.event_center_title),
@@ -98,7 +99,11 @@ fun EventCenterSheet(
                     fontWeight = FontWeight.Bold
                 )
                 if (events.isNotEmpty()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         TextButton(
                             onClick = onMarkAllRead,
                             contentPadding = PaddingValues(horizontal = 8.dp),
@@ -108,7 +113,10 @@ fun EventCenterSheet(
                         ) {
                             Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.event_center_mark_read))
+                            Text(
+                                text = stringResource(R.string.event_center_mark_read),
+                                maxLines = 1
+                            )
                         }
                         TextButton(
                             onClick = onClearAll,
@@ -124,7 +132,11 @@ fun EventCenterSheet(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.event_center_clear), color = MaterialTheme.colorScheme.error)
+                            Text(
+                                text = stringResource(R.string.event_center_clear),
+                                color = MaterialTheme.colorScheme.error,
+                                maxLines = 1
+                            )
                         }
                     }
                 }

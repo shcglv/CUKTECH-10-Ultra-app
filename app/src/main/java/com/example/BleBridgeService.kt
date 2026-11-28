@@ -782,10 +782,17 @@ class BleBridgeService : Service() {
         closeGattClean()
     }
 
+    private fun hasBleConnectPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
     fun requestGattRssi(): Boolean {
         val g = bluetoothGatt ?: return false
+        if (!hasBleConnectPermission()) return false
         return try {
             g.readRemoteRssi()
+        } catch (_: SecurityException) {
+            false
         } catch (_: Exception) {
             false
         }
@@ -840,13 +847,18 @@ class BleBridgeService : Service() {
         bluetoothGatt = null
         if (gatt != null) {
             log(LogLevel.LEVEL2, "Executing GATT handle teardown...")
-            try {
-                gatt.disconnect()
-            } catch (_: Exception) {}
-            try {
-                gatt.close()
-            } catch (e: Exception) {
-                log(LogLevel.LEVEL1, "Error calling close: ${e.message}")
+            if (hasBleConnectPermission()) {
+                try {
+                    gatt.disconnect()
+                } catch (_: SecurityException) {
+                } catch (_: Exception) {
+                }
+                try {
+                    gatt.close()
+                } catch (_: SecurityException) {
+                } catch (e: Exception) {
+                    log(LogLevel.LEVEL1, "Error calling close: ${e.message}")
+                }
             }
         }
 
@@ -869,7 +881,9 @@ class BleBridgeService : Service() {
 
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (gatt !== bluetoothGatt) {
-                try { gatt.close() } catch (_: Exception) {}
+                if (hasBleConnectPermission()) {
+                    try { gatt.close() } catch (_: SecurityException) {} catch (_: Exception) {}
+                }
                 return
             }
             val addr = gatt.device.address
@@ -889,9 +903,15 @@ class BleBridgeService : Service() {
                         put("timestamp", System.currentTimeMillis())
                     }.toString())
 
+                    if (!hasBleConnectPermission()) {
+                        log(LogLevel.LEVEL1, "Missing BLUETOOTH_CONNECT permission after connect")
+                        return
+                    }
+
                     // Request balanced connection priority for steady background telemetry
                     try {
                         gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
+                    } catch (_: SecurityException) {
                     } catch (_: Exception) {}
 
                     // Auto-MTU Negotiation immediately
@@ -904,7 +924,9 @@ class BleBridgeService : Service() {
                         }
                     } catch (e: SecurityException) {
                         log(LogLevel.LEVEL1, "Permission error requesting MTU: ${e.message}")
-                        gatt.discoverServices()
+                        try {
+                            gatt.discoverServices()
+                        } catch (_: SecurityException) {}
                     }
                 } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                     log(LogLevel.LEVEL2, "BLE peripheral disconnected cleanly.")

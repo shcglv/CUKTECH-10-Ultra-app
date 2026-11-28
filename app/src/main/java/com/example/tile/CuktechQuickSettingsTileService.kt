@@ -37,6 +37,7 @@ class CuktechQuickSettingsTileService : TileService() {
         super.onStopListening()
     }
 
+    @android.annotation.SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
         val appCtx = applicationContext

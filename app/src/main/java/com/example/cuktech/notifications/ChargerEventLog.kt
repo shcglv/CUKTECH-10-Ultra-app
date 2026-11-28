@@ -169,10 +169,10 @@ class ChargerEventLog(
         lowDropThresholdW: Double,
         nowMs: Long = System.currentTimeMillis(),
         highLoadTitleBuilder: (Double, Double) -> Pair<String, String> = { curW, thrW ->
-            "High Load Alert" to String.format("%.1f W >= %.0f W threshold", curW, thrW)
+            "High Load Alert" to String.format(java.util.Locale.US, "%.1f W >= %.0f W threshold", curW, thrW)
         },
         lowDropTitleBuilder: (Int, Double, Double) -> Pair<String, String> = { pid, curW, thrW ->
-            "Port P$pid Low Power Drop" to String.format("Dropped to %.1f W (<= %.1f W)", curW, thrW)
+            "Port P$pid Low Power Drop" to String.format(java.util.Locale.US, "Dropped to %.1f W (<= %.1f W)", curW, thrW)
         }
     ): List<ChargerEvent> {
         if (!enabled) {

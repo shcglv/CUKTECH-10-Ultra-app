@@ -64,14 +64,26 @@ object ConfigShareAndSupportBundle {
             put("currencyCode", preferences.currencyCode)
             put("completionHysteresisSec", preferences.completionHysteresisSec)
             put("completionPowerThresholdW", preferences.completionPowerThresholdW)
+            put("completionAlertsEnabled", preferences.completionAlertsEnabled)
+            put("completionSoundEnabled", preferences.completionSoundEnabled)
+            put("completionVibrationEnabled", preferences.completionVibrationEnabled)
+            put("completionRepeatEnabled", preferences.completionRepeatEnabled)
+            put("completionRepeatIntervalMin", preferences.completionRepeatIntervalMin)
+            put("completionMaxRepeats", preferences.completionMaxRepeats)
+            put("liveUpdatesEnabled", preferences.liveUpdatesEnabled)
+            put("anomalyAlertsEnabled", preferences.anomalyAlertsEnabled)
+            put("anomalySuppressAfterCompletion", preferences.anomalySuppressAfterCompletion)
             put("quietHoursEnabled", preferences.quietHoursEnabled)
             put("quietHoursStartMinute", preferences.quietHoursStartMinute)
             put("quietHoursEndMinute", preferences.quietHoursEndMinute)
             put("thresholdAlertsEnabled", preferences.thresholdAlertsEnabled)
+            put("thresholdPushEnabled", preferences.thresholdPushEnabled)
             put("highLoadAlertWatts", preferences.highLoadAlertWatts)
             put("lowPowerDropAlertWatts", preferences.lowPowerDropAlertWatts)
             put("bleExitAlertEnabled", preferences.bleExitAlertEnabled)
             put("bleExitRssiThreshold", preferences.bleExitRssiThreshold)
+            put("wifiLeaveLoadAlertEnabled", preferences.wifiLeaveLoadAlertEnabled)
+            put("wifiLeaveLoadThresholdWatts", preferences.wifiLeaveLoadThresholdWatts)
             put("activeWorkspaceId", preferences.activeWorkspaceId)
         }
 
@@ -163,9 +175,13 @@ object ConfigShareAndSupportBundle {
             "themeMode", "useDynamicColor", "darkPalette", "retentionDays", "sessionStitchGraceSec",
             "tariffRatePerKwh", "touEnabled", "tariffNightRatePerKwh", "tariffDayStartMinute",
             "tariffNightStartMinute", "currencyCode", "completionHysteresisSec",
-            "completionPowerThresholdW", "quietHoursEnabled", "quietHoursStartMinute",
-            "quietHoursEndMinute", "thresholdAlertsEnabled", "highLoadAlertWatts",
-            "lowPowerDropAlertWatts", "bleExitAlertEnabled", "bleExitRssiThreshold",
+            "completionPowerThresholdW", "completionAlertsEnabled", "completionSoundEnabled",
+            "completionVibrationEnabled", "completionRepeatEnabled", "completionRepeatIntervalMin",
+            "completionMaxRepeats", "liveUpdatesEnabled", "anomalyAlertsEnabled",
+            "anomalySuppressAfterCompletion", "quietHoursEnabled", "quietHoursStartMinute",
+            "quietHoursEndMinute", "thresholdAlertsEnabled", "thresholdPushEnabled",
+            "highLoadAlertWatts", "lowPowerDropAlertWatts", "bleExitAlertEnabled",
+            "bleExitRssiThreshold", "wifiLeaveLoadAlertEnabled", "wifiLeaveLoadThresholdWatts",
             "activeWorkspaceId"
         )
         for (key in allowedPrefKeys) {

@@ -439,7 +439,7 @@
     <string name="settings_completion_alerts_enable">Charging Completion Notifications</string>
     <string name="settings_anomaly_alerts_enable">Cable, Load &amp; BLE Anomaly Alerts</string>
     <string name="settings_anomaly_suppress_completion">Suppress Port Anomalies After Completion</string>
-    <string name="settings_anomaly_suppress_completion_desc">Ignores 100% battery trickle/top-off pulses for 10 min after charging finishes</string>
+    <string name="settings_anomaly_suppress_completion_desc" formatted="false">Ignores 100% battery trickle/top-off pulses for 10 min after charging finishes</string>
     <string name="settings_threshold_push_enable">Send System Notification on Threshold</string>
     <string name="settings_notif_ble_exit_enable">BLE Range Exit Under Load Alert</string>
     <string name="settings_notif_wifi_leave_enable">Leave Home Wi-Fi Under Load Alert</string>
@@ -1242,7 +1242,7 @@
     <string name="workspace_travel">Travel</string>
     <string name="workspace_lab">Lab</string>
     <string name="kpi_section_title">Pinned Custom KPIs</string>
-    <string name="kpi_empty_hint">Pin live KPI cards (e.g. Load %, Hourly Cost, Headroom W) with automatic unit safety checks.</string>
+    <string name="kpi_empty_hint" formatted="false">Pin live KPI cards (e.g. Load %, Hourly Cost, Headroom W) with automatic unit safety checks.</string>
     <string name="kpi_add_btn">Add KPI</string>
     <string name="kpi_sheet_title">New Custom KPI</string>
     <string name="kpi_title_label">KPI Title</string>

@@ -439,7 +439,7 @@
     <string name="settings_completion_alerts_enable">Уведомления о завершении зарядки</string>
     <string name="settings_anomaly_alerts_enable">Аномалии кабеля, нагрузки и BLE</string>
     <string name="settings_anomaly_suppress_completion">Приглушать аномалии после завершения</string>
-    <string name="settings_anomaly_suppress_completion_desc">Игнорирует импульсы подпитки на 99–100% в течение 10 мин после завершения зарядки</string>
+    <string name="settings_anomaly_suppress_completion_desc" formatted="false">Игнорирует импульсы подпитки на 99–100% в течение 10 мин после завершения зарядки</string>
     <string name="settings_threshold_push_enable">Показывать уведомление в шторке</string>
     <string name="settings_notif_ble_exit_enable">Потеря сигнала BLE под нагрузкой</string>
     <string name="settings_notif_wifi_leave_enable">Уход из домашнего Wi-Fi под нагрузкой</string>
@@ -1242,7 +1242,7 @@
     <string name="workspace_travel">Поездка</string>
     <string name="workspace_lab">Лаборатория</string>
     <string name="kpi_section_title">Закреплённые KPI</string>
-    <string name="kpi_empty_hint">Закрепите свои метрики (нагрузка %, расход в час, запас мощности Вт) с автоматической проверкой единиц измерения.</string>
+    <string name="kpi_empty_hint" formatted="false">Закрепите свои метрики (нагрузка %, расход в час, запас мощности Вт) с автоматической проверкой единиц измерения.</string>
     <string name="kpi_add_btn">Добавить KPI</string>
     <string name="kpi_sheet_title">Новый пользовательский KPI</string>
     <string name="kpi_title_label">Название KPI</string>

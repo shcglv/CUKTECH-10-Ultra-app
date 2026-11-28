@@ -63,7 +63,21 @@ class BleDiagnostics(private val context: Context) {
             sb.appendLine("Bluetooth Adapter: Unavailable / Hardware missing")
         } else {
             sb.appendLine("Bluetooth Stack: ${if (adapter.isEnabled) "ACTIVE (Enabled)" else "DISABLED"}")
-            sb.appendLine("Adapter Name: ${adapter.name ?: "Unknown"}")
+            val hasConnectPerm = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.BLUETOOTH_CONNECT
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val adapterName = if (hasConnectPerm) {
+                try {
+                    adapter.name ?: "Unknown"
+                } catch (_: SecurityException) {
+                    "Permission Denied"
+                }
+            } else {
+                "Permission Missing"
+            }
+            sb.appendLine("Adapter Name: $adapterName")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 sb.appendLine("LE 2M PHY (High Speed): ${if (adapter.isLe2MPhySupported) "Supported" else "Not Supported"}")
                 sb.appendLine("LE Coded PHY (Long Range): ${if (adapter.isLeCodedPhySupported) "Supported" else "Not Supported"}")

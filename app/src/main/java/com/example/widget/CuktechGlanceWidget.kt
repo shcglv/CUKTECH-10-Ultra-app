@@ -53,7 +53,8 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
+import androidx.glance.color.ColorProvider
+import androidx.compose.ui.graphics.Color
 import com.example.BleBridgeService
 import com.example.MainActivity
 import com.example.R
@@ -461,6 +462,16 @@ class CuktechGlancePortWidget : GlanceAppWidget() {
     }
 }
 
+private val WidgetSurfaceColorProvider = ColorProvider(
+    day = Color(0xFFEFF4F7),
+    night = Color(0xFF1B2023)
+)
+
+private val WidgetCardColorProvider = ColorProvider(
+    day = Color(0xFFE2E9ED),
+    night = Color(0xFF282E33)
+)
+
 @Composable
 private fun ControlWidgetContent(
     locCtx: Context,
@@ -499,7 +510,7 @@ private fun ControlWidgetContent(
         modifier = GlanceModifier
             .fillMaxSize()
             .appWidgetBackground()
-            .background(ColorProvider(R.color.widget_surface_bg))
+            .background(WidgetSurfaceColorProvider)
             .cornerRadius(28.dp)
             .padding(14.dp)
     ) {
@@ -580,7 +591,7 @@ private fun ControlWidgetContent(
                 modifier = GlanceModifier
                     .fillMaxWidth()
                     .cornerRadius(16.dp)
-                    .background(ColorProvider(R.color.widget_card_bg))
+                    .background(WidgetCardColorProvider)
                     .clickable(actionStartActivity(openIntent))
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
@@ -618,10 +629,10 @@ private fun ControlWidgetContent(
                 val isCharging = isConnected && enabled && w > 0.2
 
                 val bg = when {
-                    !isConnected -> ColorProvider(R.color.widget_card_bg)
+                    !isConnected -> WidgetCardColorProvider
                     !enabled -> GlanceTheme.colors.errorContainer
                     isCharging -> GlanceTheme.colors.primaryContainer
-                    else -> ColorProvider(R.color.widget_card_bg)
+                    else -> WidgetCardColorProvider
                 }
                 val fg = when {
                     !isConnected -> GlanceTheme.colors.onSurfaceVariant
@@ -715,7 +726,7 @@ private fun CompactWidgetContent(
         modifier = GlanceModifier
             .fillMaxSize()
             .appWidgetBackground()
-            .background(ColorProvider(R.color.widget_surface_bg))
+            .background(WidgetSurfaceColorProvider)
             .cornerRadius(24.dp)
             .padding(12.dp)
     ) {
@@ -776,7 +787,7 @@ private fun CompactWidgetContent(
                 modifier = GlanceModifier
                     .fillMaxWidth()
                     .cornerRadius(12.dp)
-                    .background(ColorProvider(R.color.widget_card_bg))
+                    .background(WidgetCardColorProvider)
                     .clickable(actionStartActivity(openIntent))
                     .padding(horizontal = 6.dp, vertical = 3.dp)
             ) {
@@ -899,10 +910,10 @@ private fun CompactPortCell(
     val w = if (isConnected) (port?.powerW ?: 0.0) else 0.0
     val isCharging = isConnected && enabled && w > 0.2
     val bg = when {
-        !isConnected -> ColorProvider(R.color.widget_card_bg)
+        !isConnected -> WidgetCardColorProvider
         !enabled -> GlanceTheme.colors.errorContainer
         isCharging -> GlanceTheme.colors.primaryContainer
-        else -> ColorProvider(R.color.widget_card_bg)
+        else -> WidgetCardColorProvider
     }
     val fg = when {
         !isConnected -> GlanceTheme.colors.onSurfaceVariant
@@ -975,7 +986,7 @@ private fun PortFocusWidgetContent(
         modifier = GlanceModifier
             .fillMaxSize()
             .appWidgetBackground()
-            .background(ColorProvider(R.color.widget_surface_bg))
+            .background(WidgetSurfaceColorProvider)
             .cornerRadius(24.dp)
             .padding(12.dp)
     ) {
@@ -1014,7 +1025,7 @@ private fun PortFocusWidgetContent(
                 modifier = GlanceModifier
                     .cornerRadius(14.dp)
                     .background(
-                        if (!isConnected) ColorProvider(R.color.widget_card_bg)
+                        if (!isConnected) WidgetCardColorProvider
                         else if (enabled) GlanceTheme.colors.primaryContainer
                         else GlanceTheme.colors.errorContainer
                     )
@@ -1047,7 +1058,7 @@ private fun PortFocusWidgetContent(
                 modifier = GlanceModifier
                     .fillMaxWidth()
                     .cornerRadius(12.dp)
-                    .background(ColorProvider(R.color.widget_card_bg))
+                    .background(WidgetCardColorProvider)
                     .clickable(actionStartActivity(openIntent))
                     .padding(horizontal = 6.dp, vertical = 3.dp)
             ) {

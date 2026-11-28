@@ -4,6 +4,5 @@
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_cuktech</item>
         <item name="android:windowSplashScreenIconBackgroundColor">@color/splash_background</item>
-        <item name="android:windowSplashScreenBehavior">icon_preferred</item>
     </style>
 </resources>
