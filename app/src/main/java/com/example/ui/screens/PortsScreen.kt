@@ -1252,8 +1252,8 @@ private fun CombinedC3APortDetailCard(
                                     } else {
                                         stringResource(R.string.cable_diag_label)
                                     },
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    maxLines = 2,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                             FilledTonalButton(
@@ -1267,8 +1267,8 @@ private fun CombinedC3APortDetailCard(
                                 Spacer(Modifier.width(4.dp))
                                 Text(
                                     text = devicePreset?.deviceLabel ?: stringResource(R.string.port_eta_assign_btn),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    maxLines = 2,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                             FilledTonalButton(
@@ -1287,7 +1287,8 @@ private fun CombinedC3APortDetailCard(
                                     } else {
                                         stringResource(R.string.port_set_timer)
                                     },
-                                    maxLines = 1
+                                    maxLines = 2,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                             OutlinedButton(
@@ -1303,8 +1304,8 @@ private fun CombinedC3APortDetailCard(
                                     } else {
                                         stringResource(R.string.port_wh_limit)
                                     },
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    maxLines = 2,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }

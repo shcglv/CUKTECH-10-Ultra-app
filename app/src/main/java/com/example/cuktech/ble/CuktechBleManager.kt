@@ -303,7 +303,9 @@ class CuktechBleManager @JvmOverloads constructor(
     val completionDetector = ChargingCompletionDetector()
     val anomalyDetector = CableAnomalyDetector()
     val anomalyAlerts: StateFlow<List<AnomalyAlert>> = anomalyDetector.alerts
-    val eventLog = ChargerEventLog()
+    val eventLog = ChargerEventLog(
+        storagePrefs = context.getSharedPreferences("cuktech_event_log", Context.MODE_PRIVATE)
+    )
     val cableDiagnosticEngine = CableDiagnosticEngine()
     val cableDiagnostics: StateFlow<Map<Int, PortCableDiagnostic>> = cableDiagnosticEngine.diagnostics
     val localAutomationEngine = LocalAutomationEngine()
@@ -1177,23 +1179,25 @@ class CuktechBleManager @JvmOverloads constructor(
                     }
                     refreshIntegritySnapshotSync(nowEpochMs)
                 }
-                anomalyDetector.recordUnplannedBleDisconnect()?.let { alert ->
-                    BleBridgeService.addLogMessage(
-                        BleBridgeService.Companion.LogLevel.LEVEL1,
-                        "[Anomaly] ${alert.summary}"
-                    )
-                    val locCtx = context.withAppLocale(preferencesRepository.preferences.value.appLanguage)
-                    eventLog.addEvent(
-                        type = ChargerEventType.ANOMALY,
-                        title = locCtx.getString(R.string.event_anomaly_title_fmt, alert.portLabel),
-                        detail = alert.summary,
-                        portId = alert.portId ?: 0
-                    )
-                    ChargingNotificationManager.postAnomalyNotification(
-                        context = locCtx,
-                        alert = alert,
-                        inQuietHours = preferencesRepository.preferences.value.isWithinQuietHours()
-                    )
+                if (preferencesRepository.preferences.value.anomalyAlertsEnabled) {
+                    anomalyDetector.recordUnplannedBleDisconnect()?.let { alert ->
+                        BleBridgeService.addLogMessage(
+                            BleBridgeService.Companion.LogLevel.LEVEL1,
+                            "[Anomaly] ${alert.summary}"
+                        )
+                        val locCtx = context.withAppLocale(preferencesRepository.preferences.value.appLanguage)
+                        eventLog.addEvent(
+                            type = ChargerEventType.ANOMALY,
+                            title = locCtx.getString(R.string.event_anomaly_title_fmt, alert.portLabel ?: "BLE"),
+                            detail = alert.localizedSummary(locCtx),
+                            portId = alert.portId ?: 0
+                        )
+                        ChargingNotificationManager.postAnomalyNotification(
+                            context = locCtx,
+                            alert = alert,
+                            inQuietHours = preferencesRepository.preferences.value.isWithinQuietHours()
+                        )
+                    }
                 }
             } else {
                 lastUnplannedDisconnectEpochMs = 0L
@@ -2388,43 +2392,46 @@ class CuktechBleManager @JvmOverloads constructor(
         _ports.value = curPorts
 
         // Feed cable/negotiation anomaly detector & voltage-sag diagnostic tracker
-        anomalyDetector.onPortSample(
-            portId = portId,
-            portLabel = updatedPort.portLabel,
-            voltageV = updatedPort.voltageV,
-            powerW = updatedPort.powerW,
-            protocolName = updatedPort.protocolName,
-            enabled = updatedPort.enabled,
-            nowMs = nowMs
-        )?.let { alert ->
-            BleBridgeService.addLogMessage(
-                BleBridgeService.Companion.LogLevel.LEVEL1,
-                "[Anomaly] ${alert.summary}"
-            )
-            blackBoxRingBuffer.recordEvent(nowMs, "ANOMALY", "${alert.type.name}: ${alert.summary}")
-            persistence.recordIncidentBlackBox(
-                IncidentBlackBoxEntity(
-                    timestampMs = nowMs,
-                    deviceMac = _deviceInfo.value.macAddress.takeIf { it != "--" }.orEmpty(),
-                    portId = alert.portId ?: 0,
-                    incidentType = "PROTOCOL_COLLAPSE",
-                    summary = alert.summary,
-                    windowJson = blackBoxRingBuffer.exportJson("PROTOCOL_COLLAPSE", alert.summary)
+        if (prefs.anomalyAlertsEnabled) {
+            anomalyDetector.onPortSample(
+                portId = portId,
+                portLabel = updatedPort.portLabel,
+                voltageV = updatedPort.voltageV,
+                powerW = updatedPort.powerW,
+                protocolName = updatedPort.protocolName,
+                enabled = updatedPort.enabled,
+                nowMs = nowMs,
+                suppressAfterCompletion = prefs.anomalySuppressAfterCompletion
+            )?.let { alert ->
+                BleBridgeService.addLogMessage(
+                    BleBridgeService.Companion.LogLevel.LEVEL1,
+                    "[Anomaly] ${alert.summary}"
                 )
-            )
-            val locCtx = context.withAppLocale(prefs.appLanguage)
-            eventLog.addEvent(
-                type = ChargerEventType.ANOMALY,
-                title = locCtx.getString(R.string.event_anomaly_title_fmt, alert.portLabel),
-                detail = alert.summary,
-                portId = alert.portId ?: 0,
-                timestampMs = nowMs
-            )
-            ChargingNotificationManager.postAnomalyNotification(
-                context = locCtx,
-                alert = alert,
-                inQuietHours = prefs.isWithinQuietHours()
-            )
+                blackBoxRingBuffer.recordEvent(nowMs, "ANOMALY", "${alert.type.name}: ${alert.summary}")
+                persistence.recordIncidentBlackBox(
+                    IncidentBlackBoxEntity(
+                        timestampMs = nowMs,
+                        deviceMac = _deviceInfo.value.macAddress.takeIf { it != "--" }.orEmpty(),
+                        portId = alert.portId ?: 0,
+                        incidentType = "PROTOCOL_COLLAPSE",
+                        summary = alert.summary,
+                        windowJson = blackBoxRingBuffer.exportJson("PROTOCOL_COLLAPSE", alert.summary)
+                    )
+                )
+                val locCtx = context.withAppLocale(prefs.appLanguage)
+                eventLog.addEvent(
+                    type = ChargerEventType.ANOMALY,
+                    title = locCtx.getString(R.string.event_anomaly_title_fmt, alert.portLabel ?: "USB"),
+                    detail = alert.localizedSummary(locCtx),
+                    portId = alert.portId ?: 0,
+                    timestampMs = nowMs
+                )
+                ChargingNotificationManager.postAnomalyNotification(
+                    context = locCtx,
+                    alert = alert,
+                    inQuietHours = prefs.isWithinQuietHours()
+                )
+            }
         }
         cableDiagnosticEngine.onPortTelemetry(
             port = updatedPort,
@@ -2443,22 +2450,25 @@ class CuktechBleManager @JvmOverloads constructor(
             nowMs = nowMs,
             prefs = prefs
         )?.let { completionEvent ->
-            val locCtx = context.withAppLocale(prefs.appLanguage)
-            val portName = PortTelemetryDecoder.PORT_NAMES[portId] ?: updatedPort.portLabel
-            eventLog.addEvent(
-                type = ChargerEventType.CHARGING_COMPLETE,
-                title = locCtx.getString(R.string.event_completion_title_fmt, portName),
-                detail = locCtx.getString(R.string.event_completion_detail_fmt, completionEvent.sessionWh, completionEvent.peakWatts),
-                portId = portId,
-                timestampMs = nowMs
-            )
-            ChargingNotificationManager.postCompletionNotification(
-                context = locCtx,
-                event = completionEvent,
-                portDisplayName = portName,
-                soundEnabled = prefs.completionSoundEnabled,
-                vibrationEnabled = prefs.completionVibrationEnabled
-            )
+            anomalyDetector.markPortCompleted(portId = portId, nowMs = nowMs)
+            if (prefs.completionAlertsEnabled) {
+                val locCtx = context.withAppLocale(prefs.appLanguage)
+                val portName = PortTelemetryDecoder.PORT_NAMES[portId] ?: updatedPort.portLabel
+                eventLog.addEvent(
+                    type = ChargerEventType.CHARGING_COMPLETE,
+                    title = locCtx.getString(R.string.event_completion_title_fmt, portName),
+                    detail = locCtx.getString(R.string.event_completion_detail_fmt, completionEvent.sessionWh, completionEvent.peakWatts),
+                    portId = portId,
+                    timestampMs = nowMs
+                )
+                ChargingNotificationManager.postCompletionNotification(
+                    context = locCtx,
+                    event = completionEvent,
+                    portDisplayName = portName,
+                    soundEnabled = prefs.completionSoundEnabled,
+                    vibrationEnabled = prefs.completionVibrationEnabled
+                )
+            }
         }
 
         val totalW = PortTelemetryDecoder.computeEffectiveTotalWatts(curPorts)
@@ -2498,7 +2508,7 @@ class CuktechBleManager @JvmOverloads constructor(
         if (prefs.thresholdAlertsEnabled) {
             val locCtx = context.withAppLocale(prefs.appLanguage)
             val appLocale = resolveLocale(prefs.appLanguage)
-            eventLog.evaluateThresholds(
+            val fired = eventLog.evaluateThresholds(
                 enabled = true,
                 totalWatts = roundedTotalW,
                 highLoadThresholdW = prefs.highLoadAlertWatts,
@@ -2515,6 +2525,16 @@ class CuktechBleManager @JvmOverloads constructor(
                         String.format(appLocale, locCtx.getString(R.string.event_low_drop_detail_fmt), curW, thrW)
                 }
             )
+            if (prefs.thresholdPushEnabled && fired.isNotEmpty()) {
+                val quiet = prefs.isWithinQuietHours()
+                fired.forEach { ev ->
+                    ChargingNotificationManager.postThresholdAlertNotification(
+                        context = locCtx,
+                        event = ev,
+                        inQuietHours = quiet
+                    )
+                }
+            }
         } else {
             eventLog.evaluateThresholds(
                 enabled = false,
@@ -3479,21 +3499,24 @@ class CuktechBleManager @JvmOverloads constructor(
                     nowMs = nowMs,
                     prefs = prefs
                 )?.let { completionEvent ->
-                    val portName = PortTelemetryDecoder.PORT_NAMES[pId] ?: p.portLabel
-                    eventLog.addEvent(
-                        type = ChargerEventType.CHARGING_COMPLETE,
-                        title = locCtx.getString(R.string.event_completion_title_fmt, portName),
-                        detail = locCtx.getString(R.string.event_completion_detail_fmt, completionEvent.sessionWh, completionEvent.peakWatts),
-                        portId = pId,
-                        timestampMs = nowMs
-                    )
-                    ChargingNotificationManager.postCompletionNotification(
-                        context = locCtx,
-                        event = completionEvent,
-                        portDisplayName = portName,
-                        soundEnabled = prefs.completionSoundEnabled,
-                        vibrationEnabled = prefs.completionVibrationEnabled
-                    )
+                    anomalyDetector.markPortCompleted(portId = pId, nowMs = nowMs)
+                    if (prefs.completionAlertsEnabled) {
+                        val portName = PortTelemetryDecoder.PORT_NAMES[pId] ?: p.portLabel
+                        eventLog.addEvent(
+                            type = ChargerEventType.CHARGING_COMPLETE,
+                            title = locCtx.getString(R.string.event_completion_title_fmt, portName),
+                            detail = locCtx.getString(R.string.event_completion_detail_fmt, completionEvent.sessionWh, completionEvent.peakWatts),
+                            portId = pId,
+                            timestampMs = nowMs
+                        )
+                        ChargingNotificationManager.postCompletionNotification(
+                            context = locCtx,
+                            event = completionEvent,
+                            portDisplayName = portName,
+                            soundEnabled = prefs.completionSoundEnabled,
+                            vibrationEnabled = prefs.completionVibrationEnabled
+                        )
+                    }
                 }
             }
         }

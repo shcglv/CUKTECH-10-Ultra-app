@@ -26,6 +26,7 @@ import kotlinx.coroutines.runBlocking
 class MainActivity : ComponentActivity() {
     private val pendingNavTab = mutableStateOf<String?>(null)
     private val pendingNfcUri = mutableStateOf<String?>(null)
+    private val pendingOpenEventCenter = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,7 +55,8 @@ class MainActivity : ComponentActivity() {
                     ) {
                         BleBridgeDashboard(
                             pendingNavTab = pendingNavTab,
-                            pendingNfcUri = pendingNfcUri
+                            pendingNfcUri = pendingNfcUri,
+                            pendingOpenEventCenter = pendingOpenEventCenter
                         )
                     }
                 }
@@ -84,13 +86,17 @@ class MainActivity : ComponentActivity() {
         if (!uriData.isNullOrBlank() && uriData.startsWith("cuktech://action", ignoreCase = true)) {
             pendingNfcUri.value = uriData
         }
+        if (intent?.getBooleanExtra("EXTRA_OPEN_EVENT_CENTER", false) == true) {
+            pendingOpenEventCenter.value = true
+        }
     }
 }
 
 @Composable
 fun BleBridgeDashboard(
     pendingNavTab: MutableState<String?> = remember { mutableStateOf(null) },
-    pendingNfcUri: MutableState<String?> = remember { mutableStateOf(null) }
+    pendingNfcUri: MutableState<String?> = remember { mutableStateOf(null) },
+    pendingOpenEventCenter: MutableState<Boolean> = remember { mutableStateOf(false) }
 ) {
     val context = LocalContext.current
     val viewModel: DashboardViewModel = viewModel(
@@ -101,6 +107,7 @@ fun BleBridgeDashboard(
     CuktechAppRoot(
         viewModel = viewModel,
         pendingNavTab = pendingNavTab,
-        pendingNfcUri = pendingNfcUri
+        pendingNfcUri = pendingNfcUri,
+        pendingOpenEventCenter = pendingOpenEventCenter
     )
 }

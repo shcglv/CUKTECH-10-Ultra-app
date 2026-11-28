@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
@@ -801,8 +802,8 @@ fun BridgeCompanionSetupSheet(
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = stringResource(R.string.bridge_script_copy_btn),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
                     )
                 }
                 Button(
@@ -817,8 +818,8 @@ fun BridgeCompanionSetupSheet(
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = stringResource(R.string.bridge_script_save_btn),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
                     )
                 }
             }

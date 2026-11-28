@@ -597,7 +597,11 @@ fun ConfigShareAndImportSheet(
             ) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.config_share_copy_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = stringResource(R.string.config_share_copy_btn),
+                    maxLines = 2,
+                    textAlign = TextAlign.Center
+                )
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))

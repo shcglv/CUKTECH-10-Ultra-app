@@ -49,7 +49,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.BluetoothSearching
+import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Dashboard
@@ -147,6 +147,7 @@ fun CuktechAppRoot(
     ),
     pendingNavTab: MutableState<String?> = remember { mutableStateOf(null) },
     pendingNfcUri: MutableState<String?> = remember { mutableStateOf(null) },
+    pendingOpenEventCenter: MutableState<Boolean> = remember { mutableStateOf(false) },
     initialDestinationOverride: AppDestination? = null,
     requestPermissionsOnLaunch: Boolean = true,
     showOnboardingOverride: Boolean? = null
@@ -417,6 +418,13 @@ fun CuktechAppRoot(
         if (!uri.isNullOrBlank() && !shouldShowOnboarding) {
             viewModel.executeNfcActionUri(uri)
             pendingNfcUri.value = null
+        }
+    }
+
+    LaunchedEffect(pendingOpenEventCenter.value, shouldShowOnboarding) {
+        if (pendingOpenEventCenter.value && !shouldShowOnboarding) {
+            showEventCenter = true
+            pendingOpenEventCenter.value = false
         }
     }
 
@@ -804,7 +812,7 @@ fun CuktechAppRoot(
                                                 .testTag("search_pair_button")
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Filled.BluetoothSearching,
+                                                imageVector = Icons.AutoMirrored.Filled.BluetoothSearching,
                                                 contentDescription = stringResource(R.string.topbar_pairing_cd),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.size(20.dp)
@@ -1085,7 +1093,9 @@ fun CuktechAppRoot(
                                         action = BleBridgeService.ACTION_STOP_SERVER
                                     }
                                     runCatching { context.startService(stopIntent) }
-                                }
+                                },
+                                unreadEventCount = unreadEventCount,
+                                onOpenEventCenter = { showEventCenter = true }
                             )
                         }
 

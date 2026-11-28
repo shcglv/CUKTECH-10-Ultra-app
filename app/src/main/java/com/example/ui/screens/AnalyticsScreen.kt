@@ -1537,6 +1537,7 @@ private fun SessionReplayDialog(
                                         tagInput = ""
                                         noteInput = ""
                                     },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                                     modifier = Modifier
                                         .weight(1f)
                                         .heightIn(min = 48.dp)
@@ -1544,10 +1545,11 @@ private fun SessionReplayDialog(
                                 ) {
                                     Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.replay_add_bookmark_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(stringResource(R.string.replay_add_bookmark_btn), maxLines = 2, textAlign = TextAlign.Center)
                                 }
                                 OutlinedButton(
                                     onClick = onExportJson,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                                     modifier = Modifier
                                         .weight(1f)
                                         .heightIn(min = 48.dp)
@@ -1555,7 +1557,7 @@ private fun SessionReplayDialog(
                                 ) {
                                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.replay_export_json_btn), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(stringResource(R.string.replay_export_json_btn), maxLines = 2, textAlign = TextAlign.Center)
                                 }
                             }
                             if (annotations.isNotEmpty()) {

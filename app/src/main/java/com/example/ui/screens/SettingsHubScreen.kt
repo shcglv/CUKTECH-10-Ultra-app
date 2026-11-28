@@ -51,7 +51,7 @@ import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BatterySaver
-import androidx.compose.material.icons.filled.BluetoothSearching
+import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudDownload
@@ -170,6 +170,8 @@ fun SettingsHubScreen(
     onRequestStartTcpServer: (Int) -> Unit,
     onRequestStopTcpServer: () -> Unit,
     onDisconnectForMiHome: () -> Unit,
+    unreadEventCount: Int = 0,
+    onOpenEventCenter: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -929,6 +931,26 @@ fun SettingsHubScreen(
                 )
             }
 
+            fun saveChannelsPolicy(
+                completion: Boolean = prefs.completionAlertsEnabled,
+                anomaly: Boolean = prefs.anomalyAlertsEnabled,
+                suppressAfterCompletion: Boolean = prefs.anomalySuppressAfterCompletion,
+                thresholdPush: Boolean = prefs.thresholdPushEnabled
+            ) {
+                viewModel.updateAlertChannelsPolicy(
+                    completionAlertsEnabled = completion,
+                    anomalyAlertsEnabled = anomaly,
+                    anomalySuppressAfterCompletion = suppressAfterCompletion,
+                    thresholdPushEnabled = thresholdPush
+                )
+            }
+
+            // Group 1: Status bar & Live Updates
+            Text(
+                text = stringResource(R.string.settings_notif_group_status),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
             SettingsSwitchRow(
                 title = stringResource(R.string.settings_live_updates_enable),
                 checked = prefs.liveUpdatesEnabled,
@@ -991,104 +1013,140 @@ fun SettingsHubScreen(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-            val notifSec = stringResource(R.string.unit_s)
-            val notifW = stringResource(R.string.unit_w)
-            val notifMin = stringResource(R.string.unit_m)
-            Text(stringResource(R.string.settings_completion_hysteresis), style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(30, 60, 120, 180).forEach { sec ->
-                    FilterChip(
-                        selected = prefs.completionHysteresisSec == sec,
-                        onClick = { savePolicy(hyst = sec) },
-                        label = { Text("$sec $notifSec", style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                    )
-                }
-            }
-
-            Text(stringResource(R.string.settings_completion_threshold), style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(0.5, 1.0, 2.0, 3.0).forEach { watts ->
-                    FilterChip(
-                        selected = kotlin.math.abs(prefs.completionPowerThresholdW - watts) < 0.05,
-                        onClick = { savePolicy(thresh = watts) },
-                        label = { Text("$watts $notifW", style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                    )
-                }
-            }
-
-            SettingsSwitchRow(
-                title = stringResource(R.string.settings_completion_sound),
-                checked = prefs.completionSoundEnabled,
-                onCheckedChange = { savePolicy(sound = it) }
+            // Group 2: Charging Completion Alerts
+            Text(
+                text = stringResource(R.string.settings_notif_group_completion),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
             )
             SettingsSwitchRow(
-                title = stringResource(R.string.settings_completion_vibration),
-                checked = prefs.completionVibrationEnabled,
-                onCheckedChange = { savePolicy(vibrate = it) }
-            )
-            SettingsSwitchRow(
-                title = stringResource(R.string.settings_completion_repeat),
-                checked = prefs.completionRepeatEnabled,
-                onCheckedChange = { savePolicy(repeat = it) }
+                title = stringResource(R.string.settings_completion_alerts_enable),
+                checked = prefs.completionAlertsEnabled,
+                onCheckedChange = { saveChannelsPolicy(completion = it) },
+                tag = "completion_alerts_switch"
             )
 
-            if (prefs.completionRepeatEnabled) {
-                Text(stringResource(R.string.settings_completion_repeat_interval), style = MaterialTheme.typography.labelMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(3, 5, 10, 15).forEach { mins ->
-                        FilterChip(
-                            selected = prefs.completionRepeatIntervalMin == mins,
-                            onClick = { savePolicy(repeatInt = mins) },
-                            label = { Text("$mins $notifMin", style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                        )
+            AnimatedVisibility(visible = prefs.completionAlertsEnabled) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val notifSec = stringResource(R.string.unit_s)
+                    val notifW = stringResource(R.string.unit_w)
+                    val notifMin = stringResource(R.string.unit_m)
+                    Text(stringResource(R.string.settings_completion_hysteresis), style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(30, 60, 120, 180).forEach { sec ->
+                            FilterChip(
+                                selected = prefs.completionHysteresisSec == sec,
+                                onClick = { savePolicy(hyst = sec) },
+                                label = { Text("$sec $notifSec", style = MaterialTheme.typography.labelMedium.tabularNums()) }
+                            )
+                        }
                     }
-                }
-                Text(stringResource(R.string.settings_completion_repeat_count), style = MaterialTheme.typography.labelMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(1, 2, 3, 5).forEach { cnt ->
-                        FilterChip(
-                            selected = prefs.completionMaxRepeats == cnt,
-                            onClick = { savePolicy(maxRep = cnt) },
-                            label = { Text("${cnt}×", style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                        )
+
+                    Text(stringResource(R.string.settings_completion_threshold), style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(0.5, 1.0, 2.0, 3.0).forEach { watts ->
+                            FilterChip(
+                                selected = kotlin.math.abs(prefs.completionPowerThresholdW - watts) < 0.05,
+                                onClick = { savePolicy(thresh = watts) },
+                                label = { Text("$watts $notifW", style = MaterialTheme.typography.labelMedium.tabularNums()) }
+                            )
+                        }
+                    }
+
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_completion_sound),
+                        checked = prefs.completionSoundEnabled,
+                        onCheckedChange = { savePolicy(sound = it) }
+                    )
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_completion_vibration),
+                        checked = prefs.completionVibrationEnabled,
+                        onCheckedChange = { savePolicy(vibrate = it) }
+                    )
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_completion_repeat),
+                        checked = prefs.completionRepeatEnabled,
+                        onCheckedChange = { savePolicy(repeat = it) }
+                    )
+
+                    if (prefs.completionRepeatEnabled) {
+                        Text(stringResource(R.string.settings_completion_repeat_interval), style = MaterialTheme.typography.labelMedium)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(3, 5, 10, 15).forEach { mins ->
+                                FilterChip(
+                                    selected = prefs.completionRepeatIntervalMin == mins,
+                                    onClick = { savePolicy(repeatInt = mins) },
+                                    label = { Text("$mins $notifMin", style = MaterialTheme.typography.labelMedium.tabularNums()) }
+                                )
+                            }
+                        }
+                        Text(stringResource(R.string.settings_completion_repeat_count), style = MaterialTheme.typography.labelMedium)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(1, 2, 3, 5).forEach { cnt ->
+                                FilterChip(
+                                    selected = prefs.completionMaxRepeats == cnt,
+                                    onClick = { savePolicy(maxRep = cnt) },
+                                    label = { Text("${cnt}×", style = MaterialTheme.typography.labelMedium.tabularNums()) }
+                                )
+                            }
+                        }
                     }
                 }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-            SettingsSwitchRow(
-                title = stringResource(R.string.settings_quiet_hours_enable),
-                checked = prefs.quietHoursEnabled,
-                onCheckedChange = { savePolicy(quiet = it) },
-                tag = "quiet_hours_switch"
+            // Group 3: Anomalies & Departure Warnings
+            Text(
+                text = stringResource(R.string.settings_notif_group_safety),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
             )
-
-            if (prefs.quietHoursEnabled) {
-                Text(stringResource(R.string.settings_quiet_hours_start), style = MaterialTheme.typography.labelMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(22 * 60, 23 * 60, 0).forEach { m ->
-                        FilterChip(
-                            selected = prefs.quietHoursStartMinute == m,
-                            onClick = { savePolicy(qStart = m) },
-                            label = { Text(formatMinuteOfDay(m), style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                        )
-                    }
-                }
-                Text(stringResource(R.string.settings_quiet_hours_end), style = MaterialTheme.typography.labelMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(6 * 60, 7 * 60, 8 * 60, 9 * 60).forEach { m ->
-                        FilterChip(
-                            selected = prefs.quietHoursEndMinute == m,
-                            onClick = { savePolicy(qEnd = m) },
-                            label = { Text(formatMinuteOfDay(m), style = MaterialTheme.typography.labelMedium.tabularNums()) }
-                        )
-                    }
-                }
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_anomaly_alerts_enable),
+                checked = prefs.anomalyAlertsEnabled,
+                onCheckedChange = { saveChannelsPolicy(anomaly = it) },
+                tag = "anomaly_alerts_switch"
+            )
+            AnimatedVisibility(visible = prefs.anomalyAlertsEnabled) {
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_anomaly_suppress_completion),
+                    subtitle = stringResource(R.string.settings_anomaly_suppress_completion_desc),
+                    checked = prefs.anomalySuppressAfterCompletion,
+                    onCheckedChange = { saveChannelsPolicy(suppressAfterCompletion = it) },
+                    tag = "anomaly_suppress_completion_switch"
+                )
             }
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_notif_ble_exit_enable),
+                checked = prefs.bleExitAlertEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.updateBleExitAlertPolicy(enabled, prefs.bleExitRssiThreshold)
+                },
+                tag = "notif_ble_exit_switch"
+            )
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_notif_wifi_leave_enable),
+                checked = prefs.wifiLeaveLoadAlertEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.updateWifiContextPolicy(
+                        contextEnabled = prefs.wifiContextEnabled || prefs.boundWifiKey.isNotBlank(),
+                        bleOnlyAtHome = prefs.wifiBleOnlyAtHome,
+                        leaveAlertEnabled = enabled,
+                        leaveThresholdWatts = prefs.wifiLeaveLoadThresholdWatts
+                    )
+                },
+                tag = "notif_wifi_leave_switch"
+            )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
+            // Group 4: Power Thresholds
+            Text(
+                text = stringResource(R.string.settings_notif_group_thresholds),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
             SettingsSwitchRow(
                 title = stringResource(R.string.settings_threshold_alerts_enable),
                 checked = prefs.thresholdAlertsEnabled,
@@ -1110,6 +1168,13 @@ fun SettingsHubScreen(
                     mutableFloatStateOf(prefs.lowPowerDropAlertWatts.toFloat().coerceIn(0.5f, 15f))
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_threshold_push_enable),
+                        checked = prefs.thresholdPushEnabled,
+                        onCheckedChange = { saveChannelsPolicy(thresholdPush = it) },
+                        tag = "threshold_push_switch"
+                    )
+
                     Text(
                         text = stringResource(R.string.settings_threshold_high_load_fmt, highLoadDraft),
                         style = MaterialTheme.typography.labelLarge.tabularNums()
@@ -1145,6 +1210,86 @@ fun SettingsHubScreen(
                         },
                         valueRange = 0.5f..15f,
                         modifier = Modifier.testTag("threshold_low_drop_slider")
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+            // Group 5: Quiet Hours, Android Channels & Event Center
+            Text(
+                text = stringResource(R.string.settings_notif_group_schedule),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_quiet_hours_enable),
+                checked = prefs.quietHoursEnabled,
+                onCheckedChange = { savePolicy(quiet = it) },
+                tag = "quiet_hours_switch"
+            )
+
+            if (prefs.quietHoursEnabled) {
+                Text(stringResource(R.string.settings_quiet_hours_start), style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(22 * 60, 23 * 60, 0).forEach { m ->
+                        FilterChip(
+                            selected = prefs.quietHoursStartMinute == m,
+                            onClick = { savePolicy(qStart = m) },
+                            label = { Text(formatMinuteOfDay(m), style = MaterialTheme.typography.labelMedium.tabularNums()) }
+                        )
+                    }
+                }
+                Text(stringResource(R.string.settings_quiet_hours_end), style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(6 * 60, 7 * 60, 8 * 60, 9 * 60).forEach { m ->
+                        FilterChip(
+                            selected = prefs.quietHoursEndMinute == m,
+                            onClick = { savePolicy(qEnd = m) },
+                            label = { Text(formatMinuteOfDay(m), style = MaterialTheme.typography.labelMedium.tabularNums()) }
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(ChargingNotificationManager.buildAppNotificationSettingsIntent(context))
+                        }
+                    },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("notif_system_channels_btn")
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_notif_open_channels_btn),
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                FilledTonalButton(
+                    onClick = onOpenEventCenter,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("notif_open_event_center_btn")
+                ) {
+                    Text(
+                        text = if (unreadEventCount > 0) {
+                            stringResource(R.string.settings_notif_open_event_center_unread_fmt, unreadEventCount)
+                        } else {
+                            stringResource(R.string.settings_notif_open_event_center_btn)
+                        },
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -1489,7 +1634,7 @@ fun SettingsHubScreen(
                         .heightIn(min = 48.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.BluetoothSearching,
+                        imageVector = Icons.AutoMirrored.Filled.BluetoothSearching,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -2057,7 +2202,8 @@ fun SettingsHubScreen(
                     ) {
                         Text(
                             text = stringResource(R.string.wifi_clear_binding_btn),
-                            maxLines = 1
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -2928,20 +3074,32 @@ private fun SettingsSwitchRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    tag: String? = null
+    tag: String? = null,
+    subtitle: String? = null
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyMedium,
+        Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(end = 12.dp)
-        )
+                .padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,

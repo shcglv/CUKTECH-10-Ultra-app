@@ -29,8 +29,14 @@ import os
 import socket
 import sqlite3
 import time
+from typing import Optional
 from aiohttp import web
 from zeroconf import ServiceInfo, Zeroconf
+
+try:
+    from bleak import BleakScanner
+except ImportError:
+    BleakScanner = None
 
 DEFAULT_MAC = "$cleanMac"
 DEFAULT_PORT = $safePort
@@ -65,21 +71,50 @@ class BridgeState:
         self.mac = mac.upper()
         self.db = db
         self.last_poll_ms = 0
+        self.last_ble_seen_ms = 0
+        self.last_rssi = 0
+        self.ble_device_name = ""
         self.pending_commands = []
+        self._next_cmd_id = 1
 
     def count_samples(self) -> int:
         row = self.db.execute("SELECT COUNT(*) FROM samples").fetchone()
         return int(row[0]) if row else 0
 
-    def record_sample(self, port_id: int, v: float, a: float, w: float, proto: str = "Idle", wh: float = 0.0, rssi: int = 0):
-        ts_ms = int(time.time() * 1000)
+    def is_ble_online(self, max_age_ms: int = 45000) -> bool:
+        return self.last_ble_seen_ms > 0 and (int(time.time() * 1000) - self.last_ble_seen_ms) <= max_age_ms
+
+    def record_sample(
+        self,
+        port_id: int,
+        v: float,
+        a: float,
+        w: float,
+        proto: str = "Idle",
+        wh: float = 0.0,
+        rssi: int = 0,
+        ts_ms: Optional[int] = None,
+        mac: Optional[str] = None,
+    ) -> bool:
+        if port_id not in (1, 2, 3, 4):
+            return False
+        now_ms = int(ts_ms if ts_ms and ts_ms > 0 else time.time() * 1000)
+        target_mac = (mac or self.mac).strip().upper() or self.mac
         self.db.execute(
             "INSERT INTO samples (ts_ms, mac, port_id, voltage_v, current_a, power_w, protocol, cumulative_wh, rssi) VALUES (?,?,?,?,?,?,?,?,?)",
-            (ts_ms, self.mac, port_id, v, a, w, proto, wh, rssi),
+            (now_ms, target_mac, port_id, max(0.0, float(v)), max(0.0, float(a)), max(0.0, float(w)), proto or "Idle", max(0.0, float(wh)), int(rssi)),
         )
-        self.db.execute("DELETE FROM samples WHERE ts_ms < ?", (ts_ms - 7 * 86400 * 1000,))
+        self.db.execute("DELETE FROM samples WHERE ts_ms < ?", (now_ms - 7 * 86400 * 1000,))
         self.db.commit()
-        self.last_poll_ms = ts_ms
+        self.last_poll_ms = now_ms
+        return True
+
+    def record_ble_sighting(self, name: str, rssi: int):
+        now_ms = int(time.time() * 1000)
+        self.last_ble_seen_ms = now_ms
+        self.last_rssi = int(rssi)
+        if name:
+            self.ble_device_name = name
 
 
 def is_authorized(request: web.Request) -> bool:
@@ -97,10 +132,26 @@ def build_app(state: BridgeState) -> web.Application:
             return web.json_response({"error": "unauthorized"}, status=401)
         return web.json_response({
             "online": True,
-            "version": "1.0-py",
+            "version": "1.1-py",
             "activeMac": state.mac,
             "bufferedSamples": state.count_samples(),
             "lastPollMs": state.last_poll_ms,
+            "bleOnline": state.is_ble_online(),
+            "lastBleSeenMs": state.last_ble_seen_ms,
+            "rssi": state.last_rssi,
+            "bleScannerAvailable": BleakScanner is not None,
+        })
+
+    async def handle_ble(request: web.Request):
+        if not is_authorized(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        return web.json_response({
+            "mac": state.mac,
+            "bleOnline": state.is_ble_online(),
+            "lastBleSeenMs": state.last_ble_seen_ms,
+            "rssi": state.last_rssi,
+            "deviceName": state.ble_device_name,
+            "scannerAvailable": BleakScanner is not None,
         })
 
     async def handle_export(request: web.Request):
@@ -130,16 +181,62 @@ def build_app(state: BridgeState) -> web.Application:
         ]
         return web.json_response({"samples": samples})
 
-    async def handle_command(request: web.Request):
+    async def handle_ingest(request: web.Request):
         if not is_authorized(request):
             return web.json_response({"error": "unauthorized"}, status=401)
         body = await request.json()
-        state.pending_commands.append({"ts_ms": int(time.time() * 1000), "payload": body})
-        return web.json_response({"accepted": True, "queued": len(state.pending_commands)})
+        raw_items = body.get("samples") if isinstance(body, dict) and "samples" in body else (body if isinstance(body, list) else [body])
+        inserted = 0
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            ok = state.record_sample(
+                port_id=int(item.get("port_id", item.get("portId", 0))),
+                v=float(item.get("voltage_v", item.get("voltageV", 0.0))),
+                a=float(item.get("current_a", item.get("currentA", 0.0))),
+                w=float(item.get("power_w", item.get("powerW", 0.0))),
+                proto=str(item.get("protocol", item.get("protocolName", "Idle"))),
+                wh=float(item.get("cumulative_wh", item.get("cumulativeWh", 0.0))),
+                rssi=int(item.get("rssi", item.get("rssiDbm", state.last_rssi))),
+                ts_ms=int(item.get("ts_ms", item.get("timestampMs", 0))) or None,
+                mac=str(item.get("mac", item.get("deviceMac", state.mac))),
+            )
+            if ok:
+                inserted += 1
+        return web.json_response({"accepted": True, "inserted": inserted, "bufferedSamples": state.count_samples()})
+
+    async def handle_command_post(request: web.Request):
+        if not is_authorized(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        body = await request.json()
+        cmd_id = state._next_cmd_id
+        state._next_cmd_id += 1
+        state.pending_commands.append({"id": cmd_id, "ts_ms": int(time.time() * 1000), "payload": body})
+        return web.json_response({"accepted": True, "id": cmd_id, "queued": len(state.pending_commands)})
+
+    async def handle_command_get(request: web.Request):
+        if not is_authorized(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        return web.json_response({"commands": list(state.pending_commands)})
+
+    async def handle_command_ack(request: web.Request):
+        if not is_authorized(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        body = await request.json()
+        ack_id = body.get("id") if isinstance(body, dict) else None
+        before = len(state.pending_commands)
+        if ack_id is not None:
+            state.pending_commands = [c for c in state.pending_commands if c.get("id") != ack_id]
+        return web.json_response({"removed": before - len(state.pending_commands), "queued": len(state.pending_commands)})
 
     app.router.add_get("/api/v1/status", handle_status)
+    app.router.add_get("/api/v1/ble", handle_ble)
     app.router.add_get("/api/v1/telemetry/export", handle_export)
-    app.router.add_post("/api/v1/command", handle_command)
+    app.router.add_post("/api/v1/telemetry/ingest", handle_ingest)
+    app.router.add_post("/api/v1/ingest", handle_ingest)
+    app.router.add_post("/api/v1/command", handle_command_post)
+    app.router.add_get("/api/v1/command", handle_command_get)
+    app.router.add_post("/api/v1/command/ack", handle_command_ack)
     return app
 
 
@@ -154,10 +251,46 @@ def get_lan_ip() -> str:
         s.close()
 
 
+async def ble_scanner_loop(state: BridgeState, interval_sec: float):
+    if BleakScanner is None:
+        print("[CUKTECH Bridge] bleak not installed; running in HTTP ingest/relay mode only.")
+        while True:
+            await asyncio.sleep(interval_sec)
+
+    target_mac = state.mac.upper()
+    last_heartbeat_ms = 0
+
+    def on_detect(device, adv_data):
+        addr = (getattr(device, "address", "") or "").upper()
+        name = getattr(device, "name", "") or getattr(adv_data, "local_name", "") or ""
+        if addr == target_mac or ("AD1204" in name.upper()):
+            rssi = getattr(adv_data, "rssi", None)
+            if rssi is None:
+                rssi = getattr(device, "rssi", 0) or 0
+            state.record_ble_sighting(name, int(rssi))
+
+    scanner = BleakScanner(detection_callback=on_detect)
+    while True:
+        try:
+            await scanner.start()
+            await asyncio.sleep(min(5.0, interval_sec))
+            await scanner.stop()
+            now_ms = int(time.time() * 1000)
+            if state.is_ble_online() and (now_ms - last_heartbeat_ms) >= int(interval_sec * 1000):
+                # Record BLE link/RSSI presence marker on port 1 only if no live sample arrived recently
+                if (now_ms - state.last_poll_ms) >= int(interval_sec * 1000):
+                    state.record_sample(1, 0.0, 0.0, 0.0, proto="BLE Beacon", wh=0.0, rssi=state.last_rssi, ts_ms=now_ms)
+                last_heartbeat_ms = now_ms
+        except Exception as exc:
+            print(f"[CUKTECH Bridge] BLE scan notice: {exc}")
+        await asyncio.sleep(max(2.0, interval_sec - 5.0))
+
+
 async def main():
     parser = argparse.ArgumentParser(description="CUKTECH 10 Ultra Stationary LAN Bridge")
     parser.add_argument("--mac", default=os.environ.get("CUKTECH_MAC", DEFAULT_MAC))
     parser.add_argument("--port", type=int, default=int(os.environ.get("CUKTECH_BRIDGE_PORT", DEFAULT_PORT)))
+    parser.add_argument("--poll-interval", type=float, default=float(os.environ.get("CUKTECH_BRIDGE_POLL_SEC", "15")))
     args = parser.parse_args()
 
     db = init_db(DB_PATH)
@@ -179,10 +312,11 @@ async def main():
     )
     zc.register_service(info)
     print(f"[CUKTECH Bridge] Listening on http://{ip}:{args.port} for MAC {state.mac}")
+    scanner_task = asyncio.create_task(ble_scanner_loop(state, max(5.0, args.poll_interval)))
     try:
-        while True:
-            await asyncio.sleep(5)
+        await scanner_task
     finally:
+        scanner_task.cancel()
         zc.unregister_service(info)
         zc.close()
         await runner.cleanup()

@@ -1,6 +1,7 @@
 package com.example
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -17,6 +18,9 @@ import com.example.cuktech.bridge.WifiContextSnapshot
 import com.example.cuktech.bridge.WifiContextStatus
 import com.example.cuktech.db.CuktechPersistence
 import com.example.cuktech.db.room.CuktechDatabase
+import com.example.cuktech.notifications.CableAnomalyDetector
+import com.example.cuktech.notifications.ChargerEventLog
+import com.example.cuktech.notifications.ChargerEventType
 import com.example.cuktech.prefs.AppPreferences
 import com.example.cuktech.prefs.AppPreferencesRepository
 import com.example.cuktech.protocol.PortTelemetry
@@ -185,9 +189,13 @@ class Stage11PracticalFeaturesTest {
             serviceName = "CUKTECH-Pi-Bridge"
         )
         assertTrue(script.contains("AA:BB:CC:11:22:33"))
+        assertTrue(script.contains("BleakScanner"))
         assertTrue(script.contains("/api/v1/status"))
+        assertTrue(script.contains("/api/v1/ble"))
         assertTrue(script.contains("/api/v1/telemetry/export"))
+        assertTrue(script.contains("/api/v1/telemetry/ingest"))
         assertTrue(script.contains("/api/v1/command"))
+        assertTrue(script.contains("/api/v1/command/ack"))
         assertTrue(script.contains("_http._tcp.local."))
     }
 
@@ -411,5 +419,129 @@ class Stage11PracticalFeaturesTest {
         composeTestRule.onNodeWithTag("wifi_ble_only_home_switch").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("wifi_leave_alert_switch").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("wifi_leave_threshold_15").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun anomalyDetectorIgnoresSteadyVoltageEndOfChargeTopOffPulses() {
+        val detector = CableAnomalyDetector()
+        var t = 10_000L
+        // Simulate 100% battery BMS top-off pulsing (18W -> 0W at steady 20V PD) 9 times
+        repeat(9) {
+            assertNull(detector.onPortSample(1, "USB-C1", 20.0, 18.0, "PD3.0 Fixed", true, t))
+            assertNull(detector.onPortSample(1, "USB-C1", 20.0, 0.0, "PD3.0 Fixed", true, t + 1_000L))
+            t += 5_000L
+        }
+        assertTrue(detector.alerts.value.isEmpty())
+    }
+
+    @Test
+    fun chargerEventLogPersistsEventsAcrossRestart() {
+        val prefs = app.getSharedPreferences("test_event_log_persist", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        try {
+            val log1 = ChargerEventLog(storagePrefs = prefs)
+            log1.addEvent(
+                type = ChargerEventType.ANOMALY,
+                title = "USB-C1: сбой",
+                detail = "USB-C1: 3× резких обрывов нагрузки (≥25 Вт → 0 Вт)",
+                portId = 1,
+                timestampMs = 1_760_000_000_000L
+            )
+            assertEquals(1, log1.events.value.size)
+
+            val log2 = ChargerEventLog(storagePrefs = prefs)
+            assertEquals(1, log2.events.value.size)
+            assertEquals(ChargerEventType.ANOMALY, log2.events.value.first().type)
+            assertEquals("USB-C1: сбой", log2.events.value.first().title)
+            assertEquals(1, log2.unreadCount.value)
+        } finally {
+            prefs.edit().clear().commit()
+        }
+    }
+
+    @Test
+    fun anomalyDetectorSuppressesAfterCompletionWhenEnabledAndFiresWhenDisabled() {
+        val detector = CableAnomalyDetector()
+        detector.markPortCompleted(portId = 1, nowMs = 10_000L)
+
+        // 3 abrupt >=25W -> 0W drops during 10-min post-completion suppression window
+        var t = 20_000L
+        repeat(3) {
+            assertNull(detector.onPortSample(1, "USB-C1", 20.0, 32.0, "PD3.0 PPS", true, t, suppressAfterCompletion = true))
+            assertNull(detector.onPortSample(1, "USB-C1", 20.0, 0.0, "PD3.0 PPS", true, t + 1_000L, suppressAfterCompletion = true))
+            t += 5_000L
+        }
+        assertTrue(detector.alerts.value.isEmpty())
+
+        // Same collapses with suppressAfterCompletion = false trigger POWER_COLLAPSE_LOOP
+        var fired: com.example.cuktech.notifications.AnomalyAlert? = null
+        repeat(3) {
+            detector.onPortSample(1, "USB-C1", 20.0, 32.0, "PD3.0 PPS", true, t, suppressAfterCompletion = false)
+            val res = detector.onPortSample(1, "USB-C1", 20.0, 0.0, "PD3.0 PPS", true, t + 1_000L, suppressAfterCompletion = false)
+            if (res != null) fired = res
+            t += 5_000L
+        }
+        assertNotNull(fired)
+        assertEquals(com.example.cuktech.notifications.AnomalyType.POWER_COLLAPSE_LOOP, fired!!.type)
+    }
+
+    @Test
+    fun settingsHubNotificationControlsAndEventCenterShortcutWork() {
+        val viewModel = DashboardViewModel(app)
+        val openEventCenterState = androidx.compose.runtime.mutableStateOf(false)
+
+        try {
+            composeTestRule.setContent {
+                LocalizedAppContent(appLanguage = "ru") {
+                    MyApplicationTheme(useDynamicColor = false) {
+                        CuktechAppRoot(
+                            viewModel = viewModel,
+                            pendingOpenEventCenter = openEventCenterState,
+                            initialDestinationOverride = AppDestination.SETTINGS,
+                            requestPermissionsOnLaunch = false,
+                            showOnboardingOverride = false
+                        )
+                    }
+                }
+            }
+            composeTestRule.waitForIdle()
+
+            listOf(
+                "live_updates_switch",
+                "completion_alerts_switch",
+                "anomaly_alerts_switch",
+                "anomaly_suppress_completion_switch",
+                "notif_ble_exit_switch",
+                "notif_wifi_leave_switch",
+                "threshold_alerts_switch",
+                "quiet_hours_switch",
+                "notif_system_channels_btn",
+                "notif_open_event_center_btn"
+            ).forEach { tag ->
+                composeTestRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed()
+            }
+
+            // Enable threshold alerts and verify system push toggle appears
+            composeTestRule.onNodeWithTag("threshold_alerts_switch").performScrollTo().performClick()
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag("threshold_push_switch").performScrollTo().assertIsDisplayed()
+
+            // Open Event Center from Settings shortcut
+            composeTestRule.onNodeWithTag("notif_open_event_center_btn").performScrollTo().performClick()
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag("event_center_sheet").assertIsDisplayed()
+
+            Espresso.pressBack()
+            composeTestRule.waitForIdle()
+
+            // Verify notification deep-link flag opens Event Center sheet
+            openEventCenterState.value = true
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag("event_center_sheet").assertIsDisplayed()
+        } finally {
+            runBlocking {
+                AppPreferencesRepository(app).updateThresholdAlerts(false, 105.0, 1.5)
+            }
+        }
     }
 }

@@ -1,5 +1,7 @@
 package com.example.cuktech.notifications
 
+import android.content.Context
+import com.example.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,7 +20,24 @@ data class AnomalyAlert(
     val countInWindow: Int,
     val summary: String,
     val detectedAtMs: Long
-)
+) {
+    fun localizedSummary(context: Context): String = when (type) {
+        AnomalyType.CABLE_RENEGOTIATION_INSTABILITY -> context.getString(
+            R.string.anomaly_renegotiation_fmt,
+            portLabel ?: "USB",
+            countInWindow
+        )
+        AnomalyType.POWER_COLLAPSE_LOOP -> context.getString(
+            R.string.anomaly_power_collapse_fmt,
+            portLabel ?: "USB",
+            countInWindow
+        )
+        AnomalyType.BLE_FLAP_LOOP -> context.getString(
+            R.string.anomaly_ble_flap_fmt,
+            countInWindow
+        )
+    }
+}
 
 /**
  * Rolling-window detector for unstable cables, repeated PD/PPS/UFCS renegotiation collapses
@@ -43,11 +62,24 @@ class CableAnomalyDetector(
         3 to PortHistory(),
         4 to PortHistory()
     )
+    private val suppressedUntilMs = mutableMapOf<Int, Long>()
     private val bleDisconnectEventsMs = ArrayDeque<Long>()
     private var lastBleFlapAlertMs = 0L
 
     private val _alerts = MutableStateFlow<List<AnomalyAlert>>(emptyList())
     val alerts: StateFlow<List<AnomalyAlert>> = _alerts.asStateFlow()
+
+    fun markPortCompleted(
+        portId: Int,
+        nowMs: Long = clockMs(),
+        suppressDurationMs: Long = POST_COMPLETION_SUPPRESS_MS
+    ) {
+        suppressedUntilMs[portId] = nowMs + suppressDurationMs
+        portHistories[portId]?.let {
+            it.collapseDropsMs.clear()
+            it.renegotiationDropsMs.clear()
+        }
+    }
 
     fun onPortSample(
         portId: Int,
@@ -56,7 +88,8 @@ class CableAnomalyDetector(
         powerW: Double,
         protocolName: String,
         enabled: Boolean,
-        nowMs: Long = clockMs()
+        nowMs: Long = clockMs(),
+        suppressAfterCompletion: Boolean = true
     ): AnomalyAlert? {
         val hist = portHistories[portId] ?: return null
         if (!enabled) {
@@ -64,6 +97,14 @@ class CableAnomalyDetector(
             hist.prevVoltageV = voltageV
             hist.prevProtocol = protocolName
             hist.prevEnabled = false
+            return null
+        }
+        val untilMs = suppressedUntilMs[portId] ?: 0L
+        if (suppressAfterCompletion && untilMs > nowMs) {
+            hist.prevPowerW = powerW
+            hist.prevVoltageV = voltageV
+            hist.prevProtocol = protocolName
+            hist.prevEnabled = true
             return null
         }
 
@@ -76,37 +117,47 @@ class CableAnomalyDetector(
         val nowSlowFallback = protocolName.equals("Normal", ignoreCase = true) ||
             protocolName.contains("5V", ignoreCase = true)
 
+        val voltageSagOrCollapse = voltageV < 4.5 || (hist.prevVoltageV - voltageV) >= 3.0
+        val isGenuineLoadCollapse = hist.prevEnabled && powerW <= 0.5 && (
+            hist.prevPowerW >= MIN_STEADY_VOLTAGE_COLLAPSE_W ||
+                (hist.prevPowerW >= MIN_VOLTAGE_SAG_COLLAPSE_W && voltageSagOrCollapse)
+            )
+
         if (hist.prevEnabled && wasFastProtocol && hist.prevVoltageV >= 8.5 && voltageV in 3.5..5.7 && nowSlowFallback) {
             hist.renegotiationDropsMs.addLast(nowMs)
             pruneOld(hist.renegotiationDropsMs, nowMs, WINDOW_MS)
             if (hist.renegotiationDropsMs.size >= RENEGOTIATION_THRESHOLD &&
                 (hist.lastAlertedMs == 0L || nowMs - hist.lastAlertedMs >= COOLDOWN_MS)
             ) {
+                val count = hist.renegotiationDropsMs.size
                 hist.lastAlertedMs = nowMs
+                hist.renegotiationDropsMs.clear()
                 triggered = AnomalyAlert(
                     id = "reneg_port_$portId",
                     type = AnomalyType.CABLE_RENEGOTIATION_INSTABILITY,
                     portId = portId,
                     portLabel = portLabel,
-                    countInWindow = hist.renegotiationDropsMs.size,
-                    summary = "$portLabel: ${hist.renegotiationDropsMs.size}× PD/PPS/UFCS → 5V fallback in 2 min",
+                    countInWindow = count,
+                    summary = "$portLabel: ${count}× PD/PPS/UFCS → 5V fallback in 2 min",
                     detectedAtMs = nowMs
                 )
             }
-        } else if (hist.prevEnabled && hist.prevPowerW >= 15.0 && powerW <= 0.5) {
+        } else if (isGenuineLoadCollapse) {
             hist.collapseDropsMs.addLast(nowMs)
             pruneOld(hist.collapseDropsMs, nowMs, WINDOW_MS)
             if (hist.collapseDropsMs.size >= COLLAPSE_THRESHOLD &&
                 (hist.lastAlertedMs == 0L || nowMs - hist.lastAlertedMs >= COOLDOWN_MS)
             ) {
+                val count = hist.collapseDropsMs.size
                 hist.lastAlertedMs = nowMs
+                hist.collapseDropsMs.clear()
                 triggered = AnomalyAlert(
                     id = "collapse_port_$portId",
                     type = AnomalyType.POWER_COLLAPSE_LOOP,
                     portId = portId,
                     portLabel = portLabel,
-                    countInWindow = hist.collapseDropsMs.size,
-                    summary = "$portLabel: ${hist.collapseDropsMs.size}× sudden load collapses (≥15W → 0W)",
+                    countInWindow = count,
+                    summary = "$portLabel: ${count}× sudden load collapses (≥25W → 0W)",
                     detectedAtMs = nowMs
                 )
             }
@@ -129,14 +180,16 @@ class CableAnomalyDetector(
         if (bleDisconnectEventsMs.size >= BLE_FLAP_THRESHOLD &&
             (lastBleFlapAlertMs == 0L || nowMs - lastBleFlapAlertMs >= COOLDOWN_MS)
         ) {
+            val count = bleDisconnectEventsMs.size
             lastBleFlapAlertMs = nowMs
+            bleDisconnectEventsMs.clear()
             val alert = AnomalyAlert(
                 id = "ble_flap_loop",
                 type = AnomalyType.BLE_FLAP_LOOP,
                 portId = null,
                 portLabel = null,
-                countInWindow = bleDisconnectEventsMs.size,
-                summary = "BLE connection dropped ${bleDisconnectEventsMs.size}× within 3 min",
+                countInWindow = count,
+                summary = "BLE connection dropped ${count}× within 3 min",
                 detectedAtMs = nowMs
             )
             upsertAlert(alert)
@@ -150,6 +203,7 @@ class CableAnomalyDetector(
     }
 
     fun clearAll() {
+        suppressedUntilMs.clear()
         _alerts.value = emptyList()
     }
 
@@ -172,5 +226,8 @@ class CableAnomalyDetector(
         const val RENEGOTIATION_THRESHOLD = 3
         const val COLLAPSE_THRESHOLD = 3
         const val BLE_FLAP_THRESHOLD = 3
+        const val MIN_STEADY_VOLTAGE_COLLAPSE_W = 25.0
+        const val MIN_VOLTAGE_SAG_COLLAPSE_W = 15.0
+        const val POST_COMPLETION_SUPPRESS_MS = 10 * 60_000L
     }
 }

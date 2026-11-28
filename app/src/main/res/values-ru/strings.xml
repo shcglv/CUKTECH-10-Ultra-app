@@ -342,10 +342,15 @@
     <string name="notif_channel_completion_silent_desc">Уведомления в тихие часы или при отключённом звуке</string>
     <string name="notif_channel_anomaly_name">Аномалии кабеля и BLE</string>
     <string name="notif_channel_anomaly_desc">Предупреждения о частых сбросах PD/PPS, провалах нагрузки и обрывах BLE</string>
+    <string name="notif_channel_threshold_name">Пороговые оповещения мощности</string>
+    <string name="notif_channel_threshold_desc">Системные уведомления при превышении нагрузки или падении мощности</string>
     <string name="notif_completion_title">%1$s · Зарядка завершена</string>
     <string name="notif_completion_repeat_title">%1$s · Напоминание о завершении</string>
     <string name="notif_completion_body">Отдано %1$.2f Вт·ч · Пик %2$.1f Вт</string>
     <string name="notif_anomaly_title">Обнаружена аномалия зарядки</string>
+    <string name="anomaly_renegotiation_fmt">%1$s: %2$d× сбросов PD/PPS/UFCS до 5 В за 2 мин</string>
+    <string name="anomaly_power_collapse_fmt">%1$s: %2$d× резких обрывов нагрузки (≥25 Вт → 0 Вт)</string>
+    <string name="anomaly_ble_flap_fmt">BLE-соединение обрывалось %1$d× за 3 мин</string>
     <string name="notif_connecting">Подключение к зарядному…</string>
     <string name="notif_connecting_name">Подключение к CUKTECH 10 Ultra…</string>
     <string name="notif_auth_failed">Ошибка входа · Проверьте ключи</string>
@@ -431,6 +436,21 @@
     <string name="settings_quiet_hours_enable">Тихие часы (без звука завершения)</string>
     <string name="settings_quiet_hours_start">Начало тишины</string>
     <string name="settings_quiet_hours_end">Конец тишины</string>
+    <string name="settings_completion_alerts_enable">Уведомления о завершении зарядки</string>
+    <string name="settings_anomaly_alerts_enable">Аномалии кабеля, нагрузки и BLE</string>
+    <string name="settings_anomaly_suppress_completion">Приглушать аномалии после завершения</string>
+    <string name="settings_anomaly_suppress_completion_desc">Игнорирует импульсы подпитки на 99–100% в течение 10 мин после завершения зарядки</string>
+    <string name="settings_threshold_push_enable">Показывать уведомление в шторке</string>
+    <string name="settings_notif_ble_exit_enable">Потеря сигнала BLE под нагрузкой</string>
+    <string name="settings_notif_wifi_leave_enable">Уход из домашнего Wi-Fi под нагрузкой</string>
+    <string name="settings_notif_open_channels_btn">Каналы в Android</string>
+    <string name="settings_notif_open_event_center_btn">Журнал событий</string>
+    <string name="settings_notif_open_event_center_unread_fmt">Журнал событий (%1$d)</string>
+    <string name="settings_notif_group_status">Статус-бар и Live Updates</string>
+    <string name="settings_notif_group_completion">Завершение зарядки</string>
+    <string name="settings_notif_group_safety">Аномалии и уход из дома</string>
+    <string name="settings_notif_group_thresholds">Пороги мощности</string>
+    <string name="settings_notif_group_schedule">Тихие часы и каналы</string>
 
     <!-- Encrypted SAF Backup & Restore -->
     <string name="settings_section_backup">Шифрованный SAF-бэкап и восстановление</string>

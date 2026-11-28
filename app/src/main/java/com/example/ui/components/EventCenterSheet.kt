@@ -29,7 +29,7 @@ import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TimerOff
-import androidx.compose.material.icons.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
@@ -196,7 +196,7 @@ fun EventCenterSheet(
                                 MaterialTheme.colorScheme.onErrorContainer
                             )
                             ChargerEventType.LOW_POWER_DROP_ALERT -> Triple(
-                                Icons.Default.TrendingDown,
+                                Icons.AutoMirrored.Filled.TrendingDown,
                                 MaterialTheme.colorScheme.secondaryContainer,
                                 MaterialTheme.colorScheme.onSecondaryContainer
                             )

@@ -28,9 +28,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.MergeType
 import androidx.compose.material.icons.filled.ElectricBolt
-import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
@@ -560,9 +560,9 @@ fun AliasEditDialog(
 
 fun scenarioIcon(mode: Int): ImageVector = when (mode) {
     1 -> Icons.Default.AutoAwesome
-    2 -> Icons.Default.MergeType
+    2 -> Icons.AutoMirrored.Filled.MergeType
     3 -> Icons.Default.Bolt
-    4 -> Icons.Default.CallSplit
+    4 -> Icons.AutoMirrored.Filled.CallSplit
     else -> Icons.Default.AutoAwesome
 }
 

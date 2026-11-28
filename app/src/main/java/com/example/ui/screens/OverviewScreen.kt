@@ -41,7 +41,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BluetoothSearching
+import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ElectricBolt
@@ -74,6 +74,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -349,15 +350,15 @@ fun OverviewScreen(
                                 .heightIn(min = 48.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.BluetoothSearching,
+                                imageVector = Icons.AutoMirrored.Filled.BluetoothSearching,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 text = stringResource(R.string.action_scan_pair),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                maxLines = 2,
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
@@ -386,8 +387,9 @@ fun OverviewScreen(
                         tint = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.size(20.dp)
                     )
+                    val ctx = LocalContext.current
                     Text(
-                        text = alert.summary,
+                        text = alert.localizedSummary(ctx),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.weight(1f)

@@ -70,7 +70,11 @@ data class AppPreferences(
     val wifiBleOnlyAtHome: Boolean = false,
     val wifiLeaveLoadAlertEnabled: Boolean = true,
     val wifiLeaveLoadThresholdWatts: Double = 15.0,
-    val hiddenAnalyticsCardsCsv: String = ""
+    val hiddenAnalyticsCardsCsv: String = "",
+    val completionAlertsEnabled: Boolean = true,
+    val anomalyAlertsEnabled: Boolean = true,
+    val anomalySuppressAfterCompletion: Boolean = true,
+    val thresholdPushEnabled: Boolean = true
 ) {
     fun hiddenAnalyticsCardSet(): Set<String> =
         hiddenAnalyticsCardsCsv.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
@@ -135,6 +139,10 @@ data class AppPreferences(
         put("wifiLeaveLoadAlertEnabled", wifiLeaveLoadAlertEnabled)
         put("wifiLeaveLoadThresholdWatts", wifiLeaveLoadThresholdWatts)
         put("hiddenAnalyticsCardsCsv", hiddenAnalyticsCardsCsv)
+        put("completionAlertsEnabled", completionAlertsEnabled)
+        put("anomalyAlertsEnabled", anomalyAlertsEnabled)
+        put("anomalySuppressAfterCompletion", anomalySuppressAfterCompletion)
+        put("thresholdPushEnabled", thresholdPushEnabled)
     }
 
     companion object {
@@ -256,7 +264,11 @@ class AppPreferencesRepository(context: Context) {
             wifiBleOnlyAtHome = prefs[KEY_WIFI_BLE_ONLY_AT_HOME] ?: false,
             wifiLeaveLoadAlertEnabled = prefs[KEY_WIFI_LEAVE_LOAD_ALERT] ?: true,
             wifiLeaveLoadThresholdWatts = (prefs[KEY_WIFI_LEAVE_LOAD_W] ?: 15.0).coerceIn(5.0, 100.0),
-            hiddenAnalyticsCardsCsv = prefs[KEY_HIDDEN_ANALYTICS_CARDS] ?: ""
+            hiddenAnalyticsCardsCsv = prefs[KEY_HIDDEN_ANALYTICS_CARDS] ?: "",
+            completionAlertsEnabled = prefs[KEY_COMPLETION_ALERTS_ENABLED] ?: true,
+            anomalyAlertsEnabled = prefs[KEY_ANOMALY_ALERTS_ENABLED] ?: true,
+            anomalySuppressAfterCompletion = prefs[KEY_ANOMALY_SUPPRESS_AFTER_COMPLETION] ?: true,
+            thresholdPushEnabled = prefs[KEY_THRESHOLD_PUSH_ENABLED] ?: true
         )
     }
 
@@ -345,6 +357,27 @@ class AppPreferencesRepository(context: Context) {
             it[KEY_COMPLETION_REPEAT_INTERVAL_MIN] = repeatIntervalMin.coerceIn(1, 60)
             it[KEY_COMPLETION_MAX_REPEATS] = maxRepeats.coerceIn(1, 5)
         }
+    }
+
+    suspend fun updateAlertChannelsPolicy(
+        completionAlertsEnabled: Boolean,
+        anomalyAlertsEnabled: Boolean,
+        anomalySuppressAfterCompletion: Boolean,
+        thresholdPushEnabled: Boolean
+    ) {
+        _preferences.value = _preferences.value.copy(
+            completionAlertsEnabled = completionAlertsEnabled,
+            anomalyAlertsEnabled = anomalyAlertsEnabled,
+            anomalySuppressAfterCompletion = anomalySuppressAfterCompletion,
+            thresholdPushEnabled = thresholdPushEnabled
+        )
+        val updated = dataStore.edit {
+            it[KEY_COMPLETION_ALERTS_ENABLED] = completionAlertsEnabled
+            it[KEY_ANOMALY_ALERTS_ENABLED] = anomalyAlertsEnabled
+            it[KEY_ANOMALY_SUPPRESS_AFTER_COMPLETION] = anomalySuppressAfterCompletion
+            it[KEY_THRESHOLD_PUSH_ENABLED] = thresholdPushEnabled
+        }
+        _preferences.value = mapFromDataStore(updated)
     }
 
     suspend fun updateConsoleLogLevel(levelName: String) {
@@ -580,6 +613,18 @@ class AppPreferencesRepository(context: Context) {
             if (json.has("hiddenAnalyticsCardsCsv")) {
                 edit[KEY_HIDDEN_ANALYTICS_CARDS] = json.optString("hiddenAnalyticsCardsCsv", "")
             }
+            if (json.has("completionAlertsEnabled")) {
+                edit[KEY_COMPLETION_ALERTS_ENABLED] = json.optBoolean("completionAlertsEnabled", true)
+            }
+            if (json.has("anomalyAlertsEnabled")) {
+                edit[KEY_ANOMALY_ALERTS_ENABLED] = json.optBoolean("anomalyAlertsEnabled", true)
+            }
+            if (json.has("anomalySuppressAfterCompletion")) {
+                edit[KEY_ANOMALY_SUPPRESS_AFTER_COMPLETION] = json.optBoolean("anomalySuppressAfterCompletion", true)
+            }
+            if (json.has("thresholdPushEnabled")) {
+                edit[KEY_THRESHOLD_PUSH_ENABLED] = json.optBoolean("thresholdPushEnabled", true)
+            }
             edit[KEY_MIGRATED_LEGACY] = true
         }
         val refreshed = mapFromDataStore(dataStore.data.first())
@@ -630,6 +675,10 @@ class AppPreferencesRepository(context: Context) {
         private val KEY_WIFI_LEAVE_LOAD_ALERT = booleanPreferencesKey("wifi_leave_load_alert")
         private val KEY_WIFI_LEAVE_LOAD_W = doublePreferencesKey("wifi_leave_load_watts")
         private val KEY_HIDDEN_ANALYTICS_CARDS = stringPreferencesKey("hidden_analytics_cards")
+        private val KEY_COMPLETION_ALERTS_ENABLED = booleanPreferencesKey("completion_alerts_enabled")
+        private val KEY_ANOMALY_ALERTS_ENABLED = booleanPreferencesKey("anomaly_alerts_enabled")
+        private val KEY_ANOMALY_SUPPRESS_AFTER_COMPLETION = booleanPreferencesKey("anomaly_suppress_after_completion")
+        private val KEY_THRESHOLD_PUSH_ENABLED = booleanPreferencesKey("threshold_push_enabled")
 
         const val CARD_CHART = "CHART"
         const val CARD_PERIOD_SUMMARY = "PERIOD_SUMMARY"

@@ -196,8 +196,9 @@ fun DiagnosticsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
+                                val diagCtx = LocalContext.current
                                 Text(
-                                    text = alert.summary,
+                                    text = alert.localizedSummary(diagCtx),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.weight(1f)

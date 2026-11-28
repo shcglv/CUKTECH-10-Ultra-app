@@ -1,8 +1,11 @@
 package com.example.cuktech.notifications
 
+import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -31,20 +34,21 @@ data class ChargerEvent(
 )
 
 /**
- * In-memory reactive feed of real charger events (limit cutoffs, timer expirations,
+ * Persistent reactive feed of real charger events (limit cutoffs, timer expirations,
  * trickle completions, anomalies, automation rule triggers, and threshold alerts)
  * surfaced in the TopAppBar Event Center bell sheet.
  */
 class ChargerEventLog(
     private val maxEntries: Int = 60,
     private val highLoadCooldownMs: Long = 300_000L,
-    private val lowDropConfirmMs: Long = 10_000L
+    private val lowDropConfirmMs: Long = 10_000L,
+    private val storagePrefs: SharedPreferences? = null
 ) {
     private val stateLock = Any()
-    private val _events = MutableStateFlow<List<ChargerEvent>>(emptyList())
+    private val _events = MutableStateFlow(loadPersistedEvents())
     val events: StateFlow<List<ChargerEvent>> = _events.asStateFlow()
 
-    private val _unreadCount = MutableStateFlow(0)
+    private val _unreadCount = MutableStateFlow(_events.value.count { !it.isRead })
     val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
 
     private var highLoadArmed = true
@@ -74,6 +78,7 @@ class ChargerEventLog(
             val next = (listOf(ev) + _events.value).take(maxEntries)
             _events.value = next
             _unreadCount.value = next.count { !it.isRead }
+            persistEventsLocked(next)
         }
         return ev
     }
@@ -85,6 +90,7 @@ class ChargerEventLog(
             val next = cur.map { if (it.isRead) it else it.copy(isRead = true) }
             _events.value = next
             _unreadCount.value = 0
+            persistEventsLocked(next)
         }
     }
 
@@ -92,7 +98,63 @@ class ChargerEventLog(
         synchronized(stateLock) {
             _events.value = emptyList()
             _unreadCount.value = 0
+            persistEventsLocked(emptyList())
         }
+    }
+
+    private fun loadPersistedEvents(): List<ChargerEvent> {
+        val raw = storagePrefs?.getString(KEY_EVENTS_JSON, null).orEmpty()
+        if (raw.isBlank()) return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val typeName = obj.optString("type", "")
+                    val evType = runCatching { ChargerEventType.valueOf(typeName) }.getOrNull() ?: continue
+                    val id = obj.optString("id", "").ifBlank { UUID.randomUUID().toString() }
+                    val ts = obj.optLong("ts", 0L)
+                    val title = obj.optString("title", "")
+                    if (title.isBlank()) continue
+                    add(
+                        ChargerEvent(
+                            id = id,
+                            timestampMs = ts,
+                            type = evType,
+                            portId = obj.optInt("portId", 0),
+                            title = title,
+                            detail = obj.optString("detail", ""),
+                            isRead = obj.optBoolean("isRead", false)
+                        )
+                    )
+                }
+            }.sortedByDescending { it.timestampMs }.take(maxEntries)
+        }.getOrDefault(emptyList())
+    }
+
+    private fun persistEventsLocked(list: List<ChargerEvent>) {
+        val prefs = storagePrefs ?: return
+        runCatching {
+            val arr = JSONArray()
+            list.take(maxEntries).forEach { ev ->
+                arr.put(
+                    JSONObject().apply {
+                        put("id", ev.id)
+                        put("ts", ev.timestampMs)
+                        put("type", ev.type.name)
+                        put("portId", ev.portId)
+                        put("title", ev.title)
+                        put("detail", ev.detail)
+                        put("isRead", ev.isRead)
+                    }
+                )
+            }
+            prefs.edit().putString(KEY_EVENTS_JSON, arr.toString()).apply()
+        }
+    }
+
+    companion object {
+        private const val KEY_EVENTS_JSON = "events_json"
     }
 
     /**

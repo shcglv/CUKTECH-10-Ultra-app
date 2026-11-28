@@ -36,11 +36,13 @@ object ChargingNotificationManager {
     const val CHANNEL_COMPLETION_ALERT = "CuktechCompletionChannel"
     const val CHANNEL_COMPLETION_SILENT = "CuktechCompletionSilentChannel"
     const val CHANNEL_ANOMALY_ALERT = "CuktechAnomalyChannel"
+    const val CHANNEL_THRESHOLD_ALERT = "CuktechThresholdChannel"
 
     const val COMPLETION_NOTIF_BASE_ID = 20200
     const val ANOMALY_NOTIF_BASE_ID = 20300
     const val BLE_PROXIMITY_NOTIF_ID = 20400
     const val WIFI_LEAVE_LOAD_NOTIF_ID = 20500
+    const val THRESHOLD_NOTIF_BASE_ID = 20600
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -82,9 +84,24 @@ object ChargingNotificationManager {
             description = context.getString(R.string.notif_channel_anomaly_desc)
         }
 
+        val thresholdChannel = NotificationChannel(
+            CHANNEL_THRESHOLD_ALERT,
+            context.getString(R.string.notif_channel_threshold_name),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = context.getString(R.string.notif_channel_threshold_desc)
+        }
+
         nm.createNotificationChannels(
-            listOf(liveChannel, completionChannel, completionSilentChannel, anomalyChannel)
+            listOf(liveChannel, completionChannel, completionSilentChannel, anomalyChannel, thresholdChannel)
         )
+    }
+
+    fun buildAppNotificationSettingsIntent(context: Context): Intent {
+        return Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
     }
 
     fun canPostPromotedNotifications(context: Context): Boolean {
@@ -285,6 +302,7 @@ object ChargingNotificationManager {
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("EXTRA_NAV_TAB", "OVERVIEW")
+            putExtra("EXTRA_OPEN_EVENT_CENTER", true)
         }
         val pi = PendingIntent.getActivity(
             context,
@@ -293,15 +311,16 @@ object ChargingNotificationManager {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val title = context.getString(R.string.notif_anomaly_title)
+        val body = alert.localizedSummary(context)
         val notif = NotificationCompat.Builder(context, CHANNEL_ANOMALY_ALERT)
             .setSmallIcon(R.drawable.ic_stat_cuktech)
             .setContentTitle(title)
-            .setContentText(alert.summary)
+            .setContentText(body)
             .setSubText(alert.portLabel ?: context.getString(R.string.app_name))
             .setStyle(
                 NotificationCompat.BigTextStyle()
                     .setBigContentTitle(title)
-                    .bigText(alert.summary)
+                    .bigText(body)
             )
             .setAutoCancel(true)
             .setSilent(inQuietHours)
@@ -324,6 +343,7 @@ object ChargingNotificationManager {
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("EXTRA_NAV_TAB", "OVERVIEW")
+            putExtra("EXTRA_OPEN_EVENT_CENTER", true)
         }
         val pi = PendingIntent.getActivity(
             context,
@@ -368,6 +388,7 @@ object ChargingNotificationManager {
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("EXTRA_NAV_TAB", "OVERVIEW")
+            putExtra("EXTRA_OPEN_EVENT_CENTER", true)
         }
         val pi = PendingIntent.getActivity(
             context,
@@ -396,5 +417,43 @@ object ChargingNotificationManager {
             .build()
 
         nm.notify(WIFI_LEAVE_LOAD_NOTIF_ID, notif)
+    }
+
+    fun postThresholdAlertNotification(
+        context: Context,
+        event: ChargerEvent,
+        inQuietHours: Boolean
+    ) {
+        ensureChannels(context)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("EXTRA_NAV_TAB", "OVERVIEW")
+            putExtra("EXTRA_OPEN_EVENT_CENTER", true)
+        }
+        val notifId = THRESHOLD_NOTIF_BASE_ID + event.portId + (if (event.type == ChargerEventType.HIGH_LOAD_ALERT) 0 else 10)
+        val pi = PendingIntent.getActivity(
+            context,
+            notifId,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notif = NotificationCompat.Builder(context, CHANNEL_THRESHOLD_ALERT)
+            .setSmallIcon(R.drawable.ic_stat_cuktech)
+            .setContentTitle(event.title)
+            .setContentText(event.detail)
+            .setSubText(context.getString(R.string.app_name))
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .setBigContentTitle(event.title)
+                    .bigText(event.detail)
+            )
+            .setAutoCancel(true)
+            .setSilent(inQuietHours)
+            .setContentIntent(pi)
+            .setLocalOnly(true)
+            .build()
+
+        nm.notify(notifId, notif)
     }
 }

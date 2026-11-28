@@ -342,10 +342,15 @@
     <string name="notif_channel_completion_silent_desc">Quiet Hours or muted charging completion notifications</string>
     <string name="notif_channel_anomaly_name">Cable &amp; Link Diagnostics</string>
     <string name="notif_channel_anomaly_desc">Warnings about repeated PD/PPS drops, power collapses, or BLE instability</string>
+    <string name="notif_channel_threshold_name">Power Threshold Alerts</string>
+    <string name="notif_channel_threshold_desc">System alerts when high load or low-power drop thresholds trigger</string>
     <string name="notif_completion_title">%1$s · Charging Complete</string>
     <string name="notif_completion_repeat_title">%1$s · Still Complete</string>
     <string name="notif_completion_body">%1$.2f Wh delivered · Peak %2$.1f W</string>
     <string name="notif_anomaly_title">Charging Anomaly Detected</string>
+    <string name="anomaly_renegotiation_fmt">%1$s: %2$d× PD/PPS/UFCS → 5V fallback in 2 min</string>
+    <string name="anomaly_power_collapse_fmt">%1$s: %2$d× sudden load collapses (≥25W → 0W)</string>
+    <string name="anomaly_ble_flap_fmt">BLE connection dropped %1$d× within 3 min</string>
     <string name="notif_connecting">Connecting to charger…</string>
     <string name="notif_connecting_name">Connecting to CUKTECH 10 Ultra…</string>
     <string name="notif_auth_failed">Auth failed · Check credentials</string>
@@ -431,6 +436,21 @@
     <string name="settings_quiet_hours_enable">Quiet Hours (Mute Completion Sounds)</string>
     <string name="settings_quiet_hours_start">Quiet Start</string>
     <string name="settings_quiet_hours_end">Quiet End</string>
+    <string name="settings_completion_alerts_enable">Charging Completion Notifications</string>
+    <string name="settings_anomaly_alerts_enable">Cable, Load &amp; BLE Anomaly Alerts</string>
+    <string name="settings_anomaly_suppress_completion">Suppress Port Anomalies After Completion</string>
+    <string name="settings_anomaly_suppress_completion_desc">Ignores 100% battery trickle/top-off pulses for 10 min after charging finishes</string>
+    <string name="settings_threshold_push_enable">Send System Notification on Threshold</string>
+    <string name="settings_notif_ble_exit_enable">BLE Range Exit Under Load Alert</string>
+    <string name="settings_notif_wifi_leave_enable">Leave Home Wi-Fi Under Load Alert</string>
+    <string name="settings_notif_open_channels_btn">Android Notification Channels</string>
+    <string name="settings_notif_open_event_center_btn">Open Event Center</string>
+    <string name="settings_notif_open_event_center_unread_fmt">Event Center (%1$d)</string>
+    <string name="settings_notif_group_status">Status Bar &amp; Live Updates</string>
+    <string name="settings_notif_group_completion">Charging Completion</string>
+    <string name="settings_notif_group_safety">Anomalies &amp; Departure Warnings</string>
+    <string name="settings_notif_group_thresholds">Power Threshold Alerts</string>
+    <string name="settings_notif_group_schedule">Quiet Hours &amp; Channels</string>
 
     <!-- Encrypted SAF Backup & Restore -->
     <string name="settings_section_backup">Encrypted SAF Backup &amp; Restore</string>

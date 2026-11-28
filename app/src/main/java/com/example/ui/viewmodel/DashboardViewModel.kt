@@ -1345,6 +1345,22 @@ class DashboardViewModel @JvmOverloads constructor(
         }
     }
 
+    fun updateAlertChannelsPolicy(
+        completionAlertsEnabled: Boolean,
+        anomalyAlertsEnabled: Boolean,
+        anomalySuppressAfterCompletion: Boolean,
+        thresholdPushEnabled: Boolean
+    ) {
+        viewModelScope.launch {
+            preferencesRepository.updateAlertChannelsPolicy(
+                completionAlertsEnabled = completionAlertsEnabled,
+                anomalyAlertsEnabled = anomalyAlertsEnabled,
+                anomalySuppressAfterCompletion = anomalySuppressAfterCompletion,
+                thresholdPushEnabled = thresholdPushEnabled
+            )
+        }
+    }
+
     fun updateThresholdAlerts(enabled: Boolean, highLoadWatts: Double, lowPowerDropWatts: Double) {
         viewModelScope.launch {
             preferencesRepository.updateThresholdAlerts(enabled, highLoadWatts, lowPowerDropWatts)
